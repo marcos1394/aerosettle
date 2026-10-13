@@ -1,0 +1,1454 @@
+use {
+    anchor_lang::{
+        prelude::Pubkey,
+        solana_program::{instruction::Instruction, system_program},
+        AccountDeserialize, InstructionData, ToAccountMetas,
+    },
+    anchor_spl::token::{
+        spl_token::state::{Account as SplTokenAccount, AccountState, Mint as SplMint},
+        ID as TOKEN_PROGRAM_ID,
+    },
+    litesvm::LiteSVM,
+    solana_account::Account,
+    solana_clock::Clock,
+    solana_keypair::Keypair,
+    solana_message::{Message, VersionedMessage},
+    solana_program_option::COption,
+    solana_program_pack::Pack,
+    solana_signer::Signer,
+    solana_transaction::versioned::VersionedTransaction,
+};
+
+use aerosettle::{
+    AgentAccount, AgentType, Capability, CreateWorkOrderArgs, EvidenceRequirement, PaymentModel,
+    SettlementTerms, SubmitExecutionArgs, WorkOrderAccount, WorkOrderStatus, WorkType, AGENT_SEED,
+    ESCROW_VAULT_SEED, PROTOCOL_CONFIG_SEED, WORK_ORDER_SEED,
+};
+
+const TEST_NETWORK_ID: [u8; 32] = [9u8; 32];
+
+const TEST_DEPLOYMENT_ID: [u8; 32] = [10u8; 32];
+
+const ESCROW_AMOUNT: u64 = 100_000_000;
+
+const TOKEN_DECIMALS: u8 = 6;
+
+const FUTURE_EXECUTION_DEADLINE: i64 = i64::MAX - 1;
+
+const FUTURE_VERIFICATION_DEADLINE: i64 = i64::MAX;
+
+struct Fixture {
+    svm: LiteSVM,
+
+    creator: Keypair,
+
+    protocol_config: Pubkey,
+
+    work_order: Pubkey,
+
+    mint: Pubkey,
+
+    creator_token_account: Pubkey,
+}
+
+fn new_svm() -> LiteSVM {
+    let mut svm = LiteSVM::new().with_default_programs();
+
+    let program_bytes = include_bytes!(concat!(
+        env!("CARGO_TARGET_TMPDIR"),
+        "/../deploy/aerosettle.so"
+    ));
+
+    svm.add_program(aerosettle::id(), program_bytes).unwrap();
+
+    svm
+}
+
+fn fund_sol(svm: &mut LiteSVM, keypair: &Keypair) {
+    svm.airdrop(&keypair.pubkey(), 5_000_000_000).unwrap();
+}
+
+fn send_instruction(svm: &mut LiteSVM, payer: &Keypair, instruction: Instruction) -> bool {
+    let blockhash = svm.latest_blockhash();
+
+    let message = Message::new_with_blockhash(&[instruction], Some(&payer.pubkey()), &blockhash);
+
+    let transaction =
+        VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
+
+    svm.send_transaction(transaction).is_ok()
+}
+
+fn protocol_config_pda() -> Pubkey {
+    Pubkey::find_program_address(&[PROTOCOL_CONFIG_SEED], &aerosettle::id()).0
+}
+
+fn work_order_pda(protocol_config: &Pubkey, creator: &Pubkey, work_order_id: &[u8; 32]) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            WORK_ORDER_SEED,
+            protocol_config.as_ref(),
+            creator.as_ref(),
+            work_order_id.as_ref(),
+        ],
+        &aerosettle::id(),
+    )
+    .0
+}
+
+fn escrow_vault_pda(work_order: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[ESCROW_VAULT_SEED, work_order.as_ref()], &aerosettle::id()).0
+}
+
+fn agent_pda(protocol_config: &Pubkey, agent_id: &[u8; 32]) -> Pubkey {
+    Pubkey::find_program_address(
+        &[AGENT_SEED, protocol_config.as_ref(), agent_id.as_ref()],
+        &aerosettle::id(),
+    )
+    .0
+}
+
+fn initialize_protocol(svm: &mut LiteSVM, authority: &Keypair) -> Pubkey {
+    let protocol_config = protocol_config_pda();
+
+    let instruction = Instruction::new_with_bytes(
+        aerosettle::id(),
+        &aerosettle::instruction::InitializeProtocol {
+            network_id: TEST_NETWORK_ID,
+
+            deployment_id: TEST_DEPLOYMENT_ID,
+        }
+        .data(),
+        aerosettle::accounts::InitializeProtocol {
+            protocol_config,
+            authority: authority.pubkey(),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+
+    assert!(
+        send_instruction(svm, authority, instruction,),
+        "protocol initialization must succeed"
+    );
+
+    protocol_config
+}
+
+fn create_test_mint(svm: &mut LiteSVM, mint_authority: Pubkey, supply: u64) -> Pubkey {
+    let mint = Pubkey::new_unique();
+
+    let state = SplMint {
+        mint_authority: COption::Some(mint_authority),
+
+        supply,
+
+        decimals: TOKEN_DECIMALS,
+
+        is_initialized: true,
+
+        freeze_authority: COption::None,
+    };
+
+    let mut data = vec![0u8; SplMint::LEN];
+
+    SplMint::pack(state, &mut data).unwrap();
+
+    let lamports = svm.minimum_balance_for_rent_exemption(SplMint::LEN);
+
+    svm.set_account(
+        mint,
+        Account {
+            lamports,
+            data,
+            owner: TOKEN_PROGRAM_ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+
+    mint
+}
+
+fn create_test_token_account(
+    svm: &mut LiteSVM,
+    mint: Pubkey,
+    owner: Pubkey,
+    amount: u64,
+) -> Pubkey {
+    let address = Pubkey::new_unique();
+
+    let state = SplTokenAccount {
+        mint,
+        owner,
+        amount,
+
+        delegate: COption::None,
+
+        state: AccountState::Initialized,
+
+        is_native: COption::None,
+
+        delegated_amount: 0,
+
+        close_authority: COption::None,
+    };
+
+    let mut data = vec![0u8; SplTokenAccount::LEN];
+
+    SplTokenAccount::pack(state, &mut data).unwrap();
+
+    let lamports = svm.minimum_balance_for_rent_exemption(SplTokenAccount::LEN);
+
+    svm.set_account(
+        address,
+        Account {
+            lamports,
+            data,
+            owner: TOKEN_PROGRAM_ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+
+    address
+}
+
+fn token_balance(svm: &LiteSVM, address: &Pubkey) -> u64 {
+    let account = svm.get_account(address).expect("token account must exist");
+
+    SplTokenAccount::unpack(&account.data)
+        .expect("valid SPL Token account")
+        .amount
+}
+
+fn valid_args(work_order_id: [u8; 32], mint: Pubkey, amount: u64) -> CreateWorkOrderArgs {
+    CreateWorkOrderArgs {
+        work_order_id,
+
+        work_type: WorkType::Inspection,
+
+        required_capabilities: Capability::AerialMobility.bit() | Capability::Gps.bit(),
+
+        evidence_requirements: EvidenceRequirement::Telemetry.bit()
+            | EvidenceRequirement::GpsTrace.bit()
+            | EvidenceRequirement::ImageManifest.bit()
+            | EvidenceRequirement::DeviceSignature.bit(),
+
+        manifest_hash: [40u8; 32],
+
+        settlement: SettlementTerms {
+            token_mint: mint,
+
+            total_amount: amount,
+
+            payment_model: PaymentModel::Proportional,
+
+            verifier: Pubkey::new_unique(),
+        },
+
+        execution_deadline: FUTURE_EXECUTION_DEADLINE,
+
+        verification_deadline: FUTURE_VERIFICATION_DEADLINE,
+    }
+}
+
+fn create_work_order(
+    svm: &mut LiteSVM,
+    protocol_config: Pubkey,
+    creator: &Keypair,
+    mint: Pubkey,
+    work_order_id: [u8; 32],
+    amount: u64,
+) -> Pubkey {
+    let args = valid_args(work_order_id, mint, amount);
+
+    let work_order = work_order_pda(&protocol_config, &creator.pubkey(), &work_order_id);
+
+    let instruction = Instruction::new_with_bytes(
+        aerosettle::id(),
+        &aerosettle::instruction::CreateWorkOrder { args }.data(),
+        aerosettle::accounts::CreateWorkOrder {
+            protocol_config,
+            work_order,
+            creator: creator.pubkey(),
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+
+    assert!(
+        send_instruction(svm, creator, instruction,),
+        "WorkOrder creation must succeed"
+    );
+
+    work_order
+}
+
+fn fund_work_order_instruction(
+    protocol_config: Pubkey,
+    work_order: Pubkey,
+    creator: Pubkey,
+    mint: Pubkey,
+    creator_token_account: Pubkey,
+) -> (Pubkey, Instruction) {
+    let escrow_vault = escrow_vault_pda(&work_order);
+
+    let instruction = Instruction::new_with_bytes(
+        aerosettle::id(),
+        &aerosettle::instruction::FundWorkOrder {}.data(),
+        aerosettle::accounts::FundWorkOrder {
+            protocol_config,
+            work_order,
+            creator,
+            mint,
+            creator_token_account,
+            escrow_vault,
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+
+    (escrow_vault, instruction)
+}
+
+fn register_agent(
+    svm: &mut LiteSVM,
+    protocol_config: Pubkey,
+    owner: &Keypair,
+    device_key: Pubkey,
+    agent_id: [u8; 32],
+    capabilities: u64,
+) -> Pubkey {
+    let agent_account = agent_pda(&protocol_config, &agent_id);
+
+    let instruction = Instruction::new_with_bytes(
+        aerosettle::id(),
+        &aerosettle::instruction::RegisterAgent {
+            agent_id,
+
+            signing_authority: device_key,
+
+            agent_type: AgentType::Drone,
+
+            capabilities,
+
+            metadata_hash: [55u8; 32],
+        }
+        .data(),
+        aerosettle::accounts::RegisterAgent {
+            protocol_config,
+            agent_account,
+            owner: owner.pubkey(),
+
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+
+    assert!(
+        send_instruction(svm, owner, instruction,),
+        "agent registration must succeed"
+    );
+
+    agent_account
+}
+
+fn claim_instruction(
+    protocol_config: Pubkey,
+    work_order: Pubkey,
+    agent_account: Pubkey,
+    agent_signer: Pubkey,
+) -> Instruction {
+    Instruction::new_with_bytes(
+        aerosettle::id(),
+        &aerosettle::instruction::ClaimWorkOrder {}.data(),
+        aerosettle::accounts::ClaimWorkOrder {
+            protocol_config,
+            work_order,
+            agent_account,
+            agent_signer,
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn read_work_order(svm: &LiteSVM, address: &Pubkey) -> WorkOrderAccount {
+    let account = svm
+        .get_account(address)
+        .expect("WorkOrderAccount must exist");
+
+    let mut data: &[u8] = &account.data;
+
+    WorkOrderAccount::try_deserialize(&mut data).expect("WorkOrderAccount must deserialize")
+}
+
+fn fixture(creator_token_balance: u64) -> Fixture {
+    let mut svm = new_svm();
+
+    let authority = Keypair::new();
+
+    fund_sol(&mut svm, &authority);
+
+    let protocol_config = initialize_protocol(&mut svm, &authority);
+
+    let creator = Keypair::new();
+
+    fund_sol(&mut svm, &creator);
+
+    let mint = create_test_mint(&mut svm, creator.pubkey(), creator_token_balance);
+
+    let creator_token_account =
+        create_test_token_account(&mut svm, mint, creator.pubkey(), creator_token_balance);
+
+    let work_order = create_work_order(
+        &mut svm,
+        protocol_config,
+        &creator,
+        mint,
+        [70u8; 32],
+        ESCROW_AMOUNT,
+    );
+
+    Fixture {
+        svm,
+        creator,
+        protocol_config,
+        work_order,
+        mint,
+        creator_token_account,
+    }
+}
+
+#[test]
+fn funding_moves_exact_tokens_and_opens_work_order() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    assert_eq!(
+        token_balance(&fx.svm, &fx.creator_token_account,),
+        ESCROW_AMOUNT
+    );
+
+    let (escrow_vault, instruction) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        fx.creator.pubkey(),
+        fx.mint,
+        fx.creator_token_account,
+    );
+
+    assert!(
+        send_instruction(&mut fx.svm, &fx.creator, instruction,),
+        "fund_work_order must succeed"
+    );
+
+    assert_eq!(token_balance(&fx.svm, &fx.creator_token_account,), 0);
+
+    assert_eq!(token_balance(&fx.svm, &escrow_vault,), ESCROW_AMOUNT);
+
+    let vault_account = fx.svm.get_account(&escrow_vault).unwrap();
+
+    assert_eq!(vault_account.owner, TOKEN_PROGRAM_ID);
+
+    let vault_state = SplTokenAccount::unpack(&vault_account.data).unwrap();
+
+    assert_eq!(vault_state.mint, fx.mint);
+
+    assert_eq!(
+        vault_state.owner, escrow_vault,
+        "vault token authority must be the vault PDA itself"
+    );
+
+    let order = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(order.status, WorkOrderStatus::Open);
+
+    assert_eq!(order.escrow_vault, escrow_vault);
+
+    assert_eq!(order.token_program, TOKEN_PROGRAM_ID);
+}
+
+#[test]
+fn fully_funded_work_order_can_be_claimed() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let (escrow_vault, fund_instruction) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        fx.creator.pubkey(),
+        fx.mint,
+        fx.creator_token_account,
+    );
+
+    assert!(send_instruction(&mut fx.svm, &fx.creator, fund_instruction,));
+
+    assert_eq!(token_balance(&fx.svm, &escrow_vault,), ESCROW_AMOUNT);
+
+    let owner = Keypair::new();
+
+    fund_sol(&mut fx.svm, &owner);
+
+    let device = Keypair::new();
+
+    fund_sol(&mut fx.svm, &device);
+
+    let capabilities =
+        Capability::AerialMobility.bit() | Capability::Gps.bit() | Capability::Telemetry.bit();
+
+    let agent_account = register_agent(
+        &mut fx.svm,
+        fx.protocol_config,
+        &owner,
+        device.pubkey(),
+        [80u8; 32],
+        capabilities,
+    );
+
+    let claim = claim_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+    );
+
+    assert!(
+        send_instruction(&mut fx.svm, &device, claim,),
+        "compatible device must be able to claim funded work"
+    );
+
+    let order = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(order.status, WorkOrderStatus::Claimed);
+
+    assert_eq!(order.claimed_agent, agent_account);
+
+    // Claiming must not touch escrow.
+    assert_eq!(token_balance(&fx.svm, &escrow_vault,), ESCROW_AMOUNT);
+}
+
+#[test]
+fn insufficient_balance_cannot_open_work_order() {
+    let mut fx = fixture(ESCROW_AMOUNT / 2);
+
+    let (escrow_vault, instruction) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        fx.creator.pubkey(),
+        fx.mint,
+        fx.creator_token_account,
+    );
+
+    assert!(
+        !send_instruction(&mut fx.svm, &fx.creator, instruction,),
+        "insufficient source funds must fail"
+    );
+
+    assert_eq!(
+        token_balance(&fx.svm, &fx.creator_token_account,),
+        ESCROW_AMOUNT / 2
+    );
+
+    assert!(
+        fx.svm.get_account(&escrow_vault).is_none(),
+        "failed transaction must roll back vault creation"
+    );
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Draft
+    );
+}
+
+#[test]
+fn third_party_cannot_fund_another_creators_work_order() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let attacker = Keypair::new();
+
+    fund_sol(&mut fx.svm, &attacker);
+
+    let attacker_tokens =
+        create_test_token_account(&mut fx.svm, fx.mint, attacker.pubkey(), ESCROW_AMOUNT);
+
+    let (escrow_vault, instruction) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        attacker.pubkey(),
+        fx.mint,
+        attacker_tokens,
+    );
+
+    assert!(
+        !send_instruction(&mut fx.svm, &attacker, instruction,),
+        "only original WorkOrder creator may fund it"
+    );
+
+    assert_eq!(token_balance(&fx.svm, &attacker_tokens,), ESCROW_AMOUNT);
+
+    assert!(fx.svm.get_account(&escrow_vault).is_none());
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Draft
+    );
+}
+
+#[test]
+fn wrong_mint_cannot_fund_work_order() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let wrong_mint = create_test_mint(&mut fx.svm, fx.creator.pubkey(), ESCROW_AMOUNT);
+
+    let wrong_tokens =
+        create_test_token_account(&mut fx.svm, wrong_mint, fx.creator.pubkey(), ESCROW_AMOUNT);
+
+    let (escrow_vault, instruction) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        fx.creator.pubkey(),
+        wrong_mint,
+        wrong_tokens,
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &fx.creator, instruction,));
+
+    assert_eq!(token_balance(&fx.svm, &wrong_tokens,), ESCROW_AMOUNT);
+
+    assert!(fx.svm.get_account(&escrow_vault).is_none());
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Draft
+    );
+}
+
+#[test]
+fn work_order_cannot_be_funded_twice() {
+    let mut fx = fixture(ESCROW_AMOUNT * 2);
+
+    let (escrow_vault, first_instruction) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        fx.creator.pubkey(),
+        fx.mint,
+        fx.creator_token_account,
+    );
+
+    assert!(send_instruction(
+        &mut fx.svm,
+        &fx.creator,
+        first_instruction,
+    ));
+
+    assert_eq!(token_balance(&fx.svm, &escrow_vault,), ESCROW_AMOUNT);
+
+    assert_eq!(
+        token_balance(&fx.svm, &fx.creator_token_account,),
+        ESCROW_AMOUNT
+    );
+
+    // Ensure second attempt has a fresh transaction blockhash.
+    fx.svm.expire_blockhash();
+
+    let (_, second_instruction) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        fx.creator.pubkey(),
+        fx.mint,
+        fx.creator_token_account,
+    );
+
+    assert!(
+        !send_instruction(&mut fx.svm, &fx.creator, second_instruction,),
+        "Open WorkOrder cannot be funded again"
+    );
+
+    assert_eq!(token_balance(&fx.svm, &escrow_vault,), ESCROW_AMOUNT);
+
+    assert_eq!(
+        token_balance(&fx.svm, &fx.creator_token_account,),
+        ESCROW_AMOUNT
+    );
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Open
+    );
+}
+
+#[test]
+fn incompatible_agent_cannot_claim_funded_work() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let (escrow_vault, instruction) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        fx.creator.pubkey(),
+        fx.mint,
+        fx.creator_token_account,
+    );
+
+    assert!(send_instruction(&mut fx.svm, &fx.creator, instruction,));
+
+    let owner = Keypair::new();
+
+    fund_sol(&mut fx.svm, &owner);
+
+    let device = Keypair::new();
+
+    fund_sol(&mut fx.svm, &device);
+
+    // Does NOT satisfy AerialMobility + GPS.
+    let capabilities = Capability::EnvironmentalSensing.bit();
+
+    let agent_account = register_agent(
+        &mut fx.svm,
+        fx.protocol_config,
+        &owner,
+        device.pubkey(),
+        [90u8; 32],
+        capabilities,
+    );
+
+    let claim = claim_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &device, claim,));
+
+    let order = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(order.status, WorkOrderStatus::Open);
+
+    assert_eq!(order.claimed_agent, Pubkey::default());
+
+    assert_eq!(
+        token_balance(&fx.svm, &escrow_vault,),
+        ESCROW_AMOUNT,
+        "failed claim must not touch escrow"
+    );
+}
+
+fn set_unix_timestamp(svm: &mut LiteSVM, unix_timestamp: i64) {
+    let mut clock = svm.get_sysvar::<Clock>();
+
+    clock.unix_timestamp = unix_timestamp;
+
+    svm.set_sysvar(&clock);
+}
+
+fn read_agent(svm: &LiteSVM, address: &Pubkey) -> AgentAccount {
+    let account = svm.get_account(address).expect("AgentAccount must exist");
+
+    let mut data: &[u8] = &account.data;
+
+    AgentAccount::try_deserialize(&mut data).expect("AgentAccount must deserialize")
+}
+
+fn submit_execution_instruction(
+    protocol_config: Pubkey,
+    work_order: Pubkey,
+    agent_account: Pubkey,
+    agent_signer: Pubkey,
+    args: SubmitExecutionArgs,
+) -> Instruction {
+    Instruction::new_with_bytes(
+        aerosettle::id(),
+        &aerosettle::instruction::SubmitExecution { args }.data(),
+        aerosettle::accounts::SubmitExecution {
+            protocol_config,
+            work_order,
+            agent_account,
+            agent_signer,
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn suspend_agent_instruction(
+    protocol_config: Pubkey,
+    agent_account: Pubkey,
+    actor: Pubkey,
+) -> Instruction {
+    Instruction::new_with_bytes(
+        aerosettle::id(),
+        &aerosettle::instruction::SuspendAgent {}.data(),
+        aerosettle::accounts::ManageAgent {
+            protocol_config,
+            agent_account,
+            actor,
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn fund_and_claim(
+    fx: &mut Fixture,
+    capabilities: u64,
+    agent_id: [u8; 32],
+) -> (Keypair, Keypair, Pubkey, Pubkey) {
+    let (escrow_vault, funding) = fund_work_order_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        fx.creator.pubkey(),
+        fx.mint,
+        fx.creator_token_account,
+    );
+
+    assert!(
+        send_instruction(&mut fx.svm, &fx.creator, funding,),
+        "WorkOrder funding must succeed"
+    );
+
+    let owner = Keypair::new();
+
+    fund_sol(&mut fx.svm, &owner);
+
+    let device = Keypair::new();
+
+    fund_sol(&mut fx.svm, &device);
+
+    let agent_account = register_agent(
+        &mut fx.svm,
+        fx.protocol_config,
+        &owner,
+        device.pubkey(),
+        agent_id,
+        capabilities,
+    );
+
+    let claim = claim_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+    );
+
+    assert!(
+        send_instruction(&mut fx.svm, &device, claim,),
+        "WorkOrder claim must succeed"
+    );
+
+    (owner, device, agent_account, escrow_vault)
+}
+
+fn valid_submission(
+    svm: &mut LiteSVM,
+    work_order: &Pubkey,
+    signature_sequence: u64,
+) -> SubmitExecutionArgs {
+    let order = read_work_order(svm, work_order);
+
+    assert_eq!(order.status, WorkOrderStatus::Claimed);
+
+    let execution_started_at = order.claimed_at;
+
+    let execution_ended_at = order.claimed_at.checked_add(50).unwrap();
+
+    let submission_time = order.claimed_at.checked_add(100).unwrap();
+
+    set_unix_timestamp(svm, submission_time);
+
+    SubmitExecutionArgs {
+        execution_receipt_hash: [101u8; 32],
+
+        evidence_manifest_hash: [102u8; 32],
+
+        provided_evidence: order.evidence_requirements,
+
+        execution_started_at,
+
+        execution_ended_at,
+
+        signature_sequence,
+    }
+}
+
+#[test]
+fn valid_execution_submission_persists_proof_and_consumes_sequence() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities =
+        Capability::AerialMobility.bit() | Capability::Gps.bit() | Capability::Telemetry.bit();
+
+    let (_owner, device, agent_account, escrow_vault) =
+        fund_and_claim(&mut fx, capabilities, [101u8; 32]);
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account,).next_signature_sequence,
+        0
+    );
+
+    let args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    let expected_args = args.clone();
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        args,
+    );
+
+    assert!(
+        send_instruction(&mut fx.svm, &device, submit,),
+        "valid execution must be submitted"
+    );
+
+    let order = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(order.status, WorkOrderStatus::Submitted);
+
+    assert_eq!(
+        order.execution_receipt_hash,
+        expected_args.execution_receipt_hash
+    );
+
+    assert_eq!(
+        order.evidence_manifest_hash,
+        expected_args.evidence_manifest_hash
+    );
+
+    assert_eq!(order.execution_signer, device.pubkey());
+
+    assert_eq!(order.execution_sequence, 0);
+
+    assert_eq!(order.provided_evidence, expected_args.provided_evidence);
+
+    assert_eq!(
+        order.execution_started_at,
+        expected_args.execution_started_at
+    );
+
+    assert_eq!(order.execution_ended_at, expected_args.execution_ended_at);
+
+    assert!(order.submitted_at >= order.execution_ended_at);
+
+    let agent = read_agent(&fx.svm, &agent_account);
+
+    assert_eq!(
+        agent.next_signature_sequence, 1,
+        "successful execution must consume exactly one sequence"
+    );
+
+    assert_eq!(
+        token_balance(&fx.svm, &escrow_vault,),
+        ESCROW_AMOUNT,
+        "submission must not release escrow"
+    );
+}
+
+#[test]
+fn wrong_device_key_cannot_submit_execution() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities = Capability::AerialMobility.bit() | Capability::Gps.bit();
+
+    let (_owner, _device, agent_account, _vault) =
+        fund_and_claim(&mut fx, capabilities, [102u8; 32]);
+
+    let attacker = Keypair::new();
+
+    fund_sol(&mut fx.svm, &attacker);
+
+    let args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        attacker.pubkey(),
+        args,
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &attacker, submit,));
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Claimed
+    );
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        0
+    );
+}
+
+#[test]
+fn different_agent_cannot_submit_claimed_work() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities = Capability::AerialMobility.bit() | Capability::Gps.bit();
+
+    let (_owner, _device, claimed_agent, _vault) =
+        fund_and_claim(&mut fx, capabilities, [103u8; 32]);
+
+    let second_owner = Keypair::new();
+
+    fund_sol(&mut fx.svm, &second_owner);
+
+    let second_device = Keypair::new();
+
+    fund_sol(&mut fx.svm, &second_device);
+
+    let second_agent = register_agent(
+        &mut fx.svm,
+        fx.protocol_config,
+        &second_owner,
+        second_device.pubkey(),
+        [104u8; 32],
+        capabilities,
+    );
+
+    let args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        second_agent,
+        second_device.pubkey(),
+        args,
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &second_device, submit,));
+
+    let order = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(order.status, WorkOrderStatus::Claimed);
+
+    assert_eq!(order.claimed_agent, claimed_agent);
+
+    assert_eq!(
+        read_agent(&fx.svm, &claimed_agent).next_signature_sequence,
+        0
+    );
+
+    assert_eq!(
+        read_agent(&fx.svm, &second_agent).next_signature_sequence,
+        0
+    );
+}
+
+#[test]
+fn missing_required_evidence_rolls_back_submission() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities = Capability::AerialMobility.bit() | Capability::Gps.bit();
+
+    let (_owner, device, agent_account, _vault) =
+        fund_and_claim(&mut fx, capabilities, [105u8; 32]);
+
+    let mut args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    args.provided_evidence = EvidenceRequirement::Telemetry.bit();
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        args,
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &device, submit,));
+
+    let order = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(order.status, WorkOrderStatus::Claimed);
+
+    assert_eq!(order.execution_receipt_hash, [0u8; 32]);
+
+    assert_eq!(order.evidence_manifest_hash, [0u8; 32]);
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        0
+    );
+}
+
+#[test]
+fn wrong_signature_sequence_is_rejected_without_consumption() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities = Capability::AerialMobility.bit() | Capability::Gps.bit();
+
+    let (_owner, device, agent_account, _vault) =
+        fund_and_claim(&mut fx, capabilities, [106u8; 32]);
+
+    let args = valid_submission(&mut fx.svm, &fx.work_order, 7);
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        args,
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &device, submit,));
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Claimed
+    );
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        0
+    );
+}
+
+#[test]
+fn execution_cannot_start_before_claim() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities = Capability::AerialMobility.bit() | Capability::Gps.bit();
+
+    let (_owner, device, agent_account, _vault) =
+        fund_and_claim(&mut fx, capabilities, [107u8; 32]);
+
+    let mut args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    args.execution_started_at = read_work_order(&fx.svm, &fx.work_order)
+        .claimed_at
+        .checked_sub(1)
+        .unwrap();
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        args,
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &device, submit,));
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Claimed
+    );
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        0
+    );
+}
+
+#[test]
+fn execution_after_deadline_is_rejected() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities = Capability::AerialMobility.bit() | Capability::Gps.bit();
+
+    let (_owner, device, agent_account, _vault) =
+        fund_and_claim(&mut fx, capabilities, [108u8; 32]);
+
+    let order = read_work_order(&fx.svm, &fx.work_order);
+
+    set_unix_timestamp(&mut fx.svm, i64::MAX);
+
+    let args = SubmitExecutionArgs {
+        execution_receipt_hash: [101u8; 32],
+
+        evidence_manifest_hash: [102u8; 32],
+
+        provided_evidence: order.evidence_requirements,
+
+        execution_started_at: order.claimed_at,
+
+        // WorkOrder deadline is i64::MAX - 1.
+        execution_ended_at: i64::MAX,
+
+        signature_sequence: 0,
+    };
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        args,
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &device, submit,));
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Claimed
+    );
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        0
+    );
+}
+
+#[test]
+fn suspended_agent_cannot_submit_execution() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities = Capability::AerialMobility.bit() | Capability::Gps.bit();
+
+    let (owner, device, agent_account, _vault) = fund_and_claim(&mut fx, capabilities, [109u8; 32]);
+
+    let suspend = suspend_agent_instruction(fx.protocol_config, agent_account, owner.pubkey());
+
+    assert!(send_instruction(&mut fx.svm, &owner, suspend,));
+
+    let args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        args,
+    );
+
+    assert!(!send_instruction(&mut fx.svm, &device, submit,));
+
+    assert_eq!(
+        read_work_order(&fx.svm, &fx.work_order).status,
+        WorkOrderStatus::Claimed
+    );
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        0
+    );
+}
+
+#[test]
+fn second_submission_for_same_work_order_is_rejected() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities = Capability::AerialMobility.bit() | Capability::Gps.bit();
+
+    let (_owner, device, agent_account, _vault) =
+        fund_and_claim(&mut fx, capabilities, [110u8; 32]);
+
+    let args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    let first_hash = args.execution_receipt_hash;
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        args,
+    );
+
+    assert!(send_instruction(&mut fx.svm, &device, submit,));
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        1
+    );
+
+    fx.svm.expire_blockhash();
+
+    let second = SubmitExecutionArgs {
+        execution_receipt_hash: [111u8; 32],
+
+        evidence_manifest_hash: [112u8; 32],
+
+        provided_evidence: read_work_order(&fx.svm, &fx.work_order).evidence_requirements,
+
+        execution_started_at: read_work_order(&fx.svm, &fx.work_order).execution_started_at,
+
+        execution_ended_at: read_work_order(&fx.svm, &fx.work_order).execution_ended_at,
+
+        signature_sequence: 1,
+    };
+
+    let second_submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        second,
+    );
+
+    assert!(
+        !send_instruction(&mut fx.svm, &device, second_submit,),
+        "Submitted WorkOrder cannot accept a second execution"
+    );
+
+    let order = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(order.status, WorkOrderStatus::Submitted);
+
+    assert_eq!(order.execution_receipt_hash, first_hash);
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        1,
+        "failed second submission must not consume another sequence"
+    );
+}
+
+#[test]
+fn signature_sequence_is_monotonic_across_work_orders() {
+    let mut fx = fixture(ESCROW_AMOUNT * 2);
+
+    let capabilities =
+        Capability::AerialMobility.bit() | Capability::Gps.bit() | Capability::Telemetry.bit();
+
+    let (_owner, device, agent_account, _first_vault) =
+        fund_and_claim(&mut fx, capabilities, [111u8; 32]);
+
+    let first_args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    let first_submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        first_args,
+    );
+
+    assert!(send_instruction(&mut fx.svm, &device, first_submit,));
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        1
+    );
+
+    // Create a second WorkOrder using the remaining creator balance.
+    let second_work_order = create_work_order(
+        &mut fx.svm,
+        fx.protocol_config,
+        &fx.creator,
+        fx.mint,
+        [71u8; 32],
+        ESCROW_AMOUNT,
+    );
+
+    let (_second_vault, second_funding) = fund_work_order_instruction(
+        fx.protocol_config,
+        second_work_order,
+        fx.creator.pubkey(),
+        fx.mint,
+        fx.creator_token_account,
+    );
+
+    assert!(send_instruction(&mut fx.svm, &fx.creator, second_funding,));
+
+    let second_claim = claim_instruction(
+        fx.protocol_config,
+        second_work_order,
+        agent_account,
+        device.pubkey(),
+    );
+
+    assert!(send_instruction(&mut fx.svm, &device, second_claim,));
+
+    // Prepare second execution, but replay stale sequence 0.
+    let stale_args = valid_submission(&mut fx.svm, &second_work_order, 0);
+
+    let stale_submit = submit_execution_instruction(
+        fx.protocol_config,
+        second_work_order,
+        agent_account,
+        device.pubkey(),
+        stale_args,
+    );
+
+    assert!(
+        !send_instruction(&mut fx.svm, &device, stale_submit,),
+        "sequence 0 must be invalid after it was consumed by first WorkOrder"
+    );
+
+    assert_eq!(
+        read_work_order(&fx.svm, &second_work_order).status,
+        WorkOrderStatus::Claimed
+    );
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        1
+    );
+
+    // Sequence 1 is now the only expected sequence.
+    let correct_args = valid_submission(&mut fx.svm, &second_work_order, 1);
+
+    let correct_submit = submit_execution_instruction(
+        fx.protocol_config,
+        second_work_order,
+        agent_account,
+        device.pubkey(),
+        correct_args,
+    );
+
+    assert!(send_instruction(&mut fx.svm, &device, correct_submit,));
+
+    assert_eq!(
+        read_work_order(&fx.svm, &second_work_order).status,
+        WorkOrderStatus::Submitted
+    );
+
+    assert_eq!(
+        read_agent(&fx.svm, &agent_account).next_signature_sequence,
+        2
+    );
+}
+
+#[test]
+fn claim_freezes_economic_beneficiary_through_execution() {
+    let mut fx = fixture(ESCROW_AMOUNT);
+
+    let capabilities =
+        Capability::AerialMobility.bit() | Capability::Gps.bit() | Capability::Telemetry.bit();
+
+    let (owner, device, agent_account, escrow_vault) =
+        fund_and_claim(&mut fx, capabilities, [201u8; 32]);
+
+    let claimed = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(claimed.status, WorkOrderStatus::Claimed);
+
+    assert_eq!(claimed.claimed_agent, agent_account);
+
+    assert_eq!(
+        claimed.settlement_beneficiary,
+        owner.pubkey(),
+        "claim must freeze the original agent owner"
+    );
+
+    let args = valid_submission(&mut fx.svm, &fx.work_order, 0);
+
+    let submit = submit_execution_instruction(
+        fx.protocol_config,
+        fx.work_order,
+        agent_account,
+        device.pubkey(),
+        args,
+    );
+
+    assert!(send_instruction(&mut fx.svm, &device, submit,));
+
+    let submitted = read_work_order(&fx.svm, &fx.work_order);
+
+    assert_eq!(submitted.status, WorkOrderStatus::Submitted);
+
+    assert_eq!(
+        submitted.settlement_beneficiary,
+        owner.pubkey(),
+        "execution must preserve economic beneficiary"
+    );
+
+    assert_eq!(
+        token_balance(&fx.svm, &escrow_vault,),
+        ESCROW_AMOUNT,
+        "beneficiary snapshot must not move escrow"
+    );
+}

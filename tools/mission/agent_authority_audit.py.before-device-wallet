@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""AeroSettle Agent Authority Audit - read only."""
+
+import base64
+import hashlib
+import json
+import subprocess
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+RPC = "http://127.0.0.1:8899"
+API = "http://127.0.0.1:8787"
+
+PROGRAM = (
+    "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
+)
+
+GENESIS = (
+    "HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg"
+)
+
+ALPHABET = (
+    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+)
+
+
+def b58encode(raw):
+    value = int.from_bytes(raw, "big")
+    encoded = ""
+
+    while value:
+        value, remainder = divmod(value, 58)
+        encoded = ALPHABET[remainder] + encoded
+
+    zeros = len(raw) - len(raw.lstrip(b"\x00"))
+    return ("1" * zeros) + encoded
+
+
+def rpc(method, params=None):
+    request = urllib.request.Request(
+        RPC,
+        data=json.dumps({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params or [],
+        }).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+
+    with urllib.request.urlopen(
+        request, timeout=20
+    ) as response:
+        payload = json.load(response)
+
+    if "error" in payload:
+        raise RuntimeError(payload["error"])
+
+    return payload["result"]
+
+
+def local_pubkey(path):
+    if not path.is_file():
+        return None
+
+    result = subprocess.run(
+        ["solana-keygen", "pubkey", str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    return result.stdout.strip()
+
+
+def main():
+    if rpc("getGenesisHash") != GENESIS:
+        raise RuntimeError("Localnet genesis incorrecto")
+
+    with urllib.request.urlopen(
+        API + "/v1/agents", timeout=20
+    ) as response:
+        payload = json.load(response)
+
+    if (
+        payload.get("meta", {}).get("program_id")
+        != PROGRAM
+    ):
+        raise RuntimeError("Marketplace Program ID incorrecto")
+
+    if payload.get("page", {}).get("has_more"):
+        raise RuntimeError("Lista incompleta de agentes")
+
+    agents = payload["data"]
+
+    wallets = {
+        "Solana CLI": (
+            Path.home() / ".config/solana/id.json"
+        ),
+        "Localnet Dev": (
+            ROOT / ".aerosettle-local/dev-signer-wallet.json"
+        ),
+    }
+
+    public_keys = {
+        name: local_pubkey(path)
+        for name, path in wallets.items()
+    }
+
+    print("=== LOCAL WALLET PUBLIC KEYS ===")
+
+    for name, pubkey in public_keys.items():
+        print(name, ":", pubkey or "NO ENCONTRADA")
+
+    expected_disc = hashlib.sha256(
+        b"account:AgentAccount"
+    ).digest()[:8]
+
+    results = []
+
+    for agent in agents:
+        address = agent["agent_account"]
+
+        value = rpc(
+            "getAccountInfo",
+            [
+                address,
+                {
+                    "encoding": "base64",
+                    "commitment": "confirmed",
+                },
+            ],
+        )["value"]
+
+        if value is None:
+            raise RuntimeError(
+                f"Cuenta no encontrada: {address}"
+            )
+
+        if value["owner"] != PROGRAM:
+            raise RuntimeError("Propietario on-chain incorrecto")
+
+        data = base64.b64decode(
+            value["data"][0],
+            validate=True,
+        )
+
+        if len(data) < 196:
+            raise RuntimeError(
+                "AgentAccount demasiado pequeña"
+            )
+
+        if data[:8] != expected_disc:
+            raise RuntimeError(
+                "Discriminador AgentAccount inválido"
+            )
+
+        # Layout de identity.rs
+        protocol = b58encode(data[9:41])
+        agent_id = data[41:73].hex()
+        owner = b58encode(data[73:105])
+        signer = b58encode(data[105:137])
+        capabilities = int.from_bytes(
+            data[138:146], "little"
+        )
+
+        if (
+            protocol != agent["protocol_config"]
+            or agent_id != agent["agent_id"]
+            or capabilities != int(agent["capabilities"])
+        ):
+            raise RuntimeError(
+                "Diferencia entre API y cuenta on-chain"
+            )
+
+        matches = [
+            name
+            for name, pubkey in public_keys.items()
+            if pubkey == signer
+        ]
+
+        entry = {
+            "agent_account": address,
+            "owner": owner,
+            "signing_authority": signer,
+            "capabilities": capabilities,
+            "capability_mask_33": (
+                capabilities & 33 == 33
+            ),
+            "active": agent["active"],
+            "local_signers": matches,
+        }
+
+        results.append(entry)
+
+        print("\n=== AGENT ===")
+        print("Account:", address)
+        print("Owner:", owner)
+        print("Signing authority:", signer)
+        print("Capabilities:", capabilities)
+        print("Matches mask 33:", entry["capability_mask_33"])
+        print("Active:", entry["active"])
+        print("Local signing keys:", matches or "NONE")
+
+    output = (
+        ROOT / ".aerosettle-local/agent-authority-audit.json"
+    )
+
+    output.parent.mkdir(
+        parents=True, exist_ok=True
+    )
+
+    output.write_text(
+        json.dumps({
+            "genesis": GENESIS,
+            "mode": "read-only",
+            "agents": results,
+        }, indent=2) + "\n"
+    )
+
+    print("\n✅ Auditoría terminada")
+    print("Report:", output)
+    print("Transactions sent: 0")
+
+
+if __name__ == "__main__":
+    main()

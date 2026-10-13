@@ -1,0 +1,51 @@
+.anchor
+.DS_Store
+target
+**/*.rs.bk
+node_modules
+test-ledger
+.yarn
+.surfpool
+
+/.aerosettle-local/
+
+.aerosettle-local/dev-signer-wallet.json
+
+# === AEROSETTLE SECURITY IGNORE ===
+
+# Local execution state
+.aerosettle-local/
+.aerosettle-local-*/
+.aerosettle-backups/
+
+# Solana / Anchor
+**/target/
+**/test-ledger/
+**/.anchor/
+
+# Credentials and wallets
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+**/*keypair*.json
+**/wallet*.json
+**/keys/*.json
+**/*.pem
+
+# Node / Web
+**/node_modules/
+**/.next/
+**/dist/
+**/build/
+**/coverage/
+
+# Python
+**/__pycache__/
+**/.venv/
+**/*.pyc
+
+# Local artifacts
+**/*.log
+Anchor.toml.backup
+.DS_Store

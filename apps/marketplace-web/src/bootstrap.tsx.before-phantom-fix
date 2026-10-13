@@ -1,0 +1,36 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+
+import {
+  ConnectionProvider,
+  WalletProvider,
+} from '@solana/wallet-adapter-react';
+
+import {
+  WalletModalProvider,
+} from '@solana/wallet-adapter-react-ui';
+
+import '@solana/wallet-adapter-react-ui/styles.css';
+import './styles.css';
+
+import { App } from './App';
+
+const RPC = 'http://127.0.0.1:8899';
+
+const root = document.getElementById('root');
+
+if (!root) {
+  throw new Error('Missing root element');
+}
+
+createRoot(root).render(
+  <React.StrictMode>
+    <ConnectionProvider endpoint={RPC}>
+      <WalletProvider wallets={[]} autoConnect={false}>
+        <WalletModalProvider>
+          <App />
+        </WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
+  </React.StrictMode>
+);

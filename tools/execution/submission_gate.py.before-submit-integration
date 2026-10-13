@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+"""AeroSettle Submission Gate - read only."""
+
+import base64
+import json
+import struct
+import sys
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+ROOT = Path(__file__).resolve().parents[2]
+
+sys.path.insert(
+    0, str(ROOT / "tools/discovery")
+)
+
+import agent_discovery as d
+
+RPC = "http://127.0.0.1:8899"
+
+PROGRAM = (
+    "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
+)
+GENESIS = (
+    "HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg"
+)
+ORDER = (
+    "EnkZQWDqF5HeFeusZ7xnj7tngVN9xASofmKvXtDLeqbx"
+)
+AGENT = (
+    "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB"
+)
+DEVICE = (
+    "C5kqBc9ntqCAqSNDN3ywdK3Hkay29zixMsxrvesQLtnt"
+)
+
+CLOCK = "SysvarC1ock11111111111111111111111111111111"
+
+
+def rpc(method, params=None):
+    body = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params or [],
+    }).encode()
+
+    request = urllib.request.Request(
+        RPC,
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+
+    with urllib.request.urlopen(
+        request, timeout=20
+    ) as response:
+        result = json.load(response)
+
+    if "error" in result:
+        raise RuntimeError(result["error"])
+
+    return result["result"]
+
+
+def get_account(address):
+    result = rpc("getAccountInfo", [
+        address,
+        {
+            "encoding": "base64",
+            "commitment": "confirmed",
+        }
+    ])
+
+    value = result["value"]
+
+    if value is None:
+        raise RuntimeError(
+            "Cuenta inexistente: " + address
+        )
+
+    return value
+
+
+def format_time(value):
+    if value is None:
+        return "NO DISPONIBLE"
+
+    return datetime.fromtimestamp(
+        int(value),
+        ZoneInfo("America/Mazatlan")
+    ).isoformat()
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def main():
+    require(
+        rpc("getGenesisHash") == GENESIS,
+        "Genesis incorrecto"
+    )
+
+    raw_idl = json.loads(
+        (
+            ROOT / "target/idl/aerosettle.discovery.json"
+        ).read_text()
+    )
+
+    require(
+        raw_idl.get("address") == PROGRAM,
+        "Program ID incorrecto en IDL"
+    )
+
+    idl = d.Idl(raw_idl)
+
+    clock_value = get_account(CLOCK)
+
+    clock_raw = base64.b64decode(
+        clock_value["data"][0]
+    )
+
+    require(
+        len(clock_raw) >= 40,
+        "Clock sysvar inválido"
+    )
+
+    chain_now = struct.unpack_from(
+        "<q", clock_raw, 32
+    )[0]
+
+    order_raw = get_account(ORDER)
+    agent_raw = get_account(AGENT)
+
+    for account in (order_raw, agent_raw):
+        require(
+            account["owner"] == PROGRAM,
+            "Cuenta no pertenece a AeroSettle"
+        )
+
+    order = idl.decode_account(
+        "WorkOrderAccount",
+        d.parse_rpc_account(
+            order_raw, PROGRAM
+        ),
+    )
+
+    agent = idl.decode_account(
+        "AgentAccount",
+        d.parse_rpc_account(
+            agent_raw, PROGRAM
+        ),
+    )
+
+    require(
+        order.get("status") == "Claimed",
+        "WorkOrder no está Claimed"
+    )
+
+    require(
+        order.get("claimed_agent") == AGENT,
+        "El agente reclamado no coincide"
+    )
+
+    require(
+        agent.get("signing_authority") == DEVICE,
+        "Device signer no coincide"
+    )
+
+    claimed_at = int(order["claimed_at"])
+    execution_deadline = int(
+        order["execution_deadline"]
+    )
+    verification_deadline = int(
+        order["verification_deadline"]
+    )
+    sequence = int(
+        agent["next_signature_sequence"]
+    )
+
+    submission_open = (
+        chain_now <= verification_deadline
+    )
+
+    execution_window_open = (
+        chain_now <= execution_deadline
+    )
+
+    print("=== AEROSETTLE SUBMISSION GATE ===")
+    print("Genesis: OK")
+    print("Status:", order["status"])
+    print("Claimed agent:", order["claimed_agent"])
+    print("Device signer:", DEVICE)
+
+    print("\n=== DEADLINES ===")
+    print("Chain now:", format_time(chain_now))
+    print("Claimed at:", format_time(claimed_at))
+    print(
+        "Execution deadline:",
+        format_time(execution_deadline)
+    )
+    print(
+        "Verification deadline:",
+        format_time(verification_deadline)
+    )
+    print(
+        "Execution window open:",
+        execution_window_open
+    )
+    print(
+        "Submission window open:",
+        submission_open
+    )
+
+    print("\n=== REPLAY PROTECTION ===")
+    print(
+        "Next signature sequence:",
+        sequence
+    )
+
+    print("\n=== EVIDENCE FIELDS ===")
+
+    for key, value in order.items():
+        if "evidence" in key.lower():
+            print(key + ":", value)
+
+    print("\n=== SUBMIT EXECUTION SCHEMA ===")
+
+    instructions = [
+        ix
+        for ix in raw_idl["instructions"]
+        if ix["name"] == "submit_execution"
+    ]
+
+    require(
+        len(instructions) == 1,
+        "submit_execution no es único"
+    )
+
+    instruction = instructions[0]
+    print(
+        "Instruction discriminator:",
+        instruction["discriminator"]
+    )
+
+    type_name = instruction["args"][0][
+        "type"
+    ]["defined"]["name"]
+
+    matches = [
+        item
+        for item in raw_idl.get("types", [])
+        if item["name"] == type_name
+        or item["name"].split("::")[-1]
+            == type_name.split("::")[-1]
+    ]
+
+    require(
+        len(matches) == 1,
+        "SubmitExecutionArgs no se pudo "
+        "resolver de forma única"
+    )
+
+    definition = matches[0]
+
+    require(
+        definition.get("type", {}).get("kind")
+            == "struct",
+        "Se esperaba struct Borsh"
+    )
+
+    fields = definition["type"]["fields"]
+
+    print("Type:", definition["name"])
+    print("Borsh fields, ordered:")
+
+    for index, field in enumerate(fields, 1):
+        print(
+            f" {index}. {field['name']}: "
+            f"{field['type']}"
+        )
+
+    report = {
+        "schema_version":
+            "aerosettle.execution.gate.v1",
+        "mode": "read-only",
+        "genesis": GENESIS,
+        "work_order": ORDER,
+        "agent": AGENT,
+        "device": DEVICE,
+        "chain_now": chain_now,
+        "claimed_at": claimed_at,
+        "execution_deadline": execution_deadline,
+        "verification_deadline":
+            verification_deadline,
+        "execution_window_open":
+            execution_window_open,
+        "submission_window_open":
+            submission_open,
+        "next_signature_sequence":
+            sequence,
+        "submit_execution_fields": fields,
+        "transactions_sent": 0,
+    }
+
+    output = (
+        ROOT /
+        ".aerosettle-local/execution-gate.json"
+    )
+
+    output.parent.mkdir(
+        parents=True, exist_ok=True
+    )
+
+    output.write_text(
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            indent=2
+        ) + "\n"
+    )
+
+    print("\nReport:", output)
+
+    if not submission_open:
+        print(
+            "⚠️ VERIFICATION DEADLINE EXPIRED: "
+            "submission bloqueado"
+        )
+    elif not execution_window_open:
+        print(
+            "⚠️ Ejecución vencida: sólo podría "
+            "enviarse evidencia de trabajo "
+            "realizado previamente dentro del plazo"
+        )
+    else:
+        print(
+            "✅ Ventanas de ejecución y "
+            "submission vigentes"
+        )
+
+    print("Transactions sent: 0")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(
+            "❌ SUBMISSION GATE:",
+            error,
+            file=sys.stderr
+        )
+        sys.exit(1)

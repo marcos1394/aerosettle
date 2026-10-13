@@ -1,0 +1,889 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "AeroSettle Marketplace API",
+    "version": "0.3.3",
+    "description": "Localnet read-only API. Matching is advisory; claim_work_order remains authoritative on-chain. No authentication; bind to loopback only."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8787"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/openapi.json": {
+      "get": {
+        "summary": "OpenAPI document",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Check ledger connectivity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "summary": "List agents",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentStatus"
+          },
+          {
+            "$ref": "#/components/parameters/Active"
+          },
+          {
+            "$ref": "#/components/parameters/CapabilitiesAll"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cursor no longer matches results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}": {
+      "get": {
+        "summary": "Get agent",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/work-orders": {
+      "get": {
+        "summary": "List WorkOrders",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderStatus"
+          },
+          {
+            "$ref": "#/components/parameters/Discoverable"
+          },
+          {
+            "$ref": "#/components/parameters/RequiredCapabilitiesAll"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkOrderPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cursor no longer matches results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/work-orders/{work_order_id}": {
+      "get": {
+        "summary": "Get WorkOrder",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkOrderId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkOrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/work-orders/{work_order_id}/matches": {
+      "get": {
+        "summary": "Evaluate agent eligibility using Rust",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkOrderId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/marketplace": {
+      "get": {
+        "summary": "Get consolidated local marketplace",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Snapshot exceeds the local collection limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Pubkey": {
+        "type": "string",
+        "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+        "description": "Base58-encoded Solana public key"
+      },
+      "Uint64": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$",
+        "description": "Unsigned u64 encoded as decimal string",
+        "maxLength": 20
+      },
+      "Agent": {
+        "type": "object",
+        "required": [
+          "agent_account",
+          "agent_id",
+          "protocol_config",
+          "capabilities",
+          "active",
+          "status"
+        ],
+        "properties": {
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "agent_id": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "protocol_config": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "WorkOrder": {
+        "type": "object",
+        "required": [
+          "work_order_account",
+          "protocol_config",
+          "required_capabilities",
+          "execution_deadline",
+          "is_open",
+          "status",
+          "discoverable"
+        ],
+        "properties": {
+          "work_order_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "protocol_config": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "required_capabilities": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "execution_deadline": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "is_open": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "discoverable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Page": {
+        "type": "object",
+        "required": [
+          "limit",
+          "has_more",
+          "next_cursor"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          }
+        }
+      },
+      "Meta": {
+        "type": "object",
+        "properties": {
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "commitment": {
+            "type": "string"
+          },
+          "chain_now_unix": {
+            "type": "integer"
+          },
+          "rpc_context_slots": {
+            "type": "object"
+          },
+          "atomic_snapshot": {
+            "type": "boolean"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "matching_engine": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AgentPage": {
+        "type": "object",
+        "required": [
+          "data",
+          "count",
+          "total_count",
+          "page",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Agent"
+            }
+          },
+          "count": {
+            "type": "integer"
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "WorkOrderPage": {
+        "type": "object",
+        "required": [
+          "data",
+          "count",
+          "total_count",
+          "page",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkOrder"
+            }
+          },
+          "count": {
+            "type": "integer"
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "AgentResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Agent"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "WorkOrderResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkOrder"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "MatchesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "work_order": {
+                "$ref": "#/components/schemas/WorkOrder"
+              },
+              "eligible_agents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              },
+              "evaluations": {
+                "type": "array"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "MarketplaceResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "protocol_config": {
+                "$ref": "#/components/schemas/Pubkey"
+              },
+              "paused": {
+                "type": "boolean"
+              },
+              "agents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              },
+              "work_orders": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkOrder"
+                }
+              },
+              "eligible_agents_by_order": {
+                "type": "object"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "AgentId": {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Pubkey"
+        }
+      },
+      "WorkOrderId": {
+        "name": "work_order_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Pubkey"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Maximum items on one page",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "description": "Opaque cursor returned by a previous page. Invalid after a server restart or a result change.",
+        "schema": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "AgentStatus": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Agent lifecycle status",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "Active",
+            "OwnerSuspended",
+            "AdminSuspended",
+            "Revoked"
+          ]
+        }
+      },
+      "OrderStatus": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "WorkOrder status",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "Draft",
+            "Open",
+            "Claimed",
+            "Submitted",
+            "Verified",
+            "Settled"
+          ]
+        }
+      },
+      "Active": {
+        "name": "active",
+        "in": "query",
+        "required": false,
+        "description": "Whether the agent is active",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "Discoverable": {
+        "name": "discoverable",
+        "in": "query",
+        "required": false,
+        "description": "Whether the WorkOrder is currently discoverable",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "CapabilitiesAll": {
+        "name": "capabilities_all",
+        "in": "query",
+        "required": false,
+        "description": "Require every specified capability bit on agents",
+        "schema": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "description": "Unsigned u64 encoded as decimal string",
+          "maxLength": 20
+        }
+      },
+      "RequiredCapabilitiesAll": {
+        "name": "required_capabilities_all",
+        "in": "query",
+        "required": false,
+        "description": "Select orders requiring all specified bits",
+        "schema": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "description": "Unsigned u64 encoded as decimal string",
+          "maxLength": 20
+        }
+      }
+    }
+  }
+}
