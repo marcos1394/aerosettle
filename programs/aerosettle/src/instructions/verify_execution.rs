@@ -57,6 +57,11 @@ pub fn handle_verify_execution(
     );
 
     require!(
+        now <= order.verification_deadline,
+        WorkOrderError::VerificationAfterDeadline
+    );
+
+    require!(
         args.verification_attestation_hash != [0u8; 32],
         WorkOrderError::InvalidVerificationAttestationHash
     );

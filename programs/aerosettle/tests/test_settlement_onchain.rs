@@ -322,7 +322,6 @@ fn setup_verified(model: PaymentModel, status: VerificationStatus, bps: u16) -> 
     assert_eq!(submitted.status, WorkOrderStatus::Submitted);
 
     let verified_at = submitted.submitted_at + 50;
-    set_time(&mut svm, verified_at);
     let attestation = VerificationAttestation::new(
         submitted.work_order_id,
         submitted.execution_receipt_hash,
@@ -334,25 +333,48 @@ fn setup_verified(model: PaymentModel, status: VerificationStatus, bps: u16) -> 
     );
     // CanonicalCommitment supplies commitment_hash().
     use aerosettle::CanonicalCommitment;
-    must_send(
-        &mut svm,
-        &verifier,
-        instruction(
-            aerosettle::instruction::VerifyExecution {
-                args: VerifyExecutionArgs {
-                    verification_attestation_hash: attestation.commitment_hash(),
-                    status,
-                    completion_bps: bps,
-                    verified_at,
-                },
+
+    let verify_ix = instruction(
+        aerosettle::instruction::VerifyExecution {
+            args: VerifyExecutionArgs {
+                verification_attestation_hash: attestation.commitment_hash(),
+                status,
+                completion_bps: bps,
+                verified_at,
             },
-            aerosettle::accounts::VerifyExecution {
-                protocol_config,
-                work_order,
-                verifier: verifier.pubkey(),
-            },
-        ),
+        },
+        aerosettle::accounts::VerifyExecution {
+            protocol_config,
+            work_order,
+            verifier: verifier.pubkey(),
+        },
     );
+
+    // Regression: reject a backdated attestation submitted
+    // after the actual on-chain verification deadline.
+    set_time(&mut svm, submitted.verification_deadline + 1);
+
+    let late_result = send(&mut svm, &verifier, verify_ix.clone());
+
+    assert!(
+        late_result.is_err(),
+        "Backdated verification must fail after deadline"
+    );
+
+    assert_eq!(
+        read_order(&svm, work_order).status,
+        WorkOrderStatus::Submitted
+    );
+
+    assert_eq!(token_balance(&svm, vault), TOTAL);
+
+    // The identical instruction must succeed inside
+    // the valid window. Refresh the blockhash to prevent
+    // the earlier failed transaction from being reused.
+    set_time(&mut svm, verified_at);
+    svm.expire_blockhash();
+
+    must_send(&mut svm, &verifier, verify_ix);
     let verified = read_order(&svm, work_order);
     assert_eq!(verified.status, WorkOrderStatus::Verified);
     assert_eq!(verified.settlement_beneficiary, owner.pubkey());
