@@ -18,6 +18,8 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 import './styles.css';
 
 import { App } from './App';
+import MissionLifecyclePanel from './MissionLifecyclePanel';
+import AgentMarketplacePanel from './AgentMarketplacePanel';
 
 const RPC = 'http://127.0.0.1:8899';
 
@@ -42,7 +44,7 @@ createRoot(root).render(
     <ConnectionProvider endpoint={RPC}>
       <WalletProvider wallets={wallets} autoConnect={false}>
         <WalletModalProvider>
-          <><App /><FundingPanel /></>
+          <><App /><FundingPanel /><MissionLifecyclePanel /><AgentMarketplacePanel /></>
         </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
