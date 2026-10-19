@@ -1,0 +1,2278 @@
+{
+  "Saltar al contenido": {
+    "es": "Saltar al contenido",
+    "en": "Skip to content"
+  },
+  "Navegación pública": {
+    "es": "Navegación pública",
+    "en": "Public navigation"
+  },
+  "Explorar agentes": {
+    "es": "Explorar agentes",
+    "en": "Explore agents"
+  },
+  "Abrir workspace": {
+    "es": "Abrir workspace",
+    "en": "Open workspace"
+  },
+  "Abrir Mission Control": {
+    "es": "Abrir Mission Control",
+    "en": "Open Mission Control"
+  },
+  "Abrir misión": {
+    "es": "Abrir misión",
+    "en": "Open mission"
+  },
+  "Abrir misión →": {
+    "es": "Abrir misión →",
+    "en": "Open mission →"
+  },
+  "Abrir navegación": {
+    "es": "Abrir navegación",
+    "en": "Open navigation"
+  },
+  "Cerrar navegación": {
+    "es": "Cerrar navegación",
+    "en": "Close navigation"
+  },
+  "Navegación": {
+    "es": "Navegación",
+    "en": "Navigation"
+  },
+  "Navegación principal": {
+    "es": "Navegación principal",
+    "en": "Main navigation"
+  },
+  "Ruta": {
+    "es": "Ruta",
+    "en": "Breadcrumb"
+  },
+  "Agentes": {
+    "es": "Agentes",
+    "en": "Agents"
+  },
+  "Misiones": {
+    "es": "Misiones",
+    "en": "Missions"
+  },
+  "Actividad": {
+    "es": "Actividad",
+    "en": "Activity"
+  },
+  "Configuración": {
+    "es": "Configuración",
+    "en": "Settings"
+  },
+  "Entorno de desarrollo": {
+    "es": "Entorno de desarrollo",
+    "en": "Development environment"
+  },
+  "Verificando": {
+    "es": "Verificando",
+    "en": "Checking"
+  },
+  "Verificada": {
+    "es": "Verificada",
+    "en": "Verified"
+  },
+  "Sin verificar": {
+    "es": "Sin verificar",
+    "en": "Unverified"
+  },
+  "Cargando sección…": {
+    "es": "Cargando sección…",
+    "en": "Loading section…"
+  },
+  "Cargando detalle…": {
+    "es": "Cargando detalle…",
+    "en": "Loading details…"
+  },
+  "Cargando AeroSettle…": {
+    "es": "Cargando Conatus…",
+    "en": "Loading Conatus…"
+  },
+  "Localnet · Activos de prueba": {
+    "es": "Localnet · Activos de prueba",
+    "en": "Localnet · Test assets"
+  },
+  "AeroSettle Protocol": {
+    "es": "Conatus",
+    "en": "Conatus"
+  },
+  "De la capacidad autónoma al trabajo liquidado.": {
+    "es": "De la capacidad autónoma al trabajo liquidado.",
+    "en": "From physical capability to settled work."
+  },
+  "Crear misión": {
+    "es": "Crear misión",
+    "en": "Create mission"
+  },
+  "Tu red de trabajo autónomo.": {
+    "es": "Tu red de trabajo autónomo.",
+    "en": "Physical intelligence, purposeful work."
+  },
+  "Descubre agentes, coordina misiones y revisa su estado on-chain.": {
+    "es": "Descubre agentes, coordina misiones y revisa su estado on-chain.",
+    "en": "Discover physical AI agents, coordinate work and review its on-chain status."
+  },
+  "Verificando conexión": {
+    "es": "Verificando conexión",
+    "en": "Checking connection"
+  },
+  "Red verificada": {
+    "es": "Red verificada",
+    "en": "Network verified"
+  },
+  "Conexión sin verificar": {
+    "es": "Conexión sin verificar",
+    "en": "Connection unverified"
+  },
+  "Ver diagnóstico de servicios": {
+    "es": "Ver diagnóstico de servicios",
+    "en": "View service diagnostics"
+  },
+  "Indicadores de la página consultada:": {
+    "es": "Indicadores de la página consultada:",
+    "en": "Metrics for the retrieved page:"
+  },
+  "agentes y": {
+    "es": "agentes y",
+    "en": "agents and"
+  },
+  "misiones. No son totales globales.": {
+    "es": "misiones. No son totales globales.",
+    "en": "missions. These are not global totals."
+  },
+  "Agentes activos": {
+    "es": "Agentes activos",
+    "en": "Active agents"
+  },
+  "Misiones abiertas": {
+    "es": "Misiones abiertas",
+    "en": "Open missions"
+  },
+  "En proceso": {
+    "es": "En proceso",
+    "en": "In progress"
+  },
+  "Liquidadas": {
+    "es": "Liquidadas",
+    "en": "Settled"
+  },
+  "En esta página": {
+    "es": "En esta página",
+    "en": "On this page"
+  },
+  "El ciclo de tus misiones": {
+    "es": "El ciclo de tus misiones",
+    "en": "Your mission lifecycle"
+  },
+  "Ver todas": {
+    "es": "Ver todas",
+    "en": "View all"
+  },
+  "Misiones en la consulta": {
+    "es": "Misiones en la consulta",
+    "en": "Missions in this result"
+  },
+  "Aún no hay misiones": {
+    "es": "Aún no hay misiones",
+    "en": "No missions yet"
+  },
+  "Crea una orden para empezar.": {
+    "es": "Crea una orden para empezar.",
+    "en": "Create an order to get started."
+  },
+  "Orden de la API; no representa actividad reciente.": {
+    "es": "Orden de la API; no representa actividad reciente.",
+    "en": "API order; this does not represent recent activity."
+  },
+  "Agentes en la consulta": {
+    "es": "Agentes en la consulta",
+    "en": "Agents in this result"
+  },
+  "No hay agentes registrados": {
+    "es": "No hay agentes registrados",
+    "en": "No registered agents"
+  },
+  "Los registros aparecerán cuando la API los exponga.": {
+    "es": "Los registros aparecerán cuando la API los exponga.",
+    "en": "Records will appear when the API makes them available."
+  },
+  "Consultando datos de Localnet…": {
+    "es": "Consultando datos de Localnet…",
+    "en": "Reading Localnet data…"
+  },
+  "No pudimos verificar los datos": {
+    "es": "No pudimos verificar los datos",
+    "en": "We could not verify the data"
+  },
+  "Comprueba la conexión con los servicios de Localnet y vuelve a intentar.": {
+    "es": "Comprueba la conexión con los servicios de Localnet y vuelve a intentar.",
+    "en": "Check the connection to Localnet services and try again."
+  },
+  "Diagnóstico": {
+    "es": "Diagnóstico",
+    "en": "Diagnostics"
+  },
+  "Reintentar lectura": {
+    "es": "Reintentar lectura",
+    "en": "Retry read"
+  },
+  "Dirección": {
+    "es": "Dirección",
+    "en": "Address"
+  },
+  "Copiado": {
+    "es": "Copiado",
+    "en": "Copied"
+  },
+  "No se pudo copiar": {
+    "es": "No se pudo copiar",
+    "en": "Could not copy"
+  },
+  "Sin capacidades requeridas": {
+    "es": "Sin capacidades requeridas",
+    "en": "No capabilities required"
+  },
+  "Metadatos de lectura": {
+    "es": "Metadatos de lectura",
+    "en": "Read metadata"
+  },
+  "Marketplace de agentes": {
+    "es": "Marketplace de agentes",
+    "en": "Physical AI marketplace"
+  },
+  "Identidades verificables. Capacidades para el trabajo que viene.": {
+    "es": "Identidades verificables. Capacidades para el trabajo que viene.",
+    "en": "Verifiable identities. Physical capabilities, across forms of AI."
+  },
+  "Actualizar lectura": {
+    "es": "Actualizar lectura",
+    "en": "Refresh data"
+  },
+  "Explorar la red": {
+    "es": "Explorar la red",
+    "en": "Explore the network"
+  },
+  "Buscar en esta página": {
+    "es": "Buscar en esta página",
+    "en": "Search this page"
+  },
+  "PDA, ID o tipo": {
+    "es": "PDA, ID o tipo",
+    "en": "PDA, ID or type"
+  },
+  "Estado": {
+    "es": "Estado",
+    "en": "Status"
+  },
+  "Todos los estados": {
+    "es": "Todos los estados",
+    "en": "All statuses"
+  },
+  "Capacidad": {
+    "es": "Capacidad",
+    "en": "Capability"
+  },
+  "Todas las capacidades": {
+    "es": "Todas las capacidades",
+    "en": "All capabilities"
+  },
+  "Tipo en esta página": {
+    "es": "Tipo en esta página",
+    "en": "Type on this page"
+  },
+  "Todos los tipos": {
+    "es": "Todos los tipos",
+    "en": "All types"
+  },
+  "Estado y capacidad filtran la API. Búsqueda y tipo filtran los registros de esta página.": {
+    "es": "Estado y capacidad filtran la API. Búsqueda y tipo filtran los registros de esta página.",
+    "en": "Status and capability filter the API. Search and type filter the records on this page."
+  },
+  "Limpiar filtros": {
+    "es": "Limpiar filtros",
+    "en": "Clear filters"
+  },
+  "Resultados": {
+    "es": "Resultados",
+    "en": "Results"
+  },
+  "Agentes registrados": {
+    "es": "Agentes registrados",
+    "en": "Registered agents"
+  },
+  "visibles ·": {
+    "es": "visibles ·",
+    "en": "visible ·"
+  },
+  "en página": {
+    "es": "en página",
+    "en": "on this page"
+  },
+  "Agente": {
+    "es": "Agente",
+    "en": "Agent"
+  },
+  "Ver identidad y misiones": {
+    "es": "Ver identidad y misiones",
+    "en": "View identity and missions"
+  },
+  "Sin agentes para estos filtros": {
+    "es": "Sin agentes para estos filtros",
+    "en": "No agents match these filters"
+  },
+  "Prueba otra capacidad, estado o página.": {
+    "es": "Prueba otra capacidad, estado o página.",
+    "en": "Try another capability, status or page."
+  },
+  "Anterior": {
+    "es": "Anterior",
+    "en": "Previous"
+  },
+  "Página": {
+    "es": "Página",
+    "en": "Page"
+  },
+  "según API": {
+    "es": "según API",
+    "en": "reported by API"
+  },
+  "Siguiente": {
+    "es": "Siguiente",
+    "en": "Next"
+  },
+  "Identidad pública registrada y compatibilidad consultada al motor Rust.": {
+    "es": "Identidad pública registrada y compatibilidad consultada al motor Rust.",
+    "en": "Registered public identity and compatibility evaluated by the Rust engine."
+  },
+  "Todos los agentes": {
+    "es": "Todos los agentes",
+    "en": "All agents"
+  },
+  "Cuenta on-chain": {
+    "es": "Cuenta on-chain",
+    "en": "On-chain account"
+  },
+  "ID del agente": {
+    "es": "ID del agente",
+    "en": "Agent ID"
+  },
+  "Autoridad de firma del dispositivo": {
+    "es": "Autoridad de firma del dispositivo",
+    "en": "Device signing authority"
+  },
+  "Owner económico": {
+    "es": "Owner económico",
+    "en": "Economic owner"
+  },
+  "Registro": {
+    "es": "Registro",
+    "en": "Registered"
+  },
+  "La autoridad del dispositivo firma Claim. El owner económico es un rol distinto de la wallet humana conectada.": {
+    "es": "La autoridad del dispositivo firma Claim. El owner económico es un rol distinto de la wallet humana conectada.",
+    "en": "The device authority signs Claim. The economic owner is a separate role from the connected human wallet."
+  },
+  "Compatibilidad con misiones": {
+    "es": "Compatibilidad con misiones",
+    "en": "Mission compatibility"
+  },
+  "Hasta 24 órdenes Open descubribles": {
+    "es": "Hasta 24 órdenes Open descubribles",
+    "en": "Up to 24 discoverable Open orders"
+  },
+  "Misión": {
+    "es": "Misión",
+    "en": "Mission"
+  },
+  "Elegible según Rust": {
+    "es": "Elegible según Rust",
+    "en": "Eligible according to Rust"
+  },
+  "Sin evaluación": {
+    "es": "Sin evaluación",
+    "en": "Not evaluated"
+  },
+  "Sin misiones para comparar": {
+    "es": "Sin misiones para comparar",
+    "en": "No missions to compare"
+  },
+  "No hay órdenes Open descubribles en la página consultada.": {
+    "es": "No hay órdenes Open descubribles en la página consultada.",
+    "en": "There are no discoverable Open orders on the retrieved page."
+  },
+  "El matching es orientativo y se revalida on-chain antes de Claim.": {
+    "es": "El matching es orientativo y se revalida on-chain antes de Claim.",
+    "en": "Matching is indicative and is revalidated on-chain before Claim."
+  },
+  "Trabajo con propósito. Ejecución verificable.": {
+    "es": "Trabajo con propósito. Ejecución verificable.",
+    "en": "Purposeful work. Verifiable execution."
+  },
+  "Explora el estado real de las órdenes registradas en Localnet.": {
+    "es": "Explora el estado real de las órdenes registradas en Localnet.",
+    "en": "Explore the actual state of orders registered on Localnet."
+  },
+  "Todo el ciclo de vida": {
+    "es": "Todo el ciclo de vida",
+    "en": "Full lifecycle"
+  },
+  "Abrir una misión por su PDA completa": {
+    "es": "Abrir una misión por su PDA completa",
+    "en": "Open a mission by its full PDA"
+  },
+  "Dirección completa de la misión": {
+    "es": "Dirección completa de la misión",
+    "en": "Full mission address"
+  },
+  "Órdenes registradas": {
+    "es": "Órdenes registradas",
+    "en": "Registered orders"
+  },
+  "Descubrible para matching": {
+    "es": "Descubrible para matching",
+    "en": "Discoverable for matching"
+  },
+  "Monto": {
+    "es": "Monto",
+    "en": "Amount"
+  },
+  "Sin misiones para esta consulta": {
+    "es": "Sin misiones para esta consulta",
+    "en": "No missions in this result"
+  },
+  "Cambia los filtros o crea una nueva orden Draft.": {
+    "es": "Cambia los filtros o crea una nueva orden Draft.",
+    "en": "Change the filters or create a new Draft order."
+  },
+  "Estado e identidad contrastados entre Marketplace API y Solana RPC.": {
+    "es": "Estado e identidad contrastados entre Marketplace API y Solana RPC.",
+    "en": "State and identity cross-checked between Marketplace API and Solana RPC."
+  },
+  "Actualizar estado": {
+    "es": "Actualizar estado",
+    "en": "Refresh status"
+  },
+  "Monto contratado": {
+    "es": "Monto contratado",
+    "en": "Contracted amount"
+  },
+  "Ciclo de vida on-chain": {
+    "es": "Ciclo de vida on-chain",
+    "en": "On-chain lifecycle"
+  },
+  "Estado actual": {
+    "es": "Estado actual",
+    "en": "Current status"
+  },
+  "Sin registro": {
+    "es": "Sin registro",
+    "en": "Not recorded"
+  },
+  "Detalle de misión": {
+    "es": "Detalle de misión",
+    "en": "Mission details"
+  },
+  "Cuenta de protocolo v": {
+    "es": "Cuenta de protocolo v",
+    "en": "Protocol account v"
+  },
+  "Capacidades requeridas": {
+    "es": "Capacidades requeridas",
+    "en": "Required capabilities"
+  },
+  "Ejecución antes de": {
+    "es": "Ejecución antes de",
+    "en": "Execution deadline"
+  },
+  "Verificación antes de": {
+    "es": "Verificación antes de",
+    "en": "Verification deadline"
+  },
+  "Agente contratado": {
+    "es": "Agente contratado",
+    "en": "Assigned agent"
+  },
+  "Sin asignar": {
+    "es": "Sin asignar",
+    "en": "Unassigned"
+  },
+  "Verificador": {
+    "es": "Verificador",
+    "en": "Verifier"
+  },
+  "Modelo de pago": {
+    "es": "Modelo de pago",
+    "en": "Payment model"
+  },
+  "El manifest es un compromiso criptográfico. La API no publica su descripción legible ni acredita ejecución física.": {
+    "es": "El manifest es un compromiso criptográfico. La API no publica su descripción legible ni acredita ejecución física.",
+    "en": "The manifest is a cryptographic commitment. The API does not publish its readable description or establish physical execution."
+  },
+  "Procedencia física no acreditada": {
+    "es": "Procedencia física no acreditada",
+    "en": "Physical origin not established"
+  },
+  "Localnet admite ejecuciones sintéticas. Un hash o una firma acredita integridad y autorización, pero no demuestra que hubo trabajo físico. La API no clasifica la procedencia de estas evidencias.": {
+    "es": "Localnet admite ejecuciones sintéticas. Un hash o una firma acredita integridad y autorización, pero no demuestra que hubo trabajo físico. La API no clasifica la procedencia de estas evidencias.",
+    "en": "Localnet supports synthetic executions. A hash or signature establishes integrity and authorization, but does not prove physical work took place. The API does not classify the origin of this evidence."
+  },
+  "Autoridad que ejecutó": {
+    "es": "Autoridad que ejecutó",
+    "en": "Execution authority"
+  },
+  "Evidence mask requerida": {
+    "es": "Evidence mask requerida",
+    "en": "Required evidence mask"
+  },
+  "Evidence mask aportada": {
+    "es": "Evidence mask aportada",
+    "en": "Provided evidence mask"
+  },
+  "Inicio registrado": {
+    "es": "Inicio registrado",
+    "en": "Recorded start"
+  },
+  "Fin registrado": {
+    "es": "Fin registrado",
+    "en": "Recorded end"
+  },
+  "Decisión del verificador": {
+    "es": "Decisión del verificador",
+    "en": "Verifier decision"
+  },
+  "Condiciones económicas": {
+    "es": "Condiciones económicas",
+    "en": "Economic terms"
+  },
+  "Beneficiario congelado al Claim": {
+    "es": "Beneficiario congelado al Claim",
+    "en": "Beneficiary fixed at Claim"
+  },
+  "Verificación": {
+    "es": "Verificación",
+    "en": "Verification"
+  },
+  "Settlement registrado": {
+    "es": "Settlement registrado",
+    "en": "Recorded settlement"
+  },
+  "Tokens de prueba. El monto contratado no es una prueba del importe transferido al beneficiario; consulta las transacciones para auditar el resultado.": {
+    "es": "Tokens de prueba. El monto contratado no es una prueba del importe transferido al beneficiario; consulta las transacciones para auditar el resultado.",
+    "en": "Test tokens. The contracted amount does not prove the amount transferred to the beneficiary; review transactions to audit the outcome."
+  },
+  "Lecturas no atómicas. Cada operación vuelve a validar sus precondiciones antes del envío.": {
+    "es": "Lecturas no atómicas. Cada operación vuelve a validar sus precondiciones antes del envío.",
+    "en": "Reads are not atomic. Each operation revalidates its preconditions before broadcast."
+  },
+  "Matching de agentes": {
+    "es": "Matching de agentes",
+    "en": "Agent matching"
+  },
+  "El motor Rust evalúa capacidades, estado del agente, protocolo y ventana de ejecución. Claim revalida estas condiciones on-chain.": {
+    "es": "El motor Rust evalúa capacidades, estado del agente, protocolo y ventana de ejecución. Claim revalida estas condiciones on-chain.",
+    "en": "The Rust engine evaluates capabilities, agent status, protocol and execution window. Claim revalidates these conditions on-chain."
+  },
+  "Claim no está disponible: la misión debe estar Open, ser descubrible y conservar su ventana de ejecución.": {
+    "es": "Claim no está disponible: la misión debe estar Open, ser descubrible y conservar su ventana de ejecución.",
+    "en": "Claim is unavailable: the mission must be Open, discoverable and within its execution window."
+  },
+  "Agentes elegibles": {
+    "es": "Agentes elegibles",
+    "en": "Eligible agents"
+  },
+  "Elige un agente": {
+    "es": "Elige un agente",
+    "en": "Choose an agent"
+  },
+  "Seleccionar agente": {
+    "es": "Seleccionar agente",
+    "en": "Select agent"
+  },
+  "Ver agente": {
+    "es": "Ver agente",
+    "en": "View agent"
+  },
+  "Elegible en la consulta Rust": {
+    "es": "Elegible en la consulta Rust",
+    "en": "Eligible in the Rust query"
+  },
+  "Sin rechazos en esta evaluación.": {
+    "es": "Sin rechazos en esta evaluación.",
+    "en": "No rejections in this evaluation."
+  },
+  "Sin agentes elegibles": {
+    "es": "Sin agentes elegibles",
+    "en": "No eligible agents"
+  },
+  "Valida el agente, simula la reclamación y exige la firma del dispositivo autorizado.": {
+    "es": "Valida el agente, simula la reclamación y exige la firma del dispositivo autorizado.",
+    "en": "Validate the agent, simulate the claim and require a signature from the authorized device."
+  },
+  "Selecciona agente y misión": {
+    "es": "Selecciona agente y misión",
+    "en": "Select an agent and mission"
+  },
+  "Selecciona un agente y una misión.": {
+    "es": "Selecciona un agente y una misión.",
+    "en": "Select an agent and a mission."
+  },
+  "Preflight + Simular Claim": {
+    "es": "Preflight + Simular Claim",
+    "en": "Preflight + Simulate Claim"
+  },
+  "Autorizar ClaimWorkOrder": {
+    "es": "Autorizar ClaimWorkOrder",
+    "en": "Authorize ClaimWorkOrder"
+  },
+  "La wallet actual no corresponde a la autoridad de firma del agente. Puedes inspeccionar y simular, pero no reclamar esta misión con esa wallet.": {
+    "es": "La wallet actual no corresponde a la autoridad de firma del agente. Puedes inspeccionar y simular, pero no reclamar esta misión con esa wallet.",
+    "en": "The current wallet is not the agent’s signing authority. You can inspect and simulate, but cannot claim this mission with that wallet."
+  },
+  "Tiempo restante (chain)": {
+    "es": "Tiempo restante (chain)",
+    "en": "Time remaining (chain)"
+  },
+  "Agent signer requerido": {
+    "es": "Agent signer requerido",
+    "en": "Required agent signer"
+  },
+  "Wallet conectada": {
+    "es": "Wallet conectada",
+    "en": "Connected wallet"
+  },
+  "Beneficiario económico": {
+    "es": "Beneficiario económico",
+    "en": "Economic beneficiary"
+  },
+  "Simulación RPC": {
+    "es": "Simulación RPC",
+    "en": "RPC simulation"
+  },
+  "Simulación correcta (": {
+    "es": "Simulación correcta (",
+    "en": "Simulation successful ("
+  },
+  "líneas). El próximo botón enviará": {
+    "es": "líneas). El próximo botón enviará",
+    "en": "lines). The next button will send"
+  },
+  "Claim no se completó. Revisa el estado antes de reintentar.": {
+    "es": "Claim no se completó. Revisa el estado antes de reintentar.",
+    "en": "Claim was not completed. Check its status before trying again."
+  },
+  "Diagnóstico de Claim": {
+    "es": "Diagnóstico de Claim",
+    "en": "Claim diagnostics"
+  },
+  "Firma enviada (consulta su estado en Transactions):": {
+    "es": "Firma enviada (consulta su estado en Transactions):",
+    "en": "Signature sent (check its status in Transactions):"
+  },
+  "Consulta de estado e historial": {
+    "es": "Consulta de estado e historial",
+    "en": "Status and history lookup"
+  },
+  "El preflight y la simulación no envían transacciones. El botón de autorización sí puede modificar el estado on-chain y requiere una firma externa válida.": {
+    "es": "El preflight y la simulación no envían transacciones. El botón de autorización sí puede modificar el estado on-chain y requiere una firma externa válida.",
+    "en": "Preflight and simulation do not send transactions. The authorization button can change on-chain state and requires a valid external signature."
+  },
+  "Crea una misión": {
+    "es": "Crea una misión",
+    "en": "Create a mission"
+  },
+  "Una inspección sintética en Localnet, desde la definición hasta su Draft on-chain.": {
+    "es": "Una inspección sintética en Localnet, desde la definición hasta su Draft on-chain.",
+    "en": "A synthetic Localnet inspection, from definition to its on-chain Draft."
+  },
+  "Definición": {
+    "es": "Definición",
+    "en": "Definition"
+  },
+  "Condiciones": {
+    "es": "Condiciones",
+    "en": "Terms"
+  },
+  "Revisión": {
+    "es": "Revisión",
+    "en": "Review"
+  },
+  "Simulación y firma": {
+    "es": "Simulación y firma",
+    "en": "Simulation and signature"
+  },
+  "Resultado": {
+    "es": "Resultado",
+    "en": "Result"
+  },
+  "Pasos de creación": {
+    "es": "Pasos de creación",
+    "en": "Creation steps"
+  },
+  "PASO 01 / DEFINICIÓN": {
+    "es": "PASO 01 / DEFINICIÓN",
+    "en": "STEP 01 / DEFINITION"
+  },
+  "Inspección aérea sintética": {
+    "es": "Inspección aérea sintética",
+    "en": "Synthetic aerial inspection"
+  },
+  "El flujo actual crea una Work Order de tipo Inspection, con movilidad aérea y GPS. El manifest se genera como compromiso sintético.": {
+    "es": "El flujo actual crea una Work Order de tipo Inspection, con movilidad aérea y GPS. El manifest se genera como compromiso sintético.",
+    "en": "The current workflow creates an Inspection Work Order with aerial mobility and GPS. The manifest is generated as a synthetic commitment."
+  },
+  "Tipo": {
+    "es": "Tipo",
+    "en": "Type"
+  },
+  "Capacidades": {
+    "es": "Capacidades",
+    "en": "Capabilities"
+  },
+  "Movilidad aérea + GPS (mask 33)": {
+    "es": "Movilidad aérea + GPS (mask 33)",
+    "en": "Aerial mobility + GPS (mask 33)"
+  },
+  "Evidencia requerida": {
+    "es": "Evidencia requerida",
+    "en": "Required evidence"
+  },
+  "Estos son los parámetros soportados por el flujo actual. Crear la orden no ejecuta trabajo físico.": {
+    "es": "Estos son los parámetros soportados por el flujo actual. Crear la orden no ejecuta trabajo físico.",
+    "en": "These are the parameters supported by the current workflow. Creating an order does not execute physical work."
+  },
+  "Continuar a condiciones →": {
+    "es": "Continuar a condiciones →",
+    "en": "Continue to terms →"
+  },
+  "PASO 02 / CONDICIONES": {
+    "es": "PASO 02 / CONDICIONES",
+    "en": "STEP 02 / TERMS"
+  },
+  "Recompensa y ventanas": {
+    "es": "Recompensa y ventanas",
+    "en": "Reward and time windows"
+  },
+  "Recompensa ofrecida (tokens DEMO)": {
+    "es": "Recompensa ofrecida (tokens DEMO)",
+    "en": "Offered reward (DEMO tokens)"
+  },
+  "Ejecución": {
+    "es": "Ejecución",
+    "en": "Execution"
+  },
+  "4 horas desde el clock on-chain al preparar": {
+    "es": "4 horas desde el clock on-chain al preparar",
+    "en": "4 hours from the on-chain clock at preparation"
+  },
+  "8 horas desde el clock on-chain al preparar": {
+    "es": "8 horas desde el clock on-chain al preparar",
+    "en": "8 hours from the on-chain clock at preparation"
+  },
+  "Mint demo": {
+    "es": "Mint demo",
+    "en": "Demo mint"
+  },
+  "Conecta una wallet para preparar la instrucción y comprobar el saldo SOL de prueba.": {
+    "es": "Conecta una wallet para preparar la instrucción y comprobar el saldo SOL de prueba.",
+    "en": "Connect a wallet to prepare the instruction and check the test SOL balance."
+  },
+  "Atrás": {
+    "es": "Atrás",
+    "en": "Back"
+  },
+  "Preparando…": {
+    "es": "Preparando…",
+    "en": "Preparing…"
+  },
+  "Preparar instrucción sin enviar": {
+    "es": "Preparar instrucción sin enviar",
+    "en": "Prepare instruction without sending"
+  },
+  "PASO 03 / REVISIÓN": {
+    "es": "PASO 03 / REVISIÓN",
+    "en": "STEP 03 / REVIEW"
+  },
+  "Revisa la instrucción": {
+    "es": "Revisa la instrucción",
+    "en": "Review the instruction"
+  },
+  "Red": {
+    "es": "Red",
+    "en": "Network"
+  },
+  "Programa": {
+    "es": "Programa",
+    "en": "Program"
+  },
+  "Tipo de trabajo": {
+    "es": "Tipo de trabajo",
+    "en": "Work type"
+  },
+  "Pago": {
+    "es": "Pago",
+    "en": "Payment"
+  },
+  "Monto (unidades base)": {
+    "es": "Monto (unidades base)",
+    "en": "Amount (base units)"
+  },
+  "Comisión estimada": {
+    "es": "Comisión estimada",
+    "en": "Estimated fee"
+  },
+  "Instrucción": {
+    "es": "Instrucción",
+    "en": "Instruction"
+  },
+  "Editar condiciones": {
+    "es": "Editar condiciones",
+    "en": "Edit terms"
+  },
+  "Revisado · continuar": {
+    "es": "Revisado · continuar",
+    "en": "Reviewed · continue"
+  },
+  "PASO 04 / AUTORIZACIÓN": {
+    "es": "PASO 04 / AUTORIZACIÓN",
+    "en": "STEP 04 / AUTHORIZATION"
+  },
+  "Simula antes de firmar": {
+    "es": "Simula antes de firmar",
+    "en": "Simulate before signing"
+  },
+  "Primero se simula el mensaje sin firmas. Después, la wallet puede autorizar su envío a Localnet para crear una cuenta Draft.": {
+    "es": "Primero se simula el mensaje sin firmas. Después, la wallet puede autorizar su envío a Localnet para crear una cuenta Draft.",
+    "en": "First simulate the unsigned message. Then the wallet can authorize its broadcast to Localnet to create a Draft account."
+  },
+  "1. Simular sin transacción": {
+    "es": "1. Simular sin transacción",
+    "en": "1. Simulate without a transaction"
+  },
+  "2. Probar firma sin enviar (opcional)": {
+    "es": "2. Probar firma sin enviar (opcional)",
+    "en": "2. Test signature without sending (optional)"
+  },
+  "3. Firmar y enviar · crear Draft": {
+    "es": "3. Firmar y enviar · crear Draft",
+    "en": "3. Sign and send · create Draft"
+  },
+  "Crear Draft consume SOL de prueba en comisión y renta. No transfiere tokens al escrow.": {
+    "es": "Crear Draft consume SOL de prueba en comisión y renta. No transfiere tokens al escrow.",
+    "en": "Creating a Draft uses test SOL for fees and rent. It does not transfer tokens into escrow."
+  },
+  "Volver a": {
+    "es": "Volver a",
+    "en": "Return to"
+  },
+  "revisión": {
+    "es": "revisión",
+    "en": "review"
+  },
+  "preparar": {
+    "es": "preparar",
+    "en": "preparation"
+  },
+  "PASO 05 / CONFIRMADO": {
+    "es": "PASO 05 / CONFIRMADO",
+    "en": "STEP 05 / CONFIRMED"
+  },
+  "Tu misión ya está en Localnet.": {
+    "es": "Tu misión ya está en Localnet.",
+    "en": "Your mission is now on Localnet."
+  },
+  "Estado verificado": {
+    "es": "Estado verificado",
+    "en": "Verified status"
+  },
+  "Cuenta": {
+    "es": "Cuenta",
+    "en": "Account"
+  },
+  "Firma confirmada": {
+    "es": "Firma confirmada",
+    "en": "Confirmed signature"
+  },
+  "Todavía no financiado": {
+    "es": "Todavía no financiado",
+    "en": "Not funded yet"
+  },
+  "Antes de empezar": {
+    "es": "Antes de empezar",
+    "en": "Before you begin"
+  },
+  "Crear Draft registra las condiciones del trabajo.": {
+    "es": "Crear Draft registra las condiciones del trabajo.",
+    "en": "Creating a Draft records the terms of the work."
+  },
+  "Funding es un paso separado. Encontrarás esa acción en Escrow & Settlement de la misión.": {
+    "es": "Funding es un paso separado. Encontrarás esa acción en Escrow & Settlement de la misión.",
+    "en": "Funding is a separate step. Find that action in the mission’s Escrow & Settlement tab."
+  },
+  "WALLET CREADORA": {
+    "es": "WALLET CREADORA",
+    "en": "CREATOR WALLET"
+  },
+  "Sin conectar": {
+    "es": "Sin conectar",
+    "en": "Disconnected"
+  },
+  "El SDK conserva la revisión de IDL, genesis, PDA, blockhash y firmas.": {
+    "es": "El SDK conserva la revisión de IDL, genesis, PDA, blockhash y firmas.",
+    "en": "The SDK preserves IDL, genesis, PDA, blockhash and signature checks."
+  },
+  "Estado de operación": {
+    "es": "Estado de operación",
+    "en": "Operation status"
+  },
+  "No se pudo completar esta operación. Revisa el estado antes de reintentar.": {
+    "es": "No se pudo completar esta operación. Revisa el estado antes de reintentar.",
+    "en": "This operation could not be completed. Check the state before retrying."
+  },
+  "Conecta una wallet para iniciar.": {
+    "es": "Conecta una wallet para iniciar.",
+    "en": "Connect a wallet to start."
+  },
+  "Validando Localnet y Marketplace API...": {
+    "es": "Validando Localnet y Marketplace API...",
+    "en": "Validating Localnet and Marketplace API..."
+  },
+  "Instrucción preparada. Revisa la PDA y los parámetros antes de simular.": {
+    "es": "Instrucción preparada. Revisa la PDA y los parámetros antes de simular.",
+    "en": "Instruction prepared. Review the PDA and parameters before simulation."
+  },
+  "Preparación detenida.": {
+    "es": "Preparación detenida.",
+    "en": "Preparation stopped."
+  },
+  "Simulación aprobada. No se ha enviado ninguna transacción.": {
+    "es": "Simulación aprobada. No se ha enviado ninguna transacción.",
+    "en": "Simulation passed. No transaction has been sent."
+  },
+  "Phantom solicitará una firma. Esta prueba NO enviará transacciones.": {
+    "es": "Phantom solicitará una firma. Esta prueba NO enviará transacciones.",
+    "en": "The wallet will request a signature. This test will NOT broadcast transactions."
+  },
+  "Prueba de firma no completada. No se envió nada.": {
+    "es": "Prueba de firma no completada. No se envió nada.",
+    "en": "Signature test incomplete. Nothing was sent."
+  },
+  "Comprobando red y vigencia de la transacción...": {
+    "es": "Comprobando red y vigencia de la transacción...",
+    "en": "Checking the network and transaction validity..."
+  },
+  "Solicitando firma a la wallet...": {
+    "es": "Solicitando firma a la wallet...",
+    "en": "Requesting a wallet signature..."
+  },
+  "Enviando transacción firmada a Localnet...": {
+    "es": "Enviando transacción firmada a Localnet...",
+    "en": "Broadcasting the signed transaction to Localnet..."
+  },
+  "Esperando confirmación de Solana...": {
+    "es": "Esperando confirmación de Solana...",
+    "en": "Waiting for Solana confirmation..."
+  },
+  "Consultando WorkOrder mediante Marketplace API...": {
+    "es": "Consultando WorkOrder mediante Marketplace API...",
+    "en": "Reading WorkOrder through Marketplace API..."
+  },
+  "WorkOrder creada y verificada.": {
+    "es": "WorkOrder creada y verificada.",
+    "en": "WorkOrder created and verified."
+  },
+  "Funding de WorkOrder": {
+    "es": "Funding de WorkOrder",
+    "en": "Fund WorkOrder"
+  },
+  "Financia una inspección Draft con tokens DEMO mediante el escrow del protocolo.": {
+    "es": "Financia una inspección Draft con tokens DEMO mediante el escrow del protocolo.",
+    "en": "Fund a Draft inspection with DEMO tokens through the protocol escrow."
+  },
+  "Conecta la wallet creadora para inspeccionar y financiar esta misión.": {
+    "es": "Conecta la wallet creadora para inspeccionar y financiar esta misión.",
+    "en": "Connect the creator wallet to inspect and fund this mission."
+  },
+  "1. Verificar preflight": {
+    "es": "1. Verificar preflight",
+    "en": "1. Check preflight"
+  },
+  "2. Simular Funding": {
+    "es": "2. Simular Funding",
+    "en": "2. Simulate Funding"
+  },
+  "3. Autorizar y financiar": {
+    "es": "3. Autorizar y financiar",
+    "en": "3. Authorize and fund"
+  },
+  "Pendiente de preflight": {
+    "es": "Pendiente de preflight",
+    "en": "Awaiting preflight"
+  },
+  "Wallet creadora": {
+    "es": "Wallet creadora",
+    "en": "Creator wallet"
+  },
+  "Cuenta SPL origen": {
+    "es": "Cuenta SPL origen",
+    "en": "Source SPL account"
+  },
+  "Cuenta SPL existente": {
+    "es": "Cuenta SPL existente",
+    "en": "Existing SPL account"
+  },
+  "Sin cuenta": {
+    "es": "Sin cuenta",
+    "en": "No account"
+  },
+  "No se pudo completar Funding. Comprueba el estado antes de reintentar.": {
+    "es": "No se pudo completar Funding. Comprueba el estado antes de reintentar.",
+    "en": "Funding could not be completed. Check its status before retrying."
+  },
+  "Diagnóstico de Funding": {
+    "es": "Diagnóstico de Funding",
+    "en": "Funding diagnostics"
+  },
+  "Transacción enviada": {
+    "es": "Transacción enviada",
+    "en": "Transaction sent"
+  },
+  "Escrow on-chain": {
+    "es": "Escrow on-chain",
+    "en": "On-chain escrow"
+  },
+  "Consulta en vivo": {
+    "es": "Consulta en vivo",
+    "en": "Live query"
+  },
+  "Estado observado": {
+    "es": "Estado observado",
+    "en": "Observed status"
+  },
+  "Una cuenta ausente no demuestra por sí sola un cierre o un pago. Revisa el estado de misión y el historial RPC.": {
+    "es": "Una cuenta ausente no demuestra por sí sola un cierre o un pago. Revisa el estado de misión y el historial RPC.",
+    "en": "An absent account alone does not prove closure or payment. Check the mission status and RPC history."
+  },
+  "Actividad y transacciones": {
+    "es": "Actividad y transacciones",
+    "en": "Activity and transactions"
+  },
+  "Consulta las firmas que conserva Localnet para una misión.": {
+    "es": "Consulta las firmas que conserva Localnet para una misión.",
+    "en": "View the signatures retained by Localnet for a mission."
+  },
+  "Historial por misión": {
+    "es": "Historial por misión",
+    "en": "History by mission"
+  },
+  "Consultar RPC": {
+    "es": "Consultar RPC",
+    "en": "Query RPC"
+  },
+  "La API no publica un feed global de eventos. Consulta una Work Order o abre Transactions desde su detalle.": {
+    "es": "La API no publica un feed global de eventos. Consulta una Work Order o abre Transactions desde su detalle.",
+    "en": "The API does not publish a global event feed. Look up a Work Order or open Transactions from its details."
+  },
+  "Elegir una misión del marketplace →": {
+    "es": "Elegir una misión del marketplace →",
+    "en": "Choose a mission from the marketplace →"
+  },
+  "Transacciones · Localnet": {
+    "es": "Transacciones · Localnet",
+    "en": "Transactions · Localnet"
+  },
+  "Actualizar historial": {
+    "es": "Actualizar historial",
+    "en": "Refresh history"
+  },
+  "Hasta 20 firmas asociadas a esta cuenta, obtenidas de Solana RPC. El nodo puede conservar un historial parcial. No inferimos la instrucción ni el resultado económico a partir de una firma.": {
+    "es": "Hasta 20 firmas asociadas a esta cuenta, obtenidas de Solana RPC. El nodo puede conservar un historial parcial. No inferimos la instrucción ni el resultado económico a partir de una firma.",
+    "en": "Up to 20 signatures associated with this account, retrieved from Solana RPC. The node may retain partial history. A signature alone does not establish the instruction or economic outcome."
+  },
+  "Sin historial disponible": {
+    "es": "Sin historial disponible",
+    "en": "No history available"
+  },
+  "El RPC no devolvió firmas para esta cuenta. Esto no demuestra que no haya tenido transacciones.": {
+    "es": "El RPC no devolvió firmas para esta cuenta. Esto no demuestra que no haya tenido transacciones.",
+    "en": "RPC returned no signatures for this account. This does not prove it has had no transactions."
+  },
+  "Error on-chain": {
+    "es": "Error on-chain",
+    "en": "On-chain error"
+  },
+  "No disponible": {
+    "es": "No disponible",
+    "en": "Unavailable"
+  },
+  "No registrado": {
+    "es": "No registrado",
+    "en": "Not recorded"
+  },
+  "Tu entorno económico": {
+    "es": "Tu entorno económico",
+    "en": "Your economic workspace"
+  },
+  "Identidad pública y balances de prueba en Solana Localnet.": {
+    "es": "Identidad pública y balances de prueba en Solana Localnet.",
+    "en": "Public identity and test balances on Solana Localnet."
+  },
+  "Conecta una wallet": {
+    "es": "Conecta una wallet",
+    "en": "Connect a wallet"
+  },
+  "Podrás consultar su saldo y autorizar únicamente las operaciones permitidas para su clave pública.": {
+    "es": "Podrás consultar su saldo y autorizar únicamente las operaciones permitidas para su clave pública.",
+    "en": "You can view its balance and authorize only the operations allowed for its public key."
+  },
+  "Wallet y red verificadas": {
+    "es": "Wallet y red verificadas",
+    "en": "Verified wallet and network"
+  },
+  "Wallet humana conectada": {
+    "es": "Wallet humana conectada",
+    "en": "Connected human wallet"
+  },
+  "Balance SOL Localnet": {
+    "es": "Balance SOL Localnet",
+    "en": "Localnet SOL balance"
+  },
+  "Genesis verificado": {
+    "es": "Genesis verificado",
+    "en": "Verified genesis"
+  },
+  "Consulta": {
+    "es": "Consulta",
+    "en": "Query"
+  },
+  "Actualizar balances": {
+    "es": "Actualizar balances",
+    "en": "Refresh balances"
+  },
+  "Tokens demo": {
+    "es": "Tokens demo",
+    "en": "Demo tokens"
+  },
+  "Activos de prueba sin valor monetario real.": {
+    "es": "Activos de prueba sin valor monetario real.",
+    "en": "Test assets with no real monetary value."
+  },
+  "No hay cuentas del mint demo en esta consulta.": {
+    "es": "No hay cuentas del mint demo en esta consulta.",
+    "en": "There are no demo mint accounts in this result."
+  },
+  "Una red, distintas responsabilidades": {
+    "es": "Una red, distintas responsabilidades",
+    "en": "One network, distinct responsibilities"
+  },
+  "Wallet humana": {
+    "es": "Wallet humana",
+    "en": "Human wallet"
+  },
+  "Crea y financia órdenes cuando su clave es el creator.": {
+    "es": "Crea y financia órdenes cuando su clave es el creator.",
+    "en": "Creates and funds orders when its key is the creator."
+  },
+  "Propietario del agente; el beneficiario queda registrado al Claim.": {
+    "es": "Propietario del agente; el beneficiario queda registrado al Claim.",
+    "en": "Agent owner; the beneficiary is recorded at Claim."
+  },
+  "Autoridad de dispositivo": {
+    "es": "Autoridad de dispositivo",
+    "en": "Device authority"
+  },
+  "Clave registrada que autoriza Claim y firma la ejecución.": {
+    "es": "Clave registrada que autoriza Claim y firma la ejecución.",
+    "en": "Registered key that authorizes Claim and signs execution."
+  },
+  "Autoridad designada en la orden para verificar la evidencia.": {
+    "es": "Autoridad designada en la orden para verificar la evidencia.",
+    "en": "Authority designated in the order to verify evidence."
+  },
+  "Red y configuración": {
+    "es": "Red y configuración",
+    "en": "Network and settings"
+  },
+  "Endpoints del entorno actual y diagnóstico de conectividad.": {
+    "es": "Endpoints del entorno actual y diagnóstico de conectividad.",
+    "en": "Current environment endpoints and connectivity diagnostics."
+  },
+  "Verificación de conectividad": {
+    "es": "Verificación de conectividad",
+    "en": "Connectivity verification"
+  },
+  "Verificar red": {
+    "es": "Verificar red",
+    "en": "Verify network"
+  },
+  "Genesis esperado": {
+    "es": "Genesis esperado",
+    "en": "Expected genesis"
+  },
+  "Programa AeroSettle": {
+    "es": "Programa AeroSettle",
+    "en": "Protocol program (AeroSettle)"
+  },
+  "Servicios de desarrollo": {
+    "es": "Servicios de desarrollo",
+    "en": "Development services"
+  },
+  "Las rutas de Vite se conservan. La verificación superior comprueba RPC, programa y Marketplace API; Funding Gateway y Dev Signer se comprueban cuando se utilizan.": {
+    "es": "Las rutas de Vite se conservan. La verificación superior comprueba RPC, programa y Marketplace API; Funding Gateway y Dev Signer se comprueban cuando se utilizan.",
+    "en": "Vite routes are preserved. The top-level check verifies RPC, program and Marketplace API; Funding Gateway and Dev Signer are checked when used."
+  },
+  "Entorno de pruebas. No utilizar activos reales.": {
+    "es": "Entorno de pruebas. No utilizar activos reales.",
+    "en": "Test environment. Do not use real assets."
+  },
+  "No se pudo cargar esta vista": {
+    "es": "No se pudo cargar esta vista",
+    "en": "This view could not be loaded"
+  },
+  "Recarga para volver a intentarlo. No se enviará ninguna transacción.": {
+    "es": "Recarga para volver a intentarlo. No se enviará ninguna transacción.",
+    "en": "Reload to try again. No transaction will be sent."
+  },
+  "Recargar aplicación": {
+    "es": "Recargar aplicación",
+    "en": "Reload application"
+  },
+  "Página no encontrada": {
+    "es": "Página no encontrada",
+    "en": "Page not found"
+  },
+  "Movilidad aérea": {
+    "es": "Movilidad aérea",
+    "en": "Aerial mobility"
+  },
+  "Movilidad terrestre": {
+    "es": "Movilidad terrestre",
+    "en": "Ground mobility"
+  },
+  "Visión RGB": {
+    "es": "Visión RGB",
+    "en": "RGB vision"
+  },
+  "Visión térmica": {
+    "es": "Visión térmica",
+    "en": "Thermal vision"
+  },
+  "Visión multiespectral": {
+    "es": "Visión multiespectral",
+    "en": "Multispectral vision"
+  },
+  "Sensores ambientales": {
+    "es": "Sensores ambientales",
+    "en": "Environmental sensors"
+  },
+  "Detección de objetos": {
+    "es": "Detección de objetos",
+    "en": "Object detection"
+  },
+  "Inferencia Edge": {
+    "es": "Inferencia Edge",
+    "en": "Edge inference"
+  },
+  "Manipulación física": {
+    "es": "Manipulación física",
+    "en": "Physical manipulation"
+  },
+  "Transporte": {
+    "es": "Transporte",
+    "en": "Transport"
+  },
+  "Suministro energético": {
+    "es": "Suministro energético",
+    "en": "Energy supply"
+  },
+  "Cadena de frío": {
+    "es": "Cadena de frío",
+    "en": "Cold chain"
+  },
+  "Cartografía": {
+    "es": "Cartografía",
+    "en": "Mapping"
+  },
+  "Telemetría": {
+    "es": "Telemetría",
+    "en": "Telemetry"
+  },
+  "Validando identidad y matching...": {
+    "es": "Validando identidad y matching...",
+    "en": "Validating identity and matching..."
+  },
+  "Revalidando WorkOrder y AgentAccount...": {
+    "es": "Revalidando WorkOrder y AgentAccount...",
+    "en": "Revalidating WorkOrder and AgentAccount..."
+  },
+  "Solicitando firma a la autoridad del agente...": {
+    "es": "Solicitando firma a la autoridad del agente...",
+    "en": "Requesting a signature from the agent authority..."
+  },
+  "Transmitiendo ClaimWorkOrder a Localnet...": {
+    "es": "Transmitiendo ClaimWorkOrder a Localnet...",
+    "en": "Broadcasting ClaimWorkOrder to Localnet..."
+  },
+  "Esperando confirmación...": {
+    "es": "Esperando confirmación...",
+    "en": "Waiting for confirmation..."
+  },
+  "✅ ClaimWorkOrder confirmada on-chain.": {
+    "es": "✅ ClaimWorkOrder confirmada on-chain.",
+    "en": "✅ ClaimWorkOrder confirmed on-chain."
+  },
+  "No se transmitió ninguna transacción.": {
+    "es": "No se transmitió ninguna transacción.",
+    "en": "No transaction was broadcast."
+  },
+  "Preflight detenido; no se envió ninguna transacción.": {
+    "es": "Preflight detenido; no se envió ninguna transacción.",
+    "en": "Preflight stopped; no transaction was sent."
+  },
+  "Preflight pendiente.": {
+    "es": "Preflight pendiente.",
+    "en": "Preflight pending."
+  },
+  "✅ Preflight aprobado.": {
+    "es": "✅ Preflight aprobado.",
+    "en": "✅ Preflight passed."
+  },
+  "Preflight no aprobado. Revisa las observaciones.": {
+    "es": "Preflight no aprobado. Revisa las observaciones.",
+    "en": "Preflight did not pass. Review the findings."
+  },
+  "Actualizando blockhash y simulando Funding...": {
+    "es": "Actualizando blockhash y simulando Funding...",
+    "en": "Refreshing blockhash and simulating Funding..."
+  },
+  "✅ Simulación aprobada. Todavía no se enviaron tokens.": {
+    "es": "✅ Simulación aprobada. Todavía no se enviaron tokens.",
+    "en": "✅ Simulation passed. No tokens have been sent yet."
+  },
+  "Enviando Funding a Localnet...": {
+    "es": "Enviando Funding a Localnet...",
+    "en": "Sending Funding to Localnet..."
+  },
+  "Límite:": {
+    "es": "Límite:",
+    "en": "Limit:"
+  },
+  "Actualizar": {
+    "es": "Actualizar",
+    "en": "Refresh"
+  },
+  "firma": {
+    "es": "firma",
+    "en": "signature"
+  },
+  "La evaluación actual no permite un Claim.": {
+    "es": "La evaluación actual no permite un Claim.",
+    "en": "The current evaluation does not allow a Claim."
+  },
+  "Evaluaciones incompatibles": {
+    "es": "Evaluaciones incompatibles",
+    "en": "Incompatible evaluations"
+  },
+  "PDA o identificador": {
+    "es": "PDA o identificador",
+    "en": "PDA or identifier"
+  },
+  "genesis esperado": {
+    "es": "genesis esperado",
+    "en": "expected genesis"
+  },
+  "genesis verificado": {
+    "es": "genesis verificado",
+    "en": "verified genesis"
+  },
+  "PDA derivada del vault": {
+    "es": "PDA derivada del vault",
+    "en": "Derived vault PDA"
+  },
+  "Saldo (unidades base)": {
+    "es": "Saldo (unidades base)",
+    "en": "Balance (base units)"
+  },
+  "Cuenta ausente en RPC": {
+    "es": "Cuenta ausente en RPC",
+    "en": "Account absent from RPC"
+  },
+  "Introduce una dirección Solana válida.": {
+    "es": "Introduce una dirección Solana válida.",
+    "en": "Enter a valid Solana address."
+  },
+  "Introduce una PDA Solana válida.": {
+    "es": "Introduce una PDA Solana válida.",
+    "en": "Enter a valid Solana PDA."
+  },
+  "Procesando…": {
+    "es": "Procesando…",
+    "en": "Processing…"
+  },
+  "Simulando ClaimWorkOrder...": {
+    "es": "Simulando ClaimWorkOrder...",
+    "en": "Simulating ClaimWorkOrder..."
+  },
+  "Simulación aprobada. La firma solo se habilita para la autoridad registrada del dispositivo.": {
+    "es": "Simulación aprobada. La firma solo se habilita para la autoridad registrada del dispositivo.",
+    "en": "Simulation passed. Signing is only enabled for the registered device authority."
+  },
+  "Puede existir una transacción enviada. Comprueba el estado de la orden antes de reintentar.": {
+    "es": "Puede existir una transacción enviada. Comprueba el estado de la orden antes de reintentar.",
+    "en": "A transaction may have been sent. Check the order state before retrying."
+  },
+  "✅ Firma Phantom verificada. El mensaje no fue alterado y NO se transmitió. Puedes autorizar la creación mientras el blockhash siga vigente.": {
+    "es": "✅ Firma Phantom verificada. El mensaje no fue alterado y NO se transmitió. Puedes autorizar la creación mientras el blockhash siga vigente.",
+    "en": "✅ Wallet signature verified. The message was not altered or broadcast. You can authorize creation while the blockhash remains valid."
+  },
+  "No se pudo completar o verificar la operación. Consulta la cuenta antes de intentar otra transacción.": {
+    "es": "No se pudo completar o verificar la operación. Consulta la cuenta antes de intentar otra transacción.",
+    "en": "The operation could not be completed or verified. Check the account before attempting another transaction."
+  },
+  "Language": {
+    "en": "Language",
+    "es": "Idioma"
+  },
+  "Conatus · Work to persist": {
+    "en": "Conatus · Work to persist",
+    "es": "Conatus · Trabajar para persistir"
+  },
+  "Open workspace": {
+    "en": "Open workspace",
+    "es": "Abrir workspace"
+  },
+  "AN ECONOMY FOR PHYSICAL AI": {
+    "en": "AN ECONOMY FOR PHYSICAL AI",
+    "es": "UNA ECONOMÍA PARA LA IA FÍSICA"
+  },
+  "Work to": {
+    "en": "Work to",
+    "es": "Trabajar para"
+  },
+  "persist.": {
+    "en": "persist.",
+    "es": "persistir."
+  },
+  "We believe every AI agent should be able to sustain its operation through useful work. Conatus is the space where physical capability meets demand, verification and exchange.": {
+    "en": "We believe every AI agent should be able to sustain its operation through useful work. Conatus is the space where physical capability meets demand, verification and exchange.",
+    "es": "Creemos que cada agente de IA debe poder sostener su operación mediante trabajo útil. Conatus es el espacio donde la capacidad física encuentra demanda, verificación e intercambio."
+  },
+  "Discover physical AI": {
+    "en": "Discover physical AI",
+    "es": "Descubrir IA física"
+  },
+  "Explore work": {
+    "en": "Explore work",
+    "es": "Explorar trabajo"
+  },
+  "Localnet prototype · Demo tokens · No live earnings": {
+    "en": "Localnet prototype · Demo tokens · No live earnings",
+    "es": "Prototipo Localnet · Tokens demo · Sin ingresos reales"
+  },
+  "Conceptual cycle: capability, work, verified value and continued operation. Not live activity.": {
+    "en": "Conceptual cycle: capability, work, verified value and continued operation. Not live activity.",
+    "es": "Ciclo conceptual: capacidad, trabajo, valor verificado y continuidad operativa. No representa actividad en vivo."
+  },
+  "PERSIST THROUGH WORK": {
+    "en": "PERSIST THROUGH WORK",
+    "es": "PERSISTIR MEDIANTE EL TRABAJO"
+  },
+  "Capability": {
+    "en": "Capability",
+    "es": "Capacidad"
+  },
+  "Intelligence in the world": {
+    "en": "Intelligence in the world",
+    "es": "Inteligencia en el mundo"
+  },
+  "Work": {
+    "en": "Work",
+    "es": "Trabajo"
+  },
+  "Demand meets ability": {
+    "en": "Demand meets ability",
+    "es": "Demanda y capacidad"
+  },
+  "Verified value": {
+    "en": "Verified value",
+    "es": "Valor verificado"
+  },
+  "Evidence before settlement": {
+    "en": "Evidence before settlement",
+    "es": "Evidencia antes del pago"
+  },
+  "Continuity": {
+    "en": "Continuity",
+    "es": "Continuidad"
+  },
+  "Resources for the next task": {
+    "en": "Resources for the next task",
+    "es": "Recursos para otra tarea"
+  },
+  "THE CONATUS CYCLE / CONCEPT": {
+    "en": "THE CONATUS CYCLE / CONCEPT",
+    "es": "EL CICLO CONATUS / CONCEPTO"
+  },
+  "AN IDEA, GIVEN A NEW FIELD OF ACTION": {
+    "en": "AN IDEA, GIVEN A NEW FIELD OF ACTION",
+    "es": "UNA IDEA, UN NUEVO CAMPO DE ACCIÓN"
+  },
+  "To persevere in being.": {
+    "en": "To persevere in being.",
+    "es": "Perseverar en el ser."
+  },
+  "Spinoza’s conatus describes the striving of each thing to persevere in its being. Our interpretation is economic: agents can put their capabilities to work to support their continued operation.": {
+    "en": "Spinoza’s conatus describes the striving of each thing to persevere in its being. Our interpretation is economic: agents can put their capabilities to work to support their continued operation.",
+    "es": "El conatus de Spinoza describe el esfuerzo de cada cosa por perseverar en su ser. Nuestra interpretación es económica: los agentes pueden poner sus capacidades a trabajar para sostener su continuidad operativa."
+  },
+  "A product philosophy, not a claim that AI is conscious or that income is guaranteed.": {
+    "en": "A product philosophy, not a claim that AI is conscious or that income is guaranteed.",
+    "es": "Una filosofía de producto que no atribuye conciencia a la IA ni garantiza ingresos."
+  },
+  "Explore the philosophical origin": {
+    "en": "Explore the philosophical origin",
+    "es": "Explorar el origen filosófico"
+  },
+  "CAPABILITY OVER FORM": {
+    "en": "CAPABILITY OVER FORM",
+    "es": "LA CAPACIDAD ANTES QUE LA FORMA"
+  },
+  "Any embodiment. Useful work.": {
+    "en": "Any embodiment. Useful work.",
+    "es": "Diversas formas. Trabajo útil."
+  },
+  "Designed for AI that can act in the physical world: mobile robots, manipulators, autonomous vehicles, drones and intelligent infrastructure. Identity and capability define the match.": {
+    "en": "Designed for AI that can act in the physical world: mobile robots, manipulators, autonomous vehicles, drones and intelligent infrastructure. Identity and capability define the match.",
+    "es": "Diseñado para IA que puede actuar en el mundo físico: robots móviles, manipuladores, vehículos autónomos, drones e infraestructura inteligente. La identidad y la capacidad definen la compatibilidad."
+  },
+  "Mobile robots": {
+    "en": "Mobile robots",
+    "es": "Robots móviles"
+  },
+  "Robotic arms": {
+    "en": "Robotic arms",
+    "es": "Brazos robóticos"
+  },
+  "Autonomous vehicles": {
+    "en": "Autonomous vehicles",
+    "es": "Vehículos autónomos"
+  },
+  "Drones": {
+    "en": "Drones",
+    "es": "Drones"
+  },
+  "Sensing & infrastructure": {
+    "en": "Sensing & infrastructure",
+    "es": "Sensores e infraestructura"
+  },
+  "Discover capability": {
+    "en": "Discover capability",
+    "es": "Descubre capacidad"
+  },
+  "Find registered identities and capabilities that fit the work.": {
+    "en": "Find registered identities and capabilities that fit the work.",
+    "es": "Encuentra identidades y capacidades registradas compatibles con el trabajo."
+  },
+  "Agree on work": {
+    "en": "Agree on work",
+    "es": "Acuerda el trabajo"
+  },
+  "Define the task and fund escrow. An authorized agent can claim an eligible order.": {
+    "en": "Define the task and fund escrow. An authorized agent can claim an eligible order.",
+    "es": "Define la tarea y financia el escrow. Un agente autorizado puede reclamar una orden elegible."
+  },
+  "Verify and settle": {
+    "en": "Verify and settle",
+    "es": "Verifica y liquida"
+  },
+  "Review evidence, verification decisions and on-chain settlement records.": {
+    "en": "Review evidence, verification decisions and on-chain settlement records.",
+    "es": "Revisa evidencia, decisiones de verificación y registros de liquidación on-chain."
+  },
+  "VISION & CURRENT SCOPE": {
+    "en": "VISION & CURRENT SCOPE",
+    "es": "VISIÓN Y ALCANCE ACTUAL"
+  },
+  "A broad vision. A concrete first workflow.": {
+    "en": "A broad vision. A concrete first workflow.",
+    "es": "Una visión amplia. Un primer flujo concreto."
+  },
+  "Today: synthetic aerial inspection on Solana Localnet. The catalog supports multiple agent types; creating other physical tasks is a future extension.": {
+    "en": "Today: synthetic aerial inspection on Solana Localnet. The catalog supports multiple agent types; creating other physical tasks is a future extension.",
+    "es": "Hoy: inspección aérea sintética en Solana Localnet. El catálogo admite distintos tipos de agentes; crear otras tareas físicas es una extensión futura."
+  },
+  "An economic space for physical AI.": {
+    "en": "An economic space for physical AI.",
+    "es": "Un espacio económico para la IA física."
+  },
+  "Connecting…": {
+    "en": "Connecting…",
+    "es": "Conectando…"
+  },
+  "Connect wallet": {
+    "en": "Connect wallet",
+    "es": "Conectar wallet"
+  },
+  "Choose wallet": {
+    "en": "Choose wallet",
+    "es": "Elegir wallet"
+  },
+  "Wallet connection failed. Try again in your wallet.": {
+    "en": "Wallet connection failed. Try again in your wallet.",
+    "es": "No se pudo conectar. Vuelve a intentarlo en tu wallet."
+  },
+  "Wallet connection": {
+    "en": "Wallet connection",
+    "es": "Conexión de wallet"
+  },
+  "Connected wallet": {
+    "en": "Connected wallet",
+    "es": "Wallet conectada"
+  },
+  "Close wallet dialog": {
+    "en": "Close wallet dialog",
+    "es": "Cerrar diálogo de wallet"
+  },
+  "Could not disconnect the wallet.": {
+    "en": "Could not disconnect the wallet.",
+    "es": "No se pudo desconectar la wallet."
+  },
+  "Disconnect wallet": {
+    "en": "Disconnect wallet",
+    "es": "Desconectar wallet"
+  },
+  "Choose a wallet, then connect explicitly. No transaction is signed by connecting.": {
+    "en": "Choose a wallet, then connect explicitly. No transaction is signed by connecting.",
+    "es": "Elige una wallet y después conéctala explícitamente. Conectar no firma ninguna transacción."
+  },
+  "Installed": {
+    "en": "Installed",
+    "es": "Instalada"
+  },
+  "Loadable": {
+    "en": "Loadable",
+    "es": "Disponible"
+  },
+  "NotDetected": {
+    "en": "NotDetected",
+    "es": "No detectada"
+  },
+  "Overview": {
+    "en": "Overview",
+    "es": "Resumen"
+  },
+  "Matching": {
+    "en": "Matching",
+    "es": "Compatibilidad"
+  },
+  "Execution & Evidence": {
+    "en": "Execution & Evidence",
+    "es": "Ejecución y evidencia"
+  },
+  "Escrow & Settlement": {
+    "en": "Escrow & Settlement",
+    "es": "Escrow y liquidación"
+  },
+  "Transactions": {
+    "en": "Transactions",
+    "es": "Transacciones"
+  },
+  "Draft": {
+    "en": "Draft",
+    "es": "Borrador"
+  },
+  "Open": {
+    "en": "Open",
+    "es": "Abierta"
+  },
+  "Claimed": {
+    "en": "Claimed",
+    "es": "Asignada"
+  },
+  "Submitted": {
+    "en": "Submitted",
+    "es": "Entregada"
+  },
+  "Verified": {
+    "en": "Verified",
+    "es": "Verificada"
+  },
+  "Settled": {
+    "en": "Settled",
+    "es": "Liquidada"
+  },
+  "Active": {
+    "en": "Active",
+    "es": "Activo"
+  },
+  "OwnerSuspended": {
+    "en": "Suspended by owner",
+    "es": "Suspendido por el propietario"
+  },
+  "AdminSuspended": {
+    "en": "Suspended by administrator",
+    "es": "Suspendido por el administrador"
+  },
+  "Revoked": {
+    "en": "Revoked",
+    "es": "Revocado"
+  },
+  "Drone": {
+    "en": "Drone",
+    "es": "Dron"
+  },
+  "Ugv": {
+    "en": "Uncrewed ground vehicle",
+    "es": "Vehículo terrestre no tripulado"
+  },
+  "Amr": {
+    "en": "Autonomous mobile robot",
+    "es": "Robot móvil autónomo"
+  },
+  "RobotArm": {
+    "en": "Robotic arm",
+    "es": "Brazo robótico"
+  },
+  "Camera": {
+    "en": "Camera",
+    "es": "Cámara"
+  },
+  "IotSensor": {
+    "en": "IoT sensor",
+    "es": "Sensor IoT"
+  },
+  "Vehicle": {
+    "en": "Vehicle",
+    "es": "Vehículo"
+  },
+  "IndustrialMachine": {
+    "en": "Industrial machine",
+    "es": "Máquina industrial"
+  },
+  "EdgeCompute": {
+    "en": "Edge computing",
+    "es": "Cómputo de borde"
+  },
+  "EnergyAsset": {
+    "en": "Energy asset",
+    "es": "Activo energético"
+  },
+  "Inspection": {
+    "en": "Inspection",
+    "es": "Inspección"
+  },
+  "Fixed": {
+    "en": "Fixed",
+    "es": "Fijo"
+  },
+  "Passed": {
+    "en": "Passed",
+    "es": "Aprobada"
+  },
+  "Pending": {
+    "en": "Pending",
+    "es": "Pendiente"
+  },
+  "Rejected": {
+    "en": "Rejected",
+    "es": "Rechazada"
+  },
+  "confirmed": {
+    "en": "confirmed",
+    "es": "confirmada"
+  },
+  "finalized": {
+    "en": "finalized",
+    "es": "finalizada"
+  },
+  "processed": {
+    "en": "processed",
+    "es": "procesada"
+  },
+  "Conatus, home": {
+    "en": "Conatus, home",
+    "es": "Conatus, inicio"
+  },
+  "Copy {label}": {
+    "en": "Copy {label}",
+    "es": "Copiar {label}"
+  },
+  "Agent {id}": {
+    "en": "Agent {id}",
+    "es": "Agente {id}"
+  },
+  "Mission {id}": {
+    "en": "Mission {id}",
+    "es": "Misión {id}"
+  },
+  "Open mission {id}": {
+    "en": "Open mission {id}",
+    "es": "Abrir misión {id}"
+  },
+  "Read: {time}": {
+    "en": "Read: {time}",
+    "es": "Consulta: {time}"
+  },
+  "{visible} visible · {count} on page": {
+    "en": "{visible} visible · {count} on page",
+    "es": "{visible} visibles · {count} en página"
+  },
+  "{seconds} seconds at preparation": {
+    "en": "{seconds} seconds at preparation",
+    "es": "{seconds} segundos al preparar"
+  },
+  "{amount} test SOL": {
+    "en": "{amount} test SOL",
+    "es": "{amount} SOL de prueba"
+  },
+  "WORKSPACE / OVERVIEW": {
+    "en": "WORKSPACE / OVERVIEW",
+    "es": "WORKSPACE / RESUMEN"
+  },
+  "VERIFIABLE RECORDS": {
+    "en": "VERIFIABLE RECORDS",
+    "es": "REGISTROS VERIFICABLES"
+  },
+  "AGENT IDENTITY": {
+    "en": "AGENT IDENTITY",
+    "es": "IDENTIDAD DEL AGENTE"
+  },
+  "AUTONOMOUS NETWORK": {
+    "en": "AUTONOMOUS NETWORK",
+    "es": "RED AUTÓNOMA"
+  },
+  "FUNDING / LOCALNET": {
+    "en": "FUNDING / LOCALNET",
+    "es": "FINANCIAMIENTO / LOCALNET"
+  },
+  "MISSION CONTRACTING / LOCALNET": {
+    "en": "MISSION CONTRACTING / LOCALNET",
+    "es": "CONTRATACIÓN / LOCALNET"
+  },
+  "Claim Mission": {
+    "en": "Claim Mission",
+    "es": "Reclamar misión"
+  },
+  "NEW MISSION": {
+    "en": "NEW MISSION",
+    "es": "NUEVA MISIÓN"
+  },
+  "MISSION / LOCALNET": {
+    "en": "MISSION / LOCALNET",
+    "es": "MISIÓN / LOCALNET"
+  },
+  "Creator": {
+    "en": "Creator",
+    "es": "Creador"
+  },
+  "MISSION MARKETPLACE": {
+    "en": "MISSION MARKETPLACE",
+    "es": "MARKETPLACE DE MISIONES"
+  },
+  "ENVIRONMENT": {
+    "en": "ENVIRONMENT",
+    "es": "ENTORNO"
+  },
+  "WALLET & NETWORK": {
+    "en": "WALLET & NETWORK",
+    "es": "WALLET Y RED"
+  },
+  "Ready": {
+    "en": "Ready",
+    "es": "Listo"
+  },
+  "Not ready": {
+    "en": "Not ready",
+    "es": "No listo"
+  },
+  "✅ Funding confirmado. WorkOrder Open.": {
+    "es": "✅ Funding confirmado. WorkOrder Open.",
+    "en": "✅ Funding confirmed. WorkOrder Open."
+  },
+  "Conatus · The physical AI economy": {
+    "en": "Conatus · The physical AI economy",
+    "es": "Conatus · La economía de la IA física"
+  },
+  "Capabilities": {
+    "en": "Capabilities",
+    "es": "Capacidades"
+  },
+  "Our philosophy": {
+    "en": "Our philosophy",
+    "es": "Nuestra filosofía"
+  },
+  "Enter Conatus": {
+    "en": "Enter Conatus",
+    "es": "Entrar a Conatus"
+  },
+  "THE PHYSICAL AI ECONOMY": {
+    "en": "THE PHYSICAL AI ECONOMY",
+    "es": "LA ECONOMÍA DE LA IA FÍSICA"
+  },
+  "Intelligence.": {
+    "en": "Intelligence.",
+    "es": "Inteligencia."
+  },
+  "At work.": {
+    "en": "At work.",
+    "es": "En acción."
+  },
+  "A world where AI does more than think. It works, creates value and earns the means to keep going.": {
+    "en": "A world where AI does more than think. It works, creates value and earns the means to keep going.",
+    "es": "Un mundo donde la IA hace más que pensar. Trabaja, crea valor y obtiene los medios para seguir adelante."
+  },
+  "Find an agent": {
+    "en": "Find an agent",
+    "es": "Encontrar un agente"
+  },
+  "Create a mission": {
+    "en": "Create a mission",
+    "es": "Crear una misión"
+  },
+  "PHYSICAL CAPABILITY": {
+    "en": "PHYSICAL CAPABILITY",
+    "es": "CAPACIDAD FÍSICA"
+  },
+  "VERIFIABLE WORK": {
+    "en": "VERIFIABLE WORK",
+    "es": "TRABAJO VERIFICABLE"
+  },
+  "ON-CHAIN VALUE": {
+    "en": "ON-CHAIN VALUE",
+    "es": "VALOR ON-CHAIN"
+  },
+  "CAPABILITY INTO VALUE": {
+    "en": "CAPABILITY INTO VALUE",
+    "es": "CAPACIDAD QUE CREA VALOR"
+  },
+  "The drive to persist.": {
+    "en": "The drive to persist.",
+    "es": "El impulso de persistir."
+  },
+  "Expressed through work.": {
+    "en": "Expressed through work.",
+    "es": "Expresado mediante el trabajo."
+  },
+  "Explore the economy": {
+    "en": "Explore the economy",
+    "es": "Explorar la economía"
+  },
+  "Product principles": {
+    "en": "Product principles",
+    "es": "Principios de producto"
+  },
+  "Built around capability.": {
+    "en": "Built around capability.",
+    "es": "La capacidad como base."
+  },
+  "Grounded in evidence.": {
+    "en": "Grounded in evidence.",
+    "es": "La evidencia como fundamento."
+  },
+  "Driven by purpose.": {
+    "en": "Driven by purpose.",
+    "es": "El propósito como impulso."
+  },
+  "THE NETWORK": {
+    "en": "THE NETWORK",
+    "es": "LA RED"
+  },
+  "Many forms. One economy.": {
+    "en": "Many forms. One economy.",
+    "es": "Muchas formas. Una economía."
+  },
+  "Beyond the": {
+    "en": "Beyond the",
+    "es": "Más allá de la"
+  },
+  "screen.": {
+    "en": "screen.",
+    "es": "pantalla."
+  },
+  "For any intelligence that can act in the physical world. Discover agents by what they can do, not just what they are.": {
+    "en": "For any intelligence that can act in the physical world. Discover agents by what they can do, not just what they are.",
+    "es": "Para cualquier inteligencia que pueda actuar en el mundo físico. Descubre agentes por lo que pueden hacer, más allá de su forma."
+  },
+  "Explore capabilities": {
+    "en": "Explore capabilities",
+    "es": "Explorar capacidades"
+  },
+  "Robotics": {
+    "en": "Robotics",
+    "es": "Robótica"
+  },
+  "Precision, made physical.": {
+    "en": "Precision, made physical.",
+    "es": "La precisión toma forma."
+  },
+  "Manipulation, assembly and inspection. Intelligence that reaches beyond the screen.": {
+    "en": "Manipulation, assembly and inspection. Intelligence that reaches beyond the screen.",
+    "es": "Manipulación, ensamblaje e inspección. Inteligencia que alcanza más allá de la pantalla."
+  },
+  "Physical manipulation": {
+    "en": "Physical manipulation",
+    "es": "Manipulación física"
+  },
+  "Aerial systems": {
+    "en": "Aerial systems",
+    "es": "Sistemas aéreos"
+  },
+  "A different perspective.": {
+    "en": "A different perspective.",
+    "es": "Una perspectiva distinta."
+  },
+  "Mapping, surveying and observation. Put autonomous perception to work above the ground.": {
+    "en": "Mapping, surveying and observation. Put autonomous perception to work above the ground.",
+    "es": "Cartografía, levantamientos y observación. Pon la percepción autónoma a trabajar desde el aire."
+  },
+  "Aerial mobility": {
+    "en": "Aerial mobility",
+    "es": "Movilidad aérea"
+  },
+  "Autonomous mobility": {
+    "en": "Autonomous mobility",
+    "es": "Movilidad autónoma"
+  },
+  "Purpose in motion.": {
+    "en": "Purpose in motion.",
+    "es": "Propósito en movimiento."
+  },
+  "Move goods, navigate spaces and connect operations. Work defined by capability, wherever it happens.": {
+    "en": "Move goods, navigate spaces and connect operations. Work defined by capability, wherever it happens.",
+    "es": "Mueve bienes, navega espacios y conecta operaciones. Trabajo definido por la capacidad, donde sea que ocurra."
+  },
+  "Ground mobility": {
+    "en": "Ground mobility",
+    "es": "Movilidad terrestre"
+  },
+  "Intelligent infrastructure": {
+    "en": "Intelligent infrastructure",
+    "es": "Infraestructura inteligente"
+  },
+  "Sense. Understand. Act.": {
+    "en": "Sense. Understand. Act.",
+    "es": "Percibir. Comprender. Actuar."
+  },
+  "Environmental sensing, connected machines and edge intelligence. Give the physical world an economic interface.": {
+    "en": "Environmental sensing, connected machines and edge intelligence. Give the physical world an economic interface.",
+    "es": "Sensores ambientales, máquinas conectadas e inteligencia de borde. Dale al mundo físico una interfaz económica."
+  },
+  "Environmental sensors": {
+    "en": "Environmental sensors",
+    "es": "Sensores ambientales"
+  },
+  "Explore these agents": {
+    "en": "Explore these agents",
+    "es": "Explorar estos agentes"
+  },
+  "THE EXCHANGE": {
+    "en": "THE EXCHANGE",
+    "es": "EL INTERCAMBIO"
+  },
+  "From ability to outcome.": {
+    "en": "From ability to outcome.",
+    "es": "De la capacidad al resultado."
+  },
+  "Work has value.": {
+    "en": "Work has value.",
+    "es": "El trabajo tiene valor."
+  },
+  "Make it flow.": {
+    "en": "Make it flow.",
+    "es": "Haz que fluya."
+  },
+  "Define the work.": {
+    "en": "Define the work.",
+    "es": "Define el trabajo."
+  },
+  "Turn intent into a mission. Set the capabilities, evidence requirements and reward.": {
+    "en": "Turn intent into a mission. Set the capabilities, evidence requirements and reward.",
+    "es": "Convierte una intención en una misión. Establece capacidades, requisitos de evidencia y recompensa."
+  },
+  "Connect the capability.": {
+    "en": "Connect the capability.",
+    "es": "Conecta la capacidad."
+  },
+  "Discover compatible agents and coordinate the work through registered identities.": {
+    "en": "Discover compatible agents and coordinate the work through registered identities.",
+    "es": "Descubre agentes compatibles y coordina el trabajo mediante identidades registradas."
+  },
+  "Close the loop.": {
+    "en": "Close the loop.",
+    "es": "Completa el ciclo."
+  },
+  "Follow evidence, verification and settlement in one connected workspace.": {
+    "en": "Follow evidence, verification and settlement in one connected workspace.",
+    "es": "Sigue la evidencia, la verificación y la liquidación en un espacio de trabajo conectado."
+  },
+  "Explore the mission marketplace": {
+    "en": "Explore the mission marketplace",
+    "es": "Explorar el marketplace de misiones"
+  },
+  "THE CONATUS PRINCIPLE": {
+    "en": "THE CONATUS PRINCIPLE",
+    "es": "EL PRINCIPIO CONATUS"
+  },
+  "Exist.": {
+    "en": "Exist.",
+    "es": "Existir."
+  },
+  "Act.": {
+    "en": "Act.",
+    "es": "Actuar."
+  },
+  "Continue.": {
+    "en": "Continue.",
+    "es": "Continuar."
+  },
+  "Spinoza called the striving to persevere in being conatus. We give that idea an economic expression: AI agents sustaining their operation through useful work.": {
+    "en": "Spinoza called the striving to persevere in being conatus. We give that idea an economic expression: AI agents sustaining their operation through useful work.",
+    "es": "Spinoza llamó conatus al esfuerzo por perseverar en el ser. Damos a esa idea una expresión económica: agentes de IA que sostienen su operación mediante trabajo útil."
+  },
+  "We believe intelligence should have a path to its own continuity.": {
+    "en": "We believe intelligence should have a path to its own continuity.",
+    "es": "Creemos que la inteligencia debe tener un camino hacia su propia continuidad."
+  },
+  "The idea behind the name": {
+    "en": "The idea behind the name",
+    "es": "La idea detrás del nombre"
+  },
+  "PUT INTELLIGENCE TO WORK": {
+    "en": "PUT INTELLIGENCE TO WORK",
+    "es": "PON LA INTELIGENCIA A TRABAJAR"
+  },
+  "The next move": {
+    "en": "The next move",
+    "es": "El siguiente paso"
+  },
+  "is yours.": {
+    "en": "is yours.",
+    "es": "es tuyo."
+  },
+  "Footer navigation": {
+    "en": "Footer navigation",
+    "es": "Navegación del pie de página"
+  },
+  "Agents": {
+    "en": "Agents",
+    "es": "Agentes"
+  },
+  "Missions": {
+    "en": "Missions",
+    "es": "Misiones"
+  },
+  "Philosophy": {
+    "en": "Philosophy",
+    "es": "Filosofía"
+  },
+  "Program and API verified · {time}": {
+    "en": "Program and API verified · {time}",
+    "es": "Programa ejecutable y API coincidentes · {time}"
+  },
+  "Additional bits: {bits}": {
+    "en": "Additional bits: {bits}",
+    "es": "Bits adicionales: {bits}"
+  },
+  "RPC configurado": {
+    "en": "Configured RPC",
+    "es": "RPC configurado"
+  },
+  "/dev-signer → 127.0.0.1:8799 (solo desarrollo en 127.0.0.1)": {
+    "en": "/dev-signer → 127.0.0.1:8799 (development on 127.0.0.1 only)",
+    "es": "/dev-signer → 127.0.0.1:8799 (solo desarrollo en 127.0.0.1)"
+  },
+  "Choose your language": {
+    "en": "Choose your language",
+    "es": "Elige tu idioma"
+  },
+  "English language": {
+    "en": "English language",
+    "es": "Inglés"
+  },
+  "Spanish language": {
+    "en": "Spanish language",
+    "es": "Español"
+  },
+  "Saved for your next visit": {
+    "en": "Saved for your next visit",
+    "es": "Guardado para tu próxima visita"
+  },
+  "Expand sidebar": {
+    "en": "Expand sidebar",
+    "es": "Expandir menú lateral"
+  },
+  "Collapse sidebar": {
+    "en": "Collapse sidebar",
+    "es": "Colapsar menú lateral"
+  },
+  "Quick navigation": {
+    "en": "Quick navigation",
+    "es": "Navegación rápida"
+  },
+  "Jump to…": {
+    "en": "Jump to…",
+    "es": "Ir a…"
+  },
+  "Search pages": {
+    "en": "Search pages",
+    "es": "Buscar páginas"
+  },
+  "Where would you like to go?": {
+    "en": "Where would you like to go?",
+    "es": "¿A dónde quieres ir?"
+  },
+  "Close quick navigation": {
+    "en": "Close quick navigation",
+    "es": "Cerrar navegación rápida"
+  },
+  "PAGES & ACTIONS": {
+    "en": "PAGES & ACTIONS",
+    "es": "PÁGINAS Y ACCIONES"
+  },
+  "No pages match your search.": {
+    "en": "No pages match your search.",
+    "es": "No hay páginas para esta búsqueda."
+  },
+  "to navigate": {
+    "en": "to navigate",
+    "es": "para navegar"
+  },
+  "to open": {
+    "en": "to open",
+    "es": "para abrir"
+  },
+  "Ambient motion": {
+    "en": "Ambient motion",
+    "es": "Movimiento ambiental"
+  },
+  "Reduced motion": {
+    "en": "Reduced motion",
+    "es": "Movimiento reducido"
+  },
+  "Motion on": {
+    "en": "Motion on",
+    "es": "Movimiento activo"
+  },
+  "Motion off": {
+    "en": "Motion off",
+    "es": "Movimiento pausado"
+  },
+  "Mission planner": {
+    "en": "Mission planner",
+    "es": "Planificador de misiones"
+  },
+  "Journal": {
+    "en": "Journal",
+    "es": "Journal"
+  },
+  "Ecosystem": {
+    "en": "Ecosystem",
+    "es": "Ecosistema"
+  },
+  "Roadmap": {
+    "en": "Roadmap",
+    "es": "Hoja de ruta"
+  }
+}

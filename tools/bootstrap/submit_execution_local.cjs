@@ -314,48 +314,82 @@ function readContext() {
   );
 }
 
+// REGISTERED DEVICE KEY SELECTION
 function loadDevice(ctx) {
   const namespace = hash(
     `${GENESIS}:${ctx.owner}`
   ).toString('hex').slice(0, 16);
 
-  const keyFile = path.join(
-    '.aerosettle-local',
-    'bootstrap',
-    'keys',
-    `drone-a-${namespace}.json`
-  );
+  const candidates = [
+    path.join(
+      '.aerosettle-local',
+      'bootstrap',
+      'keys',
+      `drone-a-${namespace}.json`
+    ),
+    path.join(
+      '.aerosettle-local',
+      'drone-a-device.json'
+    ),
+  ];
 
-  const data = JSON.parse(
-    fs.readFileSync(keyFile, 'utf8')
-  );
-
-  if (
-    !Array.isArray(data) ||
-    data.length !== 64 ||
-    data.some(x =>
-      !Number.isInteger(x) ||
-      x < 0 ||
-      x > 255
-    )
-  ) {
-    throw Error('Clave privada del dron inválida');
-  }
-
-  const device = Keypair.fromSecretKey(
-    Uint8Array.from(data)
-  );
-
-  if (
-    device.publicKey.toBase58() !==
+  const expected = new PublicKey(
     ctx.signing_authority
-  ) {
-    throw Error(
-      'Clave del dispositivo no coincide con on-chain'
+  );
+
+  for (const location of candidates) {
+    if (!fs.existsSync(location)) continue;
+
+    const secret = JSON.parse(
+      fs.readFileSync(location, 'utf8')
     );
+
+    if (
+      !Array.isArray(secret) ||
+      secret.length !== 64 ||
+      secret.some(x =>
+        !Number.isInteger(x) ||
+        x < 0 ||
+        x > 255
+      )
+    ) {
+      throw Error(
+        `Invalid device key file: ${location}`
+      );
+    }
+
+    const device = Keypair.fromSecretKey(
+      Uint8Array.from(secret)
+    );
+
+    if (!device.publicKey.equals(expected)) {
+      continue;
+    }
+
+    if ((fs.statSync(location).mode & 0o077) !== 0) {
+      throw Error(
+        `Insecure permissions: ${location}. ` +
+        'Run chmod 600 on this file.'
+      );
+    }
+
+    console.log(
+      '✅ Registered device:',
+      device.publicKey.toBase58()
+    );
+
+    console.log(
+      '✅ Device key:',
+      location
+    );
+
+    return device;
   }
 
-  return device;
+  throw Error(
+    'No local device key matches the registered ' +
+    `signing authority: ${ctx.signing_authority}`
+  );
 }
 
 function buildPayload(ctx) {

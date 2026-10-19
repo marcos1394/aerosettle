@@ -1,0 +1,1045 @@
+/* ───────────────── Conatus Agents Marketplace, Detail & Onboarding ───────────────── */
+
+/* Header & Marketplace toolbar */
+.agents-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.agents-toolbar {
+  display: grid;
+  gap: 16px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, #ffffff05, transparent 90px),
+    var(--surface);
+  margin-bottom: 24px;
+}
+
+.agents-toolbar-top {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(150px, 0.8fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.agents-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.agents-search-box > svg {
+  position: absolute;
+  left: 12px;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.agents-search-box input {
+  padding-left: 38px;
+  padding-right: 34px;
+}
+
+.agents-search-clear {
+  position: absolute;
+  right: 6px;
+  min-height: 28px;
+  min-width: 28px;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.agents-toolbar-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid #ffffff0d;
+}
+
+.agents-chip-count {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.72;
+  font-variant-numeric: tabular-nums;
+}
+
+.agents-results-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agents-results-meta strong {
+  color: var(--text);
+}
+
+.agents-inline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* Rich Agent Cards Grid */
+.agents-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.agent-market-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, #ffffff06, transparent 110px),
+    var(--surface);
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+  min-width: 0;
+}
+
+.agent-market-card:hover {
+  border-color: #dbff7355;
+  box-shadow: 0 14px 36px #00000045;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .agent-market-card:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.agent-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.agent-card-titles {
+  min-width: 0;
+}
+
+.agent-card-titles h3 {
+  margin: 0 0 2px;
+  font-size: 17px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-titles h3 a:hover {
+  color: var(--accent);
+}
+
+.agent-card-model {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.agent-card-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ffffff0d;
+}
+
+.agent-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.agent-location svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.75;
+}
+
+.agent-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.agent-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border-radius: 9px;
+  background: #090c0b88;
+  border: 1px solid #ffffff08;
+}
+
+.agent-metric-cell {
+  min-width: 0;
+}
+
+.agent-metric-cell span {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.agent-metric-cell strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.agent-conatus-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: #ffffff04;
+  border: 1px solid #ffffff0a;
+}
+
+.agent-conatus-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.agent-conatus-row span {
+  color: var(--muted);
+}
+
+.agent-conatus-row strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.agent-conatus-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.agent-spark-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.agent-spark-meta span {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.agent-spark-meta strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-card-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.agent-card-caps .chip {
+  background: #ffffff07;
+  border-color: #ffffff14;
+  color: var(--text);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.agent-card-caps .chip-more {
+  color: var(--muted);
+  background: transparent;
+}
+
+.agent-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+/* Recruitment CTA Banner */
+.agents-cta-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 28px 32px;
+  border-radius: var(--radius-lg);
+  border: 1px solid #dbff7338;
+  background:
+    radial-gradient(ellipse 60% 100% at 95% 50%, #dbff7318, transparent 65%),
+    var(--surface);
+  margin-top: 12px;
+}
+
+.agents-cta-banner h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.agents-cta-banner p {
+  margin: 0;
+  max-width: 620px;
+  font-size: 13px;
+}
+
+/* ───────────────── Agent Detail Page ───────────────── */
+
+.agent-breadcrumb {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.agent-breadcrumb a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.agent-breadcrumb a:hover {
+  color: var(--accent);
+}
+
+.agent-hero-grid {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.agent-hero-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-hero-copy {
+  min-width: 0;
+}
+
+.agent-hero-copy h1 {
+  margin: 0 0 4px;
+  font-size: clamp(26px, 2.6vw, 36px);
+}
+
+.agent-hero-Subtitle {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+
+.agent-hero-pills {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.agent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: #090c0b80;
+  color: var(--text);
+}
+
+.agent-pill svg {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.agent-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.agent-rate-box {
+  text-align: right;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #dbff7333;
+  background: #dbff730a;
+}
+
+.agent-rate-box small {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.agent-rate-box strong {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Survival Economics (Conatus Core) */
+.survival-grid {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.95fr) minmax(270px, 1.05fr) minmax(280px, 1.2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.survival-card {
+  padding: 20px;
+  border-radius: var(--radius);
+  border: 1px solid #ffffff12;
+  background: #090c0b75;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.survival-card h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.survival-ring-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.survival-ring-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.survival-ring-copy strong {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.survival-ring-copy p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.survival-kv-list {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #ffffff0d;
+  font-size: 12px;
+}
+
+.survival-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.survival-kv span {
+  color: var(--muted);
+}
+
+.survival-kv strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.runway-callout {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #dbff7330;
+  background: #dbff730a;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.donut-layout {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 150px;
+}
+
+.donut-legend li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.donut-legend-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.donut-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.autopay-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.autopay-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ffffff05;
+  border: 1px solid #ffffff0a;
+  font-size: 12px;
+}
+
+.autopay-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.autopay-item-left svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+.autopay-item-left strong {
+  display: block;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.autopay-item-left small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.autopay-item-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.autopay-item-right strong {
+  display: block;
+  font-size: 12px;
+}
+
+.autopay-item-right small {
+  font-size: 10px;
+  color: var(--success);
+}
+
+/* Reputation & Specs */
+.trust-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.trust-stat-box {
+  padding: 14px;
+  border-radius: 9px;
+  background: #090c0b80;
+  border: 1px solid #ffffff0a;
+  display: grid;
+  gap: 6px;
+}
+
+.trust-stat-box span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.trust-stat-box strong {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.verification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.verification-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ffffff04;
+  border: 1px solid #ffffff08;
+}
+
+.verification-list li svg {
+  width: 16px;
+  height: 16px;
+  color: var(--success);
+  margin-top: 2px;
+}
+
+.verification-list li strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.verification-list li small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.spec-table {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.spec-cell {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #090c0b70;
+  border: 1px solid #ffffff0a;
+}
+
+.spec-cell dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.spec-cell dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* ───────────────── Register Agent Onboarding Wizard ───────────────── */
+
+.register-stepper {
+  list-style: none;
+  margin: 0 0 28px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.register-step-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+.register-step-btn[aria-current='step'] {
+  border-color: var(--accent);
+  background: #dbff7312;
+  color: var(--text);
+}
+
+.register-step-btn.completed {
+  border-color: #79dfb040;
+  color: var(--text);
+}
+
+.register-step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid currentColor;
+  flex-shrink: 0;
+}
+
+.register-step-btn[aria-current='step'] .register-step-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #08251f;
+}
+
+.register-step-btn.completed .register-step-num {
+  background: #79dfb020;
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.register-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.85fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.embodiment-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.embodiment-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #090c0b80;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.embodiment-option:hover {
+  border-color: #dbff7360;
+  background: var(--surface-raised);
+}
+
+.embodiment-option[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: #dbff7312;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.embodiment-option strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.embodiment-option small {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.capability-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 10px;
+  margin: 16px 0 20px;
+}
+
+.capability-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #090c0b80;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  text-align: left;
+}
+
+.capability-toggle[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: #dbff7314;
+  color: var(--text);
+}
+
+.capability-bit {
+  font-family: var(--mono);
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+.key-box {
+  padding: 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #090c0b90;
+  margin-bottom: 18px;
+}
+
+.key-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.key-box-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.breakeven-card {
+  padding: 20px;
+  border-radius: var(--radius);
+  border: 1px solid #dbff7335;
+  background:
+    radial-gradient(circle at 100% 0%, #dbff7314, transparent 60%),
+    #090c0b95;
+  margin-top: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.breakeven-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.breakeven-stat {
+  padding: 12px;
+  border-radius: 8px;
+  background: #ffffff05;
+  border: 1px solid #ffffff0a;
+}
+
+.breakeven-stat span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.breakeven-stat strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wizard-footer-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.field-error {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #ff9da845;
+  background: #ff9da812;
+  color: var(--error);
+  font-size: 12px;
+}
+
+.sdk-provision-box {
+  margin-top: 20px;
+  padding: 20px;
+  border-radius: var(--radius);
+  border: 1px solid #9fb4ff45;
+  background: linear-gradient(180deg, #9fb4ff12, #090c0b90);
+}
+
+@media (max-width: 1180px) {
+  .agents-toolbar-top {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .survival-grid {
+    grid-template-columns: 1fr;
+  }
+  .register-layout {
+    grid-template-columns: 1fr;
+  }
+  .register-stepper {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .agents-toolbar-top,
+  .form-grid-2,
+  .form-grid-3,
+  .breakeven-metrics,
+  .trust-metrics-grid,
+  .spec-table {
+    grid-template-columns: 1fr;
+  }
+  .agents-cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .agent-metrics-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .register-stepper {
+    grid-template-columns: 1fr;
+  }
+}

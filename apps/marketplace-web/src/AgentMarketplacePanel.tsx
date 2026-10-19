@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useConnection } from '@solana/wallet-adapter-react';
 
 import {
-  MarketplaceClient,
   type Agent,
   type WorkOrder,
   type MatchResult,
@@ -13,32 +12,15 @@ import {
   PROGRAM_ID,
 } from '@aerosettle/transaction-sdk';
 
+import ClaimMissionPanel from './ClaimMissionPanel';
+
 import './agent-marketplace.css';
 
-const api = new MarketplaceClient({
-  baseUrl: window.location.origin,
-  timeoutMs: 15000,
-});
+import { api } from './app/api';
+import { CAPABILITIES as CAPABILITY_LABELS } from './app/config';
 
 // Bits oficiales de Capability en AeroSettle Protocol v1.
-const CAPABILITIES = [
-  [0, 'Movilidad aérea'],
-  [1, 'Movilidad terrestre'],
-  [2, 'Visión RGB'],
-  [3, 'Visión térmica'],
-  [4, 'Visión multiespectral'],
-  [5, 'GPS'],
-  [6, 'RTK GPS'],
-  [7, 'Sensores ambientales'],
-  [8, 'Detección de objetos'],
-  [9, 'Inferencia Edge'],
-  [10, 'Manipulación física'],
-  [11, 'Transporte'],
-  [12, 'Suministro energético'],
-  [13, 'Cadena de frío'],
-  [14, 'Cartografía'],
-  [15, 'Telemetría'],
-] as const;
+const CAPABILITIES = CAPABILITY_LABELS.map((name, index) => [index, name] as const);
 
 type ActivityFilter = 'all' | 'active' | 'inactive';
 
@@ -588,6 +570,16 @@ export default function AgentMarketplacePanel() {
           )}
         </aside>
       </div>
+
+      <ClaimMissionPanel
+        agent={currentAgent ?? null}
+        mission={
+          missions.find(
+            order => order.work_order_account === selectedMission
+          ) ?? null
+        }
+        onClaimed={() => setRefresh(value => value + 1)}
+      />
 
       <footer className="agent-marketplace-footer">
         <span>Solana Localnet · Read-only</span>

@@ -1,11 +1,12 @@
 {
-  "name": "@aerosettle/marketplace-web",
+  "name": "@conatus/marketplace-web",
   "version": "0.4.2",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test src/app/*.test.ts",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
@@ -19,7 +20,8 @@
     "@solana/web3.js": "1.99.0",
     "buffer": "6.0.3",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-router": "7.18.4"
   },
   "devDependencies": {
     "@types/node": "22.15.30",

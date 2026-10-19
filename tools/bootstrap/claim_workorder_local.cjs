@@ -165,36 +165,102 @@ if (
   );
 }
 
-function readDevice(name, namespace) {
-  const location = path.join(
-    '.aerosettle-local',
-    'bootstrap',
-    'keys',
-    `${name}-${namespace}.json`
-  );
+function readRegisteredDevice(
+  name, namespace, info, configPda, agentId
+) {
+  const data = Buffer.from(info.data);
 
-  if (!fs.existsSync(location)) {
+  if (
+    !info.owner.equals(programId) ||
+    data.length !== 196 ||
+    !data.subarray(0, 8).equals(bytes8(agentSchema)) ||
+    !data.subarray(9, 41).equals(configPda.toBuffer()) ||
+    !data.subarray(41, 73).equals(agentId) ||
+    !data.subarray(73, 105).equals(wallet.publicKey.toBuffer()) ||
+    data[178] !== 0
+  ) {
     throw Error(
-      `Falta la clave local de ${name}: ${location}`
+      `AgentAccount inválida o inactiva: ${name}`
     );
   }
 
-  const content = JSON.parse(
-    fs.readFileSync(location, 'utf8')
+  const registeredAuthority = new PublicKey(
+    data.subarray(105, 137)
   );
 
-  if (
-    !Array.isArray(content) ||
-    content.length !== 64 ||
-    content.some(v =>
-      !Number.isInteger(v) || v < 0 || v > 255
-    )
-  ) {
-    throw Error(`Keypair corrupto: ${name}`);
+  const candidates = [
+    path.join(
+      '.aerosettle-local',
+      'bootstrap',
+      'keys',
+      `${name}-${namespace}.json`
+    ),
+    path.join(
+      '.aerosettle-local',
+      `${name}-device.json`
+    ),
+  ];
+
+  const observed = [];
+
+  for (const location of candidates) {
+    if (!fs.existsSync(location)) continue;
+
+    const secret = JSON.parse(
+      fs.readFileSync(location, 'utf8')
+    );
+
+    if (
+      !Array.isArray(secret) ||
+      secret.length !== 64 ||
+      secret.some(value =>
+        !Number.isInteger(value) ||
+        value < 0 ||
+        value > 255
+      )
+    ) {
+      throw Error(
+        `Archivo de dispositivo inválido: ${location}`
+      );
+    }
+
+    const device = Keypair.fromSecretKey(
+      Uint8Array.from(secret)
+    );
+
+    observed.push(
+      `${location}: ${device.publicKey.toBase58()}`
+    );
+
+    if (!device.publicKey.equals(registeredAuthority)) {
+      continue;
+    }
+
+    if ((fs.statSync(location).mode & 0o077) !== 0) {
+      throw Error(
+        `Permisos inseguros en ${location}. ` +
+        `Ejecuta chmod 600 sobre ese archivo.`
+      );
+    }
+
+    console.log(
+      `✅ ${name} registered signer verified`
+    );
+    console.log(
+      'On-chain authority:',
+      registeredAuthority.toBase58()
+    );
+    console.log(
+      'Authorized key file:', location
+    );
+
+    return device;
   }
 
-  return Keypair.fromSecretKey(
-    Uint8Array.from(content)
+  throw Error(
+    `No registered signing key found for ${name}. ` +
+    `Expected ${registeredAuthority.toBase58()}. ` +
+    `Candidates: ${observed.join('; ') || 'none'}`
   );
 }
 
@@ -394,10 +460,6 @@ async function main() {
         programId
       );
 
-    const device = readDevice(
-      name, namespace
-    );
-
     const info = await connection.getAccountInfo(
       pda, 'confirmed'
     );
@@ -413,6 +475,10 @@ async function main() {
         `AgentAccount inválida: ${name}`
       );
     }
+
+    const device = readRegisteredDevice(
+      name, namespace, info, configPda, agentId
+    );
 
     agents[name] = {pda, device};
   }
