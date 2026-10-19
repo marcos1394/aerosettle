@@ -1,10 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ed25519 } from '@noble/curves/ed25519';
 import {
   PROVENANCE_SOURCES,
   assertNoSilentAggregation,
   segregateByProvenance,
   type EconomicMetricMetadata,
+  type AttestationPayload,
+  serializeCanonicalAttestation,
+  encodeBase58,
+  _registerTestVerifierAuthority,
 } from './provenance.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -254,17 +259,39 @@ test('Integration [Attestation]: External telemetry without cryptographic signat
 });
 
 test('Integration [Attestation]: External telemetry WITH verified cryptographic signature achieves VERIFIED status', () => {
-  const validSignature = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789ABCDEFGHJKLMNPQRSTUVW';
-  const trustedVerifier = 'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu';
+  // Generate ephemeral keypair representing a registered hardware enclave authority
+  const privKey = ed25519.utils.randomPrivateKey();
+  const pubKeyBytes = ed25519.getPublicKey(privKey);
+  const trustedVerifier = encodeBase58(pubKeyBytes);
 
-  const metadata = PROVENANCE_SOURCES.EXTERNAL_TELEMETRY({
-    verifierAuthority: trustedVerifier,
-    attestationSignature: validSignature,
-    verifiedAt: '2026-10-18T20:50:00Z',
-  });
+  const unregister = _registerTestVerifierAuthority(trustedVerifier);
 
-  assert.equal(metadata.provenance, 'EXTERNAL_VERIFIED');
-  assert.equal(metadata.status, 'VERIFIED');
-  assert.equal(metadata.period, 'Attested 2026-10-18T20:50:00Z');
-  assert.match(metadata.source, /Hardware Enclave Ed25519/);
+  try {
+    const payload: AttestationPayload = {
+      domain: 'conatus:attestation:v1',
+      network: 'solana:localnet',
+      subject: 'AgentEnclave111111111111111111111111111111111',
+      evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      nonce: 'integration-nonce-success-101',
+      expiresAt: Math.floor(Date.now() / 1000) + 7200,
+    };
+
+    const canonicalBytes = serializeCanonicalAttestation(payload);
+    const signatureBytes = ed25519.sign(canonicalBytes, privKey);
+    const validSignature = encodeBase58(signatureBytes);
+
+    const metadata = PROVENANCE_SOURCES.EXTERNAL_TELEMETRY({
+      verifierAuthority: trustedVerifier,
+      attestationSignature: validSignature,
+      payload,
+      verifiedAt: '2026-10-18T20:50:00Z',
+    });
+
+    assert.equal(metadata.provenance, 'EXTERNAL_VERIFIED');
+    assert.equal(metadata.status, 'VERIFIED');
+    assert.equal(metadata.period, 'Attested 2026-10-18T20:50:00Z');
+    assert.match(metadata.source, /Hardware Enclave Ed25519/);
+  } finally {
+    unregister();
+  }
 });

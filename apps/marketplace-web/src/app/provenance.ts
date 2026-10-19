@@ -1,3 +1,7 @@
+import { ed25519 } from '@noble/curves/ed25519';
+// @ts-expect-error bs58 lacks bundled typescript declarations in this workspace
+import bs58 from 'bs58';
+
 /**
  * Conatus Economic Data Provenance & Validation Contract
  * 
@@ -49,39 +53,178 @@ export interface OnchainSplOptions {
   error?: string;
 }
 
+/**
+ * Canonical attestation schema binding domain, network, subject, evidenceHash, nonce, and expiry.
+ */
+export interface AttestationPayload {
+  domain: string; // e.g. 'conatus:attestation:v1'
+  network: string; // e.g. 'solana:localnet'
+  subject: string; // agent PDA or work order PDA
+  evidenceHash: string; // hex or base58 digest of evidence/telemetry
+  nonce: string; // unique nonce to prevent replay attacks
+  expiresAt: number; // Unix timestamp in seconds (or ms if > 1e11)
+  issuedAt?: number;
+  economicValue?: number; // optional economic figure
+}
+
 export interface ExternalTelemetryOptions {
   verifierAuthority?: string;
   attestationSignature?: string;
+  payload?: AttestationPayload;
   isAttested?: boolean;
   verifiedAt?: string;
   error?: string;
-  trustedVerifiers?: readonly string[];
+  currentTime?: number;
 }
 
 /**
- * Trusted verifier authorities registry.
- * In production/localnet, verifier public keys must match an authorized verifier oracle.
+ * Base58 / Hex decoding helpers for strict byte validation.
  */
-export const TRUSTED_VERIFIER_AUTHORITIES: readonly string[] = [
-  'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu', // Protocol Verifier Authority (config.ts)
-];
+function decodeBase58(str: string): Uint8Array | null {
+  try {
+    const fn = (bs58 as unknown as { default?: { decode: (s: string) => Uint8Array }; decode?: (s: string) => Uint8Array }).default?.decode ??
+      (bs58 as unknown as { decode: (s: string) => Uint8Array }).decode;
+    if (typeof fn === 'function') {
+      return fn(str);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function encodeBase58(bytes: Uint8Array): string {
+  const fn = (bs58 as unknown as { default?: { encode: (b: Uint8Array) => string }; encode?: (b: Uint8Array) => string }).default?.encode ??
+    (bs58 as unknown as { encode: (b: Uint8Array) => string }).encode;
+  return fn(bytes);
+}
+
+function decodeHex(str: string): Uint8Array | null {
+  if (str.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(str)) return null;
+  const arr = new Uint8Array(str.length / 2);
+  for (let i = 0; i < str.length; i += 2) {
+    arr[i / 2] = parseInt(str.substring(i, i + 2), 16);
+  }
+  return arr;
+}
+
+function decodeSignature(sigStr: string): Uint8Array | null {
+  const clean = sigStr.trim();
+  if (/^[0-9a-fA-F]{128}$/.test(clean)) {
+    return decodeHex(clean);
+  }
+  const bytes = decodeBase58(clean);
+  if (bytes && bytes.length === 64) {
+    return bytes;
+  }
+  return null;
+}
+
+function decodePublicKey(pubkeyStr: string): Uint8Array | null {
+  const clean = pubkeyStr.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(clean)) {
+    return decodeHex(clean);
+  }
+  const bytes = decodeBase58(clean);
+  if (bytes && bytes.length === 32) {
+    return bytes;
+  }
+  return null;
+}
 
 /**
- * Validates cryptographic attestation signatures from designated verifiers.
+ * Serializes an AttestationPayload into its canonical byte representation.
+ */
+export function serializeCanonicalAttestation(payload: AttestationPayload): Uint8Array {
+  const parts = [
+    `domain=${payload.domain}`,
+    `network=${payload.network}`,
+    `subject=${payload.subject}`,
+    `evidenceHash=${payload.evidenceHash}`,
+    `nonce=${payload.nonce}`,
+    `expiresAt=${payload.expiresAt}`,
+    payload.economicValue !== undefined ? `economicValue=${payload.economicValue}` : '',
+  ].filter(Boolean);
+  return new TextEncoder().encode(parts.join('&'));
+}
+
+/**
+ * Protocol-controlled trusted verifier authorities registry.
+ * Arbitrary callers cannot inject untrusted verifiers into validation functions.
+ */
+const _trustedVerifierAuthorities = new Set<string>([
+  'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu', // Protocol Verifier Authority (config.ts)
+]);
+
+export const TRUSTED_VERIFIER_AUTHORITIES: readonly string[] = [
+  'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu',
+];
+
+export function isTrustedVerifierAuthority(pubkey: string): boolean {
+  return _trustedVerifierAuthorities.has(pubkey);
+}
+
+/**
+ * Internal helper for registering ephemeral verifier authorities during testing ONLY.
+ * Returns an unregister cleanup function to maintain test isolation.
+ */
+export function _registerTestVerifierAuthority(pubkey: string): () => void {
+  _trustedVerifierAuthorities.add(pubkey);
+  return () => {
+    _trustedVerifierAuthorities.delete(pubkey);
+  };
+}
+
+/**
+ * In-memory store for consumed nonces to prevent replay attacks.
+ */
+const _consumedNonces = new Set<string>();
+
+export function isNonceConsumed(nonce: string, domain: string = 'conatus'): boolean {
+  return _consumedNonces.has(`${domain}:${nonce}`);
+}
+
+export function consumeNonce(nonce: string, domain: string = 'conatus'): boolean {
+  const key = `${domain}:${nonce}`;
+  if (_consumedNonces.has(key)) {
+    return false;
+  }
+  _consumedNonces.add(key);
+  return true;
+}
+
+export function _resetNonceStoreForTesting(): void {
+  _consumedNonces.clear();
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  status: ValidationStatus;
+  reason?: string;
+}
+
+/**
+ * Validates cryptographic attestation signatures using real Ed25519 primitives.
  * 
- * Rejects:
- * - Simple boolean flags (e.g. isAttested: true) without a cryptographic signature
- * - Arbitrary, placeholder, or short string signatures (< 64 characters)
- * - Signatures from unauthorized or unconfigured verifiers
+ * Enforces:
+ * - Real Ed25519 mathematical signature verification against authorized public key.
+ * - Strict 64-byte signature and 32-byte public key decoding.
+ * - Verification against the canonical serialized message (domain, network, subject, evidenceHash, nonce, expiry).
+ * - Protocol-controlled trusted verifier authority registry (prevents arbitrary caller injection).
+ * - Nonce replay protection.
+ * - Expiration validation.
+ * - Rejection of boolean flag `isAttested: true` alone without valid signature.
  *
  * In all rejected/unverified cases, preserves EXTERNAL_VERIFIED provenance
- * but strictly enforces PENDING_ATTESTATION validation status.
+ * but strictly enforces PENDING_ATTESTATION validation status; NEVER returns VERIFIED.
  */
 export function validateCryptographicAttestation(options?: {
   verifierAuthority?: string;
   attestationSignature?: string;
-  trustedVerifiers?: readonly string[];
-}): { isValid: boolean; status: ValidationStatus; reason?: string } {
+  payload?: AttestationPayload;
+  isAttested?: boolean;
+  currentTime?: number;
+}): ValidationResult {
   if (!options) {
     return {
       isValid: false,
@@ -90,11 +233,17 @@ export function validateCryptographicAttestation(options?: {
     };
   }
 
-  const { verifierAuthority, attestationSignature } = options;
-  const trustedList = options.trustedVerifiers ?? TRUSTED_VERIFIER_AUTHORITIES;
+  // 1. Boolean flag isAttested: true alone is strictly insufficient
+  if (options.isAttested && !options.attestationSignature) {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: 'Boolean flag isAttested=true is insufficient; cryptographic Ed25519 signature is required',
+    };
+  }
 
-  // 1. Signature must be present and non-empty
-  if (!attestationSignature || typeof attestationSignature !== 'string') {
+  // 2. Attestation signature must be provided
+  if (!options.attestationSignature || typeof options.attestationSignature !== 'string') {
     return {
       isValid: false,
       status: 'PENDING_ATTESTATION',
@@ -102,40 +251,125 @@ export function validateCryptographicAttestation(options?: {
     };
   }
 
-  const cleanSig = attestationSignature.trim();
+  const cleanSig = options.attestationSignature.trim();
 
-  // 2. Structural cryptographic signature check:
-  // An Ed25519 signature in Solana is 64 bytes (87-88 Base58 chars or 128 hex chars).
-  // Arbitrary placeholders, short strings (<64 chars), or mock flags are strictly rejected.
-  const isBase58OrHex = /^[1-9A-HJ-NP-Za-km-z0-9a-fA-F]+$/.test(cleanSig);
-  const isCryptoLength = cleanSig.length >= 64 && cleanSig.length <= 130;
-  const isNotPlaceholder =
-    !cleanSig.toLowerCase().includes('placeholder') &&
-    !cleanSig.toLowerCase().includes('mock') &&
-    !cleanSig.toLowerCase().includes('dummy') &&
-    !cleanSig.toLowerCase().includes('fake') &&
-    !cleanSig.toLowerCase().includes('sig_');
-
-  if (!isBase58OrHex || !isCryptoLength || !isNotPlaceholder) {
+  // Reject placeholders
+  if (
+    cleanSig.toLowerCase().includes('placeholder') ||
+    cleanSig.toLowerCase().includes('mock') ||
+    cleanSig.toLowerCase().includes('dummy') ||
+    cleanSig.toLowerCase().includes('fake') ||
+    cleanSig.toLowerCase().includes('sig_')
+  ) {
     return {
       isValid: false,
       status: 'PENDING_ATTESTATION',
-      reason: 'Invalid cryptographic signature format (must be 64-byte Ed25519 signature)',
+      reason: 'Placeholder or mock signature rejected',
     };
   }
 
-  // 3. Verifier authority check: Must be issued by an authorized trusted verifier
-  if (!verifierAuthority || !trustedList.includes(verifierAuthority)) {
+  // 3. Strict 64-byte decoding
+  const sigBytes = decodeSignature(cleanSig);
+  if (!sigBytes || sigBytes.length !== 64) {
     return {
       isValid: false,
       status: 'PENDING_ATTESTATION',
-      reason: verifierAuthority
-        ? `Untrusted or unregistered verifier authority: ${verifierAuthority}`
-        : 'Missing verifier authority',
+      reason: 'Signature must be strictly 64 decoded bytes (Ed25519 format)',
     };
   }
 
-  // Cryptographically verified by trusted authority
+  // 4. Verifier authority check: must be a registered trusted authority
+  if (!options.verifierAuthority || typeof options.verifierAuthority !== 'string') {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: 'Missing verifier authority',
+    };
+  }
+
+  if (!isTrustedVerifierAuthority(options.verifierAuthority)) {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: `Untrusted or unregistered verifier authority: ${options.verifierAuthority}`,
+    };
+  }
+
+  const pubKeyBytes = decodePublicKey(options.verifierAuthority);
+  if (!pubKeyBytes || pubKeyBytes.length !== 32) {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: 'Verifier authority public key must be strictly 32 decoded bytes',
+    };
+  }
+
+  // 5. Attestation payload binding
+  if (!options.payload) {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: 'Missing canonical attestation payload binding (domain, network, subject, evidenceHash, nonce, expiresAt)',
+    };
+  }
+
+  const { payload } = options;
+  if (
+    !payload.domain ||
+    !payload.network ||
+    !payload.subject ||
+    !payload.evidenceHash ||
+    !payload.nonce ||
+    typeof payload.expiresAt !== 'number'
+  ) {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: 'Malformed attestation payload (all canonical binding fields required)',
+    };
+  }
+
+  // 6. Expiration check
+  const now = options.currentTime ?? Math.floor(Date.now() / 1000);
+  const expiry = payload.expiresAt > 1e11 ? Math.floor(payload.expiresAt / 1000) : payload.expiresAt;
+  const currentSec = now > 1e11 ? Math.floor(now / 1000) : now;
+  if (expiry <= currentSec) {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: 'Attestation has expired',
+    };
+  }
+
+  // 7. Nonce replay check
+  if (isNonceConsumed(payload.nonce, payload.domain)) {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: `Nonce already consumed (replay detected): ${payload.nonce}`,
+    };
+  }
+
+  // 8. Authentic Ed25519 verification against canonical message
+  const canonicalBytes = serializeCanonicalAttestation(payload);
+  let isCryptoValid = false;
+  try {
+    isCryptoValid = ed25519.verify(sigBytes, canonicalBytes, pubKeyBytes);
+  } catch {
+    isCryptoValid = false;
+  }
+
+  if (!isCryptoValid) {
+    return {
+      isValid: false,
+      status: 'PENDING_ATTESTATION',
+      reason: 'Cryptographic Ed25519 signature verification failed (forged signature or tampered message)',
+    };
+  }
+
+  // 9. Consume the nonce upon successful verification to prevent replay
+  consumeNonce(payload.nonce, payload.domain);
+
   return {
     isValid: true,
     status: 'VERIFIED',
@@ -144,6 +378,8 @@ export function validateCryptographicAttestation(options?: {
 
 /**
  * Standard provenance descriptors for Conatus network data sources.
+ * Enforces safe, conservative defaults: descriptors never declare VERIFIED
+ * until a valid confirmed read (such as confirmed slot > 0) has been established.
  */
 export const PROVENANCE_SOURCES = {
   // On-chain verified sources (System Program / Native SOL)
@@ -161,15 +397,27 @@ export const PROVENANCE_SOURCES = {
             commitment: maybeCommitment,
           };
 
-    const status: ValidationStatus =
-      opts.status ?? (opts.error ? 'UNAVAILABLE' : 'VERIFIED');
+    // Conservative safe default: require confirmed slot or explicit status; otherwise PENDING_VALIDATION
+    let status: ValidationStatus;
+    if (opts.error) {
+      status = 'UNAVAILABLE';
+    } else if (opts.status) {
+      status = opts.status;
+    } else if (opts.slot != null && opts.slot > 0) {
+      status = 'VERIFIED';
+    } else {
+      status = 'PENDING_VALIDATION';
+    }
+
     const network = opts.network || 'Solana Localnet';
     const commitment = opts.commitment || 'confirmed';
     const period = opts.error
       ? 'RPC Query Error'
       : opts.slot != null
         ? `Slot ${opts.slot} (${commitment})`
-        : `Real-time (${commitment})`;
+        : status === 'PENDING_VALIDATION'
+          ? 'Pending Confirmation'
+          : `Real-time (${commitment})`;
 
     return {
       provenance: 'ONCHAIN_VERIFIED',
@@ -199,8 +447,18 @@ export const PROVENANCE_SOURCES = {
             commitment,
           };
 
-    const status: ValidationStatus =
-      opts.status ?? (opts.error ? 'UNAVAILABLE' : 'VERIFIED');
+    // Conservative safe default: require confirmed slot or explicit status; otherwise PENDING_VALIDATION
+    let status: ValidationStatus;
+    if (opts.error) {
+      status = 'UNAVAILABLE';
+    } else if (opts.status) {
+      status = opts.status;
+    } else if (opts.slot != null && opts.slot > 0) {
+      status = 'VERIFIED';
+    } else {
+      status = 'PENDING_VALIDATION';
+    }
+
     const net = opts.network || 'Solana Localnet';
     const cmt = opts.commitment || 'confirmed';
     const shortMint =
@@ -211,7 +469,9 @@ export const PROVENANCE_SOURCES = {
       ? 'RPC Query Error'
       : opts.slot != null
         ? `Slot ${opts.slot} (${cmt})`
-        : `Real-time (${cmt})`;
+        : status === 'PENDING_VALIDATION'
+          ? 'Pending Confirmation'
+          : `Real-time (${cmt})`;
 
     return {
       provenance: 'ONCHAIN_VERIFIED',
@@ -226,41 +486,53 @@ export const PROVENANCE_SOURCES = {
 
   ONCHAIN_ESCROW_VAULT: (
     network: string = 'Solana Localnet',
-    status: ValidationStatus = 'VERIFIED',
+    status?: ValidationStatus,
     slot?: number
-  ): EconomicMetricMetadata => ({
-    provenance: 'ONCHAIN_VERIFIED',
-    status,
-    source: 'AeroSettle Program Escrow Vault (PDA)',
-    network: network || 'Solana Localnet',
-    period: slot ? `Slot ${slot} (Finalized)` : 'On-chain Finality (~2.4s)',
-  }),
+  ): EconomicMetricMetadata => {
+    const resolvedStatus: ValidationStatus =
+      status ?? (slot != null && slot > 0 ? 'VERIFIED' : 'PENDING_VALIDATION');
+    return {
+      provenance: 'ONCHAIN_VERIFIED',
+      status: resolvedStatus,
+      source: 'AeroSettle Program Escrow Vault (PDA)',
+      network: network || 'Solana Localnet',
+      period: slot ? `Slot ${slot} (Finalized)` : 'Pending Finality',
+    };
+  },
 
   ONCHAIN_WORK_ORDERS: (
     network: string = 'Solana Localnet',
-    status: ValidationStatus = 'VERIFIED',
+    status?: ValidationStatus,
     slot?: number
-  ): EconomicMetricMetadata => ({
-    provenance: 'ONCHAIN_VERIFIED',
-    status,
-    source: 'WorkOrder Registry Program Accounts (PDA)',
-    network: network || 'Solana Localnet',
-    period: slot ? `Slot ${slot} (Ledger State)` : 'Real-time (Ledger State)',
-  }),
+  ): EconomicMetricMetadata => {
+    const resolvedStatus: ValidationStatus =
+      status ?? (slot != null && slot > 0 ? 'VERIFIED' : 'PENDING_VALIDATION');
+    return {
+      provenance: 'ONCHAIN_VERIFIED',
+      status: resolvedStatus,
+      source: 'WorkOrder Registry Program Accounts (PDA)',
+      network: network || 'Solana Localnet',
+      period: slot ? `Slot ${slot} (Ledger State)` : 'Pending Ledger State',
+    };
+  },
 
   ONCHAIN_AGENT_REGISTRY: (
     network: string = 'Solana Localnet',
-    status: ValidationStatus = 'VERIFIED',
+    status?: ValidationStatus,
     slot?: number
-  ): EconomicMetricMetadata => ({
-    provenance: 'ONCHAIN_VERIFIED',
-    status,
-    source: 'Agent Registry Program Accounts (PDA)',
-    network: network || 'Solana Localnet',
-    period: slot ? `Slot ${slot} (Ledger State)` : 'Real-time (Ledger State)',
-  }),
+  ): EconomicMetricMetadata => {
+    const resolvedStatus: ValidationStatus =
+      status ?? (slot != null && slot > 0 ? 'VERIFIED' : 'PENDING_VALIDATION');
+    return {
+      provenance: 'ONCHAIN_VERIFIED',
+      status: resolvedStatus,
+      source: 'Agent Registry Program Accounts (PDA)',
+      network: network || 'Solana Localnet',
+      period: slot ? `Slot ${slot} (Ledger State)` : 'Pending Ledger State',
+    };
+  },
 
-  // External verified sources — REQUIRE valid cryptographic signature from a trusted verifier
+  // External verified sources — REQUIRE authentic Ed25519 signature from a registered trusted verifier
   EXTERNAL_TELEMETRY: (
     optionsOrVerifier?: string | ExternalTelemetryOptions
   ): EconomicMetricMetadata => {
@@ -279,11 +551,13 @@ export const PROVENANCE_SOURCES = {
       };
     }
 
-    // Cryptographic signature and trusted verifier authority verification
+    // Authentic Ed25519 cryptographic signature and trusted verifier authority verification
     const validation = validateCryptographicAttestation({
       verifierAuthority: opts.verifierAuthority,
       attestationSignature: opts.attestationSignature,
-      trustedVerifiers: opts.trustedVerifiers,
+      payload: opts.payload,
+      isAttested: opts.isAttested,
+      currentTime: opts.currentTime,
     });
 
     const status: ValidationStatus = validation.status;
@@ -358,13 +632,206 @@ export const PROVENANCE_SOURCES = {
   }),
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Typed Provenance Aggregation Protection
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class IncompatibleProvenanceAggregationError extends Error {
+  public readonly operandProvenances: DataProvenance[];
+  public readonly context: string;
+
+  constructor(operandProvenances: DataProvenance[], context: string) {
+    const list = operandProvenances.join(' + ');
+    super(
+      `[Provenance Aggregation Error] Cannot aggregate metrics with incompatible provenances (${list}) in "${context}". Segregate on-chain verified balances from simulated projections into distinct buckets.`
+    );
+    this.name = 'IncompatibleProvenanceAggregationError';
+    this.operandProvenances = operandProvenances;
+    this.context = context;
+  }
+}
+
 /**
- * Guardrail function to guarantee that simulated numbers are NEVER silently added,
- * combined, or folded into verified on-chain balances or revenues.
+ * Validates whether two provenances are compatible for arithmetic operations.
+ * - ONCHAIN_VERIFIED + SIMULATED => INCOMPATIBLE
+ * - EXTERNAL_VERIFIED + SIMULATED => INCOMPATIBLE
+ * - Same provenance => COMPATIBLE
+ */
+export function areProvenancesCompatible(a: DataProvenance, b: DataProvenance): boolean {
+  if (a === b) return true;
+  if (a === 'SIMULATED' || b === 'SIMULATED') return false;
+  return a === b;
+}
+
+/**
+ * Type-safe addition of two EconomicMetrics.
+ * Validates operand provenances before calculation.
+ * Throws IncompatibleProvenanceAggregationError if operands mix verified and simulated data.
+ */
+export function addMetrics(
+  a: EconomicMetric<number>,
+  b: EconomicMetric<number>,
+  context: string = 'Metric Addition'
+): EconomicMetric<number> {
+  if (!areProvenancesCompatible(a.meta.provenance, b.meta.provenance)) {
+    throw new IncompatibleProvenanceAggregationError(
+      [a.meta.provenance, b.meta.provenance],
+      context
+    );
+  }
+
+  let status: ValidationStatus = 'VERIFIED';
+  if (a.meta.provenance === 'SIMULATED') {
+    status = 'SIMULATED_PROJECTION';
+  } else if (a.meta.status === 'UNAVAILABLE' || b.meta.status === 'UNAVAILABLE') {
+    status = 'UNAVAILABLE';
+  } else if (a.meta.status === 'STALE' || b.meta.status === 'STALE') {
+    status = 'STALE';
+  } else if (a.meta.status === 'PENDING_VALIDATION' || b.meta.status === 'PENDING_VALIDATION') {
+    status = 'PENDING_VALIDATION';
+  } else if (a.meta.status === 'PENDING_ATTESTATION' || b.meta.status === 'PENDING_ATTESTATION') {
+    status = 'PENDING_ATTESTATION';
+  }
+
+  return {
+    value: a.value + b.value,
+    meta: {
+      provenance: a.meta.provenance,
+      status,
+      source: `Composite (${context})`,
+      network: a.meta.network === b.meta.network ? a.meta.network : 'Multi-Network',
+      period: a.meta.period,
+    },
+  };
+}
+
+/**
+ * Type-safe summation of an array of EconomicMetrics.
+ * Validates that all operand metrics share a compatible provenance.
+ * Throws IncompatibleProvenanceAggregationError if operands mix verified and simulated data.
+ */
+export function sumMetrics(
+  metrics: EconomicMetric<number>[],
+  context: string = 'Metric Summation'
+): EconomicMetric<number> {
+  if (metrics.length === 0) {
+    return {
+      value: 0,
+      meta: PROVENANCE_SOURCES.SIMULATED_ATLAS_SNAPSHOT('Empty Sum'),
+    };
+  }
+
+  const first = metrics[0];
+  const distinctProvenances = Array.from(new Set(metrics.map((m) => m.meta.provenance)));
+
+  for (let i = 1; i < distinctProvenances.length; i++) {
+    if (!areProvenancesCompatible(distinctProvenances[0], distinctProvenances[i])) {
+      throw new IncompatibleProvenanceAggregationError(distinctProvenances, context);
+    }
+  }
+
+  const totalValue = metrics.reduce((sum, m) => sum + m.value, 0);
+  let status: ValidationStatus =
+    first.meta.provenance === 'SIMULATED' ? 'SIMULATED_PROJECTION' : 'VERIFIED';
+
+  if (metrics.some((m) => m.meta.status === 'UNAVAILABLE')) {
+    status = 'UNAVAILABLE';
+  } else if (metrics.some((m) => m.meta.status === 'STALE')) {
+    status = 'STALE';
+  } else if (metrics.some((m) => m.meta.status === 'PENDING_VALIDATION')) {
+    status = 'PENDING_VALIDATION';
+  } else if (metrics.some((m) => m.meta.status === 'PENDING_ATTESTATION')) {
+    status = 'PENDING_ATTESTATION';
+  }
+
+  return {
+    value: totalValue,
+    meta: {
+      provenance: first.meta.provenance,
+      status,
+      source: `Sum of ${metrics.length} metrics (${context})`,
+      network: first.meta.network,
+      period: first.meta.period,
+    },
+  };
+}
+
+/**
+ * Type-safe average of an array of EconomicMetrics.
+ */
+export function averageMetrics(
+  metrics: EconomicMetric<number>[],
+  context: string = 'Metric Average'
+): EconomicMetric<number> {
+  if (metrics.length === 0) {
+    return {
+      value: 0,
+      meta: PROVENANCE_SOURCES.SIMULATED_ATLAS_SNAPSHOT('Empty Average'),
+    };
+  }
+  const sum = sumMetrics(metrics, context);
+  return {
+    value: sum.value / metrics.length,
+    meta: {
+      ...sum.meta,
+      source: `Average of ${metrics.length} metrics (${context})`,
+    },
+  };
+}
+
+/**
+ * Type-safe reduction of an array of EconomicMetrics.
+ */
+export function reduceMetrics(
+  metrics: EconomicMetric<number>[],
+  reducer: (acc: number, curr: number) => number,
+  initialValue: number,
+  context: string = 'Metric Reduction'
+): EconomicMetric<number> {
+  if (metrics.length === 0) {
+    return {
+      value: initialValue,
+      meta: PROVENANCE_SOURCES.SIMULATED_ATLAS_SNAPSHOT('Empty Reduction'),
+    };
+  }
+  const distinctProvenances = Array.from(new Set(metrics.map((m) => m.meta.provenance)));
+  for (let i = 1; i < distinctProvenances.length; i++) {
+    if (!areProvenancesCompatible(distinctProvenances[0], distinctProvenances[i])) {
+      throw new IncompatibleProvenanceAggregationError(distinctProvenances, context);
+    }
+  }
+
+  const reducedValue = metrics.reduce((acc, m) => reducer(acc, m.value), initialValue);
+  const sample = sumMetrics(metrics, context);
+
+  return {
+    value: reducedValue,
+    meta: {
+      ...sample.meta,
+      source: `Reduction of ${metrics.length} metrics (${context})`,
+    },
+  };
+}
+
+/**
+ * Asserts that multiple metrics can coexist in the same user view / dashboard
+ * while strictly remaining segregated in separate buckets.
+ * This operation NEVER throws for coexistence across different provenances.
+ */
+export function assertCoexistenceOnly(
+  metrics: (EconomicMetric<unknown> | { provenance: DataProvenance })[],
+  context: string = 'Coexistence Display'
+): void {
+  // Coexistence is explicitly valid; verifies that segregation is acknowledged
+  if (!metrics || metrics.length === 0) return;
+  // Does not perform arithmetic aggregation, so no incompatibility error
+}
+
+/**
+ * @deprecated Prefer typed metric operations (`addMetrics`, `sumMetrics`, `averageMetrics`)
+ * for compile-time and runtime provenance safety.
  *
- * Coexistence of verified and simulated metrics on the same view in separate buckets is valid.
- * What this guardrail forbids is incompatible arithmetic aggregation (e.g. summing or folding)
- * that merges verified and simulated amounts into a single composite output value.
+ * Runtime boundary guardrail: verifies that segregated values are not arithmetically folded.
  *
  * Supported forms:
  * 1. assertNoSilentAggregation(aggregateValue, { verified, simulated }, context, strict?)
@@ -372,21 +839,40 @@ export const PROVENANCE_SOURCES = {
  * 3. assertNoSilentAggregation(verified, simulated, context, strict?) -> Coexistence assertion (does NOT throw)
  */
 export function assertNoSilentAggregation(
-  arg1: number,
-  arg2: { verified: number; simulated: number } | number,
+  arg1: number | EconomicMetric<number>,
+  arg2: { verified: number; simulated: number } | number | EconomicMetric<number>,
   arg3?: string | number,
   arg4?: string | boolean,
   arg5: boolean = true
 ): void {
+  // If typed EconomicMetrics are provided, delegate to strict provenance compatibility check
+  if (
+    typeof arg1 === 'object' &&
+    arg1 !== null &&
+    'meta' in arg1 &&
+    typeof arg2 === 'object' &&
+    arg2 !== null &&
+    'meta' in arg2
+  ) {
+    if (!areProvenancesCompatible(arg1.meta.provenance, arg2.meta.provenance)) {
+      const context = typeof arg3 === 'string' ? arg3 : 'Legacy Assertion';
+      throw new IncompatibleProvenanceAggregationError(
+        [arg1.meta.provenance, arg2.meta.provenance],
+        context
+      );
+    }
+    return;
+  }
+
   let aggregateValue: number | undefined;
   let verified: number;
   let simulated: number;
   let context: string;
   let strict = true;
 
-  if (typeof arg2 === 'object' && arg2 !== null) {
+  if (typeof arg2 === 'object' && arg2 !== null && 'verified' in arg2) {
     // Form 1: assertNoSilentAggregation(aggregateValue, { verified, simulated }, context, strict?)
-    aggregateValue = arg1;
+    aggregateValue = arg1 as number;
     verified = arg2.verified;
     simulated = arg2.simulated;
     context = typeof arg3 === 'string' ? arg3 : 'Unknown Context';
@@ -402,7 +888,7 @@ export function assertNoSilentAggregation(
     // Form 3: assertNoSilentAggregation(verified, simulated, context, strict?)
     // Coexistence check: showing a verified balance (e.g. 10) and a simulated portfolio (e.g. 18,420)
     // simultaneously in separate buckets is completely valid and must NOT throw.
-    verified = arg1;
+    verified = typeof arg1 === 'number' ? arg1 : 0;
     simulated = typeof arg2 === 'number' ? arg2 : 0;
     context = typeof arg3 === 'string' ? arg3 : 'Unknown Context';
     if (typeof arg4 === 'boolean') strict = arg4;
@@ -483,6 +969,7 @@ export function getStatusTone(status: ValidationStatus): 'success' | 'accent' | 
 
 /**
  * UI visual tone, badge CSS class, and icon based on provenance AND status.
+ * Guarantees that unconfirmed, pending, stale, or unavailable metrics NEVER display as verified.
  */
 export function getProvenanceVisuals(
   provenance: DataProvenance,
@@ -494,61 +981,85 @@ export function getProvenanceVisuals(
   badgeClass: string;
   iconName: 'check' | 'shield' | 'spark' | 'alert' | 'clock';
 } {
-  // If status is UNAVAILABLE, prioritize error state visually
+  const isEs = locale === 'es';
+
+  // 1. UNAVAILABLE: Error state takes highest precedence
   if (status === 'UNAVAILABLE') {
     return {
       tone: 'error',
-      label: locale === 'es' ? 'No Disponible' : 'Unavailable',
+      label: isEs ? 'No Disponible' : 'Unavailable',
       badgeClass: 'provenance-badge-unavailable',
       iconName: 'alert',
     };
   }
 
-  // If status is PENDING_VALIDATION, prioritize pending in-flight state
-  if (status === 'PENDING_VALIDATION') {
-    return {
-      tone: 'accent',
-      label: locale === 'es' ? 'Validación Pendiente' : 'Pending Validation',
-      badgeClass: 'provenance-badge-pending',
-      iconName: 'clock',
-    };
-  }
-
-  // If status is STALE
+  // 2. STALE: Obsolete data state
   if (status === 'STALE') {
     return {
       tone: 'warning',
-      label: locale === 'es' ? 'Dato Obsoleto' : 'Stale Data',
+      label: isEs ? 'Dato Obsoleto' : 'Stale Data',
       badgeClass: 'provenance-badge-stale',
       iconName: 'alert',
     };
   }
 
-  switch (provenance) {
-    case 'ONCHAIN_VERIFIED':
+  // 3. PENDING_VALIDATION: In-flight or unconfirmed read
+  if (status === 'PENDING_VALIDATION') {
+    return {
+      tone: 'accent',
+      label: isEs ? 'Validación Pendiente' : 'Pending Validation',
+      badgeClass: 'provenance-badge-pending',
+      iconName: 'clock',
+    };
+  }
+
+  // 4. PENDING_ATTESTATION: Awaiting cryptographic attestation
+  if (status === 'PENDING_ATTESTATION') {
+    return {
+      tone: 'accent',
+      label: isEs ? 'Atestación Pendiente' : 'Pending Attestation',
+      badgeClass: 'provenance-badge-pending',
+      iconName: 'shield',
+    };
+  }
+
+  // 5. SIMULATED_PROJECTION or SIMULATED provenance
+  if (status === 'SIMULATED_PROJECTION' || provenance === 'SIMULATED') {
+    return {
+      tone: 'warning',
+      label: isEs ? 'Escenario Simulado' : 'Simulated Scenario',
+      badgeClass: 'provenance-badge-simulated',
+      iconName: 'spark',
+    };
+  }
+
+  // 6. Only when status is explicitly VERIFIED can it display verified visuals!
+  if (status === 'VERIFIED') {
+    if (provenance === 'ONCHAIN_VERIFIED') {
       return {
         tone: 'success',
-        label: locale === 'es' ? 'On-chain Verificado' : 'On-chain Verified',
+        label: isEs ? 'On-chain Verificado' : 'On-chain Verified',
         badgeClass: 'provenance-badge-onchain',
         iconName: 'check',
       };
-    case 'EXTERNAL_VERIFIED':
+    }
+    if (provenance === 'EXTERNAL_VERIFIED') {
       return {
-        tone: status === 'VERIFIED' ? 'accent' : 'warning',
-        label: status === 'VERIFIED'
-          ? (locale === 'es' ? 'Externo Verificado' : 'External Verified')
-          : (locale === 'es' ? 'Atestación Pendiente' : 'Pending Attestation'),
+        tone: 'accent',
+        label: isEs ? 'Externo Verificado' : 'External Verified',
         badgeClass: 'provenance-badge-external',
         iconName: 'shield',
       };
-    case 'SIMULATED':
-      return {
-        tone: 'warning',
-        label: locale === 'es' ? 'Escenario Simulado' : 'Simulated Scenario',
-        badgeClass: 'provenance-badge-simulated',
-        iconName: 'spark',
-      };
+    }
   }
+
+  // Fallback: If status is not VERIFIED, NEVER display as verified
+  return {
+    tone: 'muted',
+    label: isEs ? 'Estado No Confirmado' : 'Unconfirmed State',
+    badgeClass: 'provenance-badge-pending',
+    iconName: 'clock',
+  };
 }
 
 export function getStatusLabel(
