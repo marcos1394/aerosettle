@@ -6,6 +6,7 @@ import {
   type ValidationStatus,
   type EconomicMetric,
   type AttestationPayload,
+  type Clock,
   PROVENANCE_SOURCES,
   assertNoSilentAggregation,
   segregateByProvenance,
@@ -16,8 +17,8 @@ import {
   validateCryptographicAttestation,
   serializeCanonicalAttestation,
   encodeBase58,
-  _registerTestVerifierAuthority,
-  _resetNonceStoreForTesting,
+  createIsolatedAttestationVerifier,
+  InvalidAttestationPayloadError,
   addMetrics,
   sumMetrics,
   averageMetrics,
@@ -148,124 +149,110 @@ test('PROVENANCE_SOURCES: Escrow vault, WorkOrders and Agent PDA default to PEND
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('Ed25519 Authentic Verification: Case 1 — Genuine signature from authorized authority is accepted', () => {
-  _resetNonceStoreForTesting();
-
   // Generate ephemeral keypair
   const privKey = ed25519.utils.randomPrivateKey();
   const pubKeyBytes = ed25519.getPublicKey(privKey);
   const pubKey = encodeBase58(pubKeyBytes);
 
-  // Register ephemeral authority in protocol trusted set
-  const unregister = _registerTestVerifierAuthority(pubKey);
+  // Isolated test verifier configured strictly for this test (isolated authority registry)
+  const verifier = createIsolatedAttestationVerifier({
+    trustedAuthorities: [pubKey],
+  });
 
-  try {
-    const payload: AttestationPayload = {
-      domain: 'conatus:attestation:v1',
-      network: 'solana:localnet',
-      subject: 'Agent1111111111111111111111111111111111111111',
-      evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      nonce: 'nonce-case-1-valid',
-      expiresAt: Math.floor(Date.now() / 1000) + 3600,
-      economicValue: 250,
-    };
+  const payload: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'nonce-case-1-valid',
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    economicValue: 250,
+  };
 
-    const canonicalBytes = serializeCanonicalAttestation(payload);
-    const signatureBytes = ed25519.sign(canonicalBytes, privKey);
-    const validSignature = encodeBase58(signatureBytes);
+  const canonicalBytes = serializeCanonicalAttestation(payload);
+  const signatureBytes = ed25519.sign(canonicalBytes, privKey);
+  const validSignature = encodeBase58(signatureBytes);
 
-    const result = validateCryptographicAttestation({
-      verifierAuthority: pubKey,
-      attestationSignature: validSignature,
-      payload,
-    });
+  const result = verifier.validate({
+    verifierAuthority: pubKey,
+    attestationSignature: validSignature,
+    payload,
+  });
 
-    assert.equal(result.isValid, true);
-    assert.equal(result.status, 'VERIFIED');
-  } finally {
-    unregister();
-  }
+  assert.equal(result.isValid, true);
+  assert.equal(result.status, 'VERIFIED');
 });
 
 test('Ed25519 Authentic Verification: Case 2 — Well-formed Base58 string with false/forged signature is rejected', () => {
-  _resetNonceStoreForTesting();
-
   const privKey = ed25519.utils.randomPrivateKey();
   const pubKey = encodeBase58(ed25519.getPublicKey(privKey));
-  const unregister = _registerTestVerifierAuthority(pubKey);
+  const verifier = createIsolatedAttestationVerifier({
+    trustedAuthorities: [pubKey],
+  });
 
-  try {
-    const payload: AttestationPayload = {
-      domain: 'conatus:attestation:v1',
-      network: 'solana:localnet',
-      subject: 'Agent1111111111111111111111111111111111111111',
-      evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      nonce: 'nonce-case-2-forged',
-      expiresAt: Math.floor(Date.now() / 1000) + 3600,
-    };
+  const payload: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'nonce-case-2-forged',
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  };
 
-    // 64 arbitrary bytes encoded in legitimate Base58 (correct format, but mathematically forged)
-    const forgedBytes = new Uint8Array(64).fill(0x3a);
-    const forgedBase58Sig = encodeBase58(forgedBytes);
+  // 64 arbitrary bytes encoded in legitimate Base58 (correct format, but mathematically forged)
+  const forgedBytes = new Uint8Array(64).fill(0x3a);
+  const forgedBase58Sig = encodeBase58(forgedBytes);
 
-    const result = validateCryptographicAttestation({
-      verifierAuthority: pubKey,
-      attestationSignature: forgedBase58Sig,
-      payload,
-    });
+  const result = verifier.validate({
+    verifierAuthority: pubKey,
+    attestationSignature: forgedBase58Sig,
+    payload,
+  });
 
-    assert.equal(result.isValid, false);
-    assert.equal(result.status, 'PENDING_ATTESTATION');
-    assert.match(result.reason!, /Cryptographic Ed25519 signature verification failed/);
-  } finally {
-    unregister();
-  }
+  assert.equal(result.isValid, false);
+  assert.equal(result.status, 'PENDING_ATTESTATION');
+  assert.match(result.reason!, /Cryptographic Ed25519 signature verification failed/);
 });
 
 test('Ed25519 Authentic Verification: Case 3 — Valid signature with tampered message is rejected', () => {
-  _resetNonceStoreForTesting();
-
   const privKey = ed25519.utils.randomPrivateKey();
   const pubKey = encodeBase58(ed25519.getPublicKey(privKey));
-  const unregister = _registerTestVerifierAuthority(pubKey);
+  const verifier = createIsolatedAttestationVerifier({
+    trustedAuthorities: [pubKey],
+  });
 
-  try {
-    const originalPayload: AttestationPayload = {
-      domain: 'conatus:attestation:v1',
-      network: 'solana:localnet',
-      subject: 'Agent1111111111111111111111111111111111111111',
-      evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      nonce: 'nonce-case-3-tampered',
-      expiresAt: Math.floor(Date.now() / 1000) + 3600,
-      economicValue: 100,
-    };
+  const originalPayload: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'nonce-case-3-tampered',
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    economicValue: 100,
+  };
 
-    const signature = encodeBase58(
-      ed25519.sign(serializeCanonicalAttestation(originalPayload), privKey)
-    );
+  const signature = encodeBase58(
+    ed25519.sign(serializeCanonicalAttestation(originalPayload), privKey)
+  );
 
-    // Attacker modifies economicValue to 500,000 without having the private key
-    const tamperedPayload: AttestationPayload = {
-      ...originalPayload,
-      economicValue: 500_000,
-    };
+  // Attacker modifies economicValue to 500,000 without having the private key
+  const tamperedPayload: AttestationPayload = {
+    ...originalPayload,
+    economicValue: 500_000,
+  };
 
-    const result = validateCryptographicAttestation({
-      verifierAuthority: pubKey,
-      attestationSignature: signature,
-      payload: tamperedPayload,
-    });
+  const result = verifier.validate({
+    verifierAuthority: pubKey,
+    attestationSignature: signature,
+    payload: tamperedPayload,
+  });
 
-    assert.equal(result.isValid, false);
-    assert.equal(result.status, 'PENDING_ATTESTATION');
-    assert.match(result.reason!, /signature verification failed/);
-  } finally {
-    unregister();
-  }
+  assert.equal(result.isValid, false);
+  assert.equal(result.status, 'PENDING_ATTESTATION');
+  assert.match(result.reason!, /signature verification failed/);
 });
 
-test('Ed25519 Authentic Verification: Case 4 — Unauthorized authority signature is rejected', () => {
-  _resetNonceStoreForTesting();
-
+test('Ed25519 Authentic Verification: Case 4 — Unauthorized authority signature is rejected by both production and isolated verifiers', () => {
   // Ephemeral key generated but intentionally NOT registered in trusted authorities
   const unauthorizedPriv = ed25519.utils.randomPrivateKey();
   const unauthorizedPub = encodeBase58(ed25519.getPublicKey(unauthorizedPriv));
@@ -283,94 +270,122 @@ test('Ed25519 Authentic Verification: Case 4 — Unauthorized authority signatur
     ed25519.sign(serializeCanonicalAttestation(payload), unauthorizedPriv)
   );
 
-  const result = validateCryptographicAttestation({
+  // 1) Production default verifier rejects the unauthorized ephemeral pubkey
+  const prodResult = validateCryptographicAttestation({
     verifierAuthority: unauthorizedPub,
     attestationSignature: validSig,
     payload,
   });
+  assert.equal(prodResult.isValid, false);
+  assert.equal(prodResult.status, 'PENDING_ATTESTATION');
+  assert.match(prodResult.reason!, /Untrusted or unregistered verifier authority/);
 
-  assert.equal(result.isValid, false);
-  assert.equal(result.status, 'PENDING_ATTESTATION');
-  assert.match(result.reason!, /Untrusted or unregistered verifier authority/);
+  // 2) Isolated verifier with a different trusted authority also rejects it
+  const isolatedVerifier = createIsolatedAttestationVerifier({
+    trustedAuthorities: ['DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu'],
+  });
+  const isolatedResult = isolatedVerifier.validate({
+    verifierAuthority: unauthorizedPub,
+    attestationSignature: validSig,
+    payload,
+  });
+  assert.equal(isolatedResult.isValid, false);
+  assert.equal(isolatedResult.status, 'PENDING_ATTESTATION');
+  assert.match(isolatedResult.reason!, /Untrusted or unregistered verifier authority/);
 });
 
 test('Ed25519 Authentic Verification: Case 5 — Reused nonce is rejected by replay protection', () => {
-  _resetNonceStoreForTesting();
-
   const privKey = ed25519.utils.randomPrivateKey();
   const pubKey = encodeBase58(ed25519.getPublicKey(privKey));
-  const unregister = _registerTestVerifierAuthority(pubKey);
+  const verifier = createIsolatedAttestationVerifier({
+    trustedAuthorities: [pubKey],
+  });
 
-  try {
-    const payload: AttestationPayload = {
-      domain: 'conatus:attestation:v1',
-      network: 'solana:localnet',
-      subject: 'Agent1111111111111111111111111111111111111111',
-      evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      nonce: 'nonce-replay-unique-123',
-      expiresAt: Math.floor(Date.now() / 1000) + 3600,
-    };
+  const payload: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'nonce-replay-unique-123',
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  };
 
-    const signature = encodeBase58(
-      ed25519.sign(serializeCanonicalAttestation(payload), privKey)
-    );
+  const signature = encodeBase58(
+    ed25519.sign(serializeCanonicalAttestation(payload), privKey)
+  );
 
-    // First presentation: accepted
-    const firstResult = validateCryptographicAttestation({
-      verifierAuthority: pubKey,
-      attestationSignature: signature,
-      payload,
-    });
-    assert.equal(firstResult.isValid, true);
-    assert.equal(firstResult.status, 'VERIFIED');
+  // First presentation: accepted
+  const firstResult = verifier.validate({
+    verifierAuthority: pubKey,
+    attestationSignature: signature,
+    payload,
+  });
+  assert.equal(firstResult.isValid, true);
+  assert.equal(firstResult.status, 'VERIFIED');
 
-    // Replay presentation with identical nonce: rejected
-    const replayResult = validateCryptographicAttestation({
-      verifierAuthority: pubKey,
-      attestationSignature: signature,
-      payload,
-    });
-    assert.equal(replayResult.isValid, false);
-    assert.equal(replayResult.status, 'PENDING_ATTESTATION');
-    assert.match(replayResult.reason!, /Nonce already consumed/);
-  } finally {
-    unregister();
-  }
+  // Replay presentation with identical nonce: rejected
+  const replayResult = verifier.validate({
+    verifierAuthority: pubKey,
+    attestationSignature: signature,
+    payload,
+  });
+  assert.equal(replayResult.isValid, false);
+  assert.equal(replayResult.status, 'PENDING_ATTESTATION');
+  assert.match(replayResult.reason!, /Nonce already consumed/);
 });
 
-test('Ed25519 Authentic Verification: Case 6 — Expired attestation is rejected', () => {
-  _resetNonceStoreForTesting();
-
+test('Ed25519 Authentic Verification: Case 6 — Expired attestation is rejected via injected mock clock and real clock', () => {
   const privKey = ed25519.utils.randomPrivateKey();
   const pubKey = encodeBase58(ed25519.getPublicKey(privKey));
-  const unregister = _registerTestVerifierAuthority(pubKey);
 
-  try {
-    const expiredPayload: AttestationPayload = {
-      domain: 'conatus:attestation:v1',
-      network: 'solana:localnet',
-      subject: 'Agent1111111111111111111111111111111111111111',
-      evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      nonce: 'nonce-expired-1',
-      expiresAt: Math.floor(Date.now() / 1000) - 300, // Expired 5 minutes ago
-    };
+  const payload: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'nonce-clock-test-1',
+    expiresAt: 1_700_000_000, // Fixed historical timestamp
+  };
 
-    const signature = encodeBase58(
-      ed25519.sign(serializeCanonicalAttestation(expiredPayload), privKey)
-    );
+  const signature = encodeBase58(
+    ed25519.sign(serializeCanonicalAttestation(payload), privKey)
+  );
 
-    const result = validateCryptographicAttestation({
-      verifierAuthority: pubKey,
-      attestationSignature: signature,
-      payload: expiredPayload,
-    });
+  // 1) Test with mock clock injected at T = 1,699,999,000 (BEFORE expiration) -> accepted
+  const validClockVerifier = createIsolatedAttestationVerifier({
+    trustedAuthorities: [pubKey],
+    clock: () => 1_699_999_000,
+  });
+  const validResult = validClockVerifier.validate({
+    verifierAuthority: pubKey,
+    attestationSignature: signature,
+    payload,
+  });
+  assert.equal(validResult.isValid, true);
+  assert.equal(validResult.status, 'VERIFIED');
 
-    assert.equal(result.isValid, false);
-    assert.equal(result.status, 'PENDING_ATTESTATION');
-    assert.match(result.reason!, /Attestation has expired/);
-  } finally {
-    unregister();
-  }
+  // 2) Test with mock clock injected at T = 1_700_000_001 (AFTER expiration) -> strictly rejected
+  const expiredClockVerifier = createIsolatedAttestationVerifier({
+    trustedAuthorities: [pubKey],
+    clock: () => 1_700_000_001,
+  });
+  const expiredResult = expiredClockVerifier.validate({
+    verifierAuthority: pubKey,
+    attestationSignature: signature,
+    payload,
+  });
+  assert.equal(expiredResult.isValid, false);
+  assert.equal(expiredResult.status, 'PENDING_ATTESTATION');
+  assert.match(expiredResult.reason!, /Attestation has expired/);
+
+  // 3) Production verifier uses environment clock and strictly rejects historical expiry
+  const prodResult = validateCryptographicAttestation({
+    verifierAuthority: pubKey,
+    attestationSignature: signature,
+    payload,
+  });
+  assert.equal(prodResult.isValid, false);
+  assert.equal(prodResult.status, 'PENDING_ATTESTATION');
 });
 
 test('Ed25519 Authentic Verification: Case 7 — Boolean flag isAttested: true alone is strictly insufficient', () => {
@@ -382,6 +397,154 @@ test('Ed25519 Authentic Verification: Case 7 — Boolean flag isAttested: true a
   assert.equal(result.isValid, false);
   assert.equal(result.status, 'PENDING_ATTESTATION');
   assert.match(result.reason!, /isAttested=true is insufficient/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canonical Serialization Negative Tests (Ambiguity & Collision Immunity)
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('Canonical Serialization: Negative tests prove distinct payloads produce strictly different bytes and delimiter injection is impossible', () => {
+  const basePayload: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'nonce-canonical-test-1',
+    expiresAt: 1_800_000_000,
+  };
+
+  const bytesBase = serializeCanonicalAttestation(basePayload);
+
+  // 1) Header checks: Magic 'CON1' (0x43, 0x4F, 0x4E, 0x01) and field count = 6
+  assert.equal(bytesBase[0], 0x43); // 'C'
+  assert.equal(bytesBase[1], 0x4F); // 'O'
+  assert.equal(bytesBase[2], 0x4E); // 'N'
+  assert.equal(bytesBase[3], 0x01); // Version 1
+  assert.equal(bytesBase[4], 6);    // 6 fields
+
+  // 2) Field boundary shifting test:
+  // In delimiter-based formats (like query strings), domain='a' & network='bc' can collide with domain='ab' & network='c'.
+  // Length-prefixed binary serialization must produce strictly distinct byte arrays.
+  const payloadShifted: AttestationPayload = {
+    ...basePayload,
+    domain: 'conatus:attestation:v1:solana',
+    network: 'localnet',
+  };
+  const bytesShifted = serializeCanonicalAttestation(payloadShifted);
+  assert.notDeepEqual(bytesBase, bytesShifted);
+
+  // 3) Delimiter injection test:
+  // Attacker attempts to inject fake field assignments inside subject string
+  const payloadInjected: AttestationPayload = {
+    ...basePayload,
+    subject: 'Agent1111111111111111111111111111111111111111&evidenceHash=0000000000000000000000000000000000000000000000000000000000000000',
+  };
+  const bytesInjected = serializeCanonicalAttestation(payloadInjected);
+  assert.notDeepEqual(bytesBase, bytesInjected);
+
+  // 4) Different nonces produce distinct bytes
+  const payloadNonce2: AttestationPayload = {
+    ...basePayload,
+    nonce: 'nonce-canonical-test-2',
+  };
+  const bytesNonce2 = serializeCanonicalAttestation(payloadNonce2);
+  assert.notDeepEqual(bytesBase, bytesNonce2);
+});
+
+test('Canonical Serialization: Negative tests validate semantic payload fields and reject malformed inputs', () => {
+  const valid: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'valid-nonce-101',
+    expiresAt: 1_800_000_000,
+  };
+
+  // 1) Empty domain
+  assert.throws(
+    () => serializeCanonicalAttestation({ ...valid, domain: '' }),
+    InvalidAttestationPayloadError
+  );
+
+  // 2) Illegal control characters in domain
+  assert.throws(
+    () => serializeCanonicalAttestation({ ...valid, domain: 'conatus\x00attestation' }),
+    InvalidAttestationPayloadError
+  );
+
+  // 3) Empty network
+  assert.throws(
+    () => serializeCanonicalAttestation({ ...valid, network: '   ' }),
+    InvalidAttestationPayloadError
+  );
+
+  // 4) Subject too short
+  assert.throws(
+    () => serializeCanonicalAttestation({ ...valid, subject: 'short' }),
+    InvalidAttestationPayloadError
+  );
+
+  // 5) Malformed evidenceHash (not valid 32-byte hex or base58 digest)
+  assert.throws(
+    () => serializeCanonicalAttestation({ ...valid, evidenceHash: 'not-a-crypto-digest' }),
+    InvalidAttestationPayloadError
+  );
+
+  // 6) Negative or non-numeric expiresAt
+  assert.throws(
+    () => serializeCanonicalAttestation({ ...valid, expiresAt: -500 }),
+    InvalidAttestationPayloadError
+  );
+  assert.throws(
+    () => serializeCanonicalAttestation({ ...valid, expiresAt: NaN }),
+    InvalidAttestationPayloadError
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Financial & Accounting Guardrails Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('Financial & Accounting Guardrails: Incompatible mints and monetary units are blocked in arithmetic operations', () => {
+  const usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const demoMint = 'HTHpns7gqLAhSBhAzqxhYdyHv9HeXkkRW6aHQfdUjL1G';
+
+  const metricUsdc = makeMetric(100, {
+    ...PROVENANCE_SOURCES.ONCHAIN_SPL_BALANCE({ mint: usdcMint, slot: 100 }),
+    mint: usdcMint,
+    unit: 'USDC',
+  });
+
+  const metricDemo = makeMetric(50, {
+    ...PROVENANCE_SOURCES.ONCHAIN_SPL_BALANCE({ mint: demoMint, slot: 100 }),
+    mint: demoMint,
+    unit: 'DEMO',
+  });
+
+  // Adding metrics with different token mints must throw
+  assert.throws(
+    () => {
+      addMetrics(metricUsdc, metricDemo, 'Incompatible Mints Sum');
+    },
+    (err: unknown) => {
+      assert.ok(err instanceof IncompatibleProvenanceAggregationError);
+      assert.match((err as Error).message, /Incompatible token mints/);
+      return true;
+    }
+  );
+
+  // Summing an array of metrics with mismatched mints must throw
+  assert.throws(
+    () => {
+      sumMetrics([metricUsdc, metricDemo], 'Mismatched Mint Array');
+    },
+    (err: unknown) => {
+      assert.ok(err instanceof IncompatibleProvenanceAggregationError);
+      assert.match((err as Error).message, /Incompatible token mints/);
+      return true;
+    }
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

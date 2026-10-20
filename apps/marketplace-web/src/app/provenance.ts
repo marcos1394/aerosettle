@@ -4,12 +4,12 @@ import bs58 from 'bs58';
 
 /**
  * Conatus Economic Data Provenance & Validation Contract
- * 
+ *
  * Defines strict taxonomy for economic figures across the marketplace:
  * - ONCHAIN_VERIFIED: Directly confirmed state or balance on the Solana ledger (PDA, SPL Token Account, Program Vault).
  * - EXTERNAL_VERIFIED: Cryptographically attested external data (signed telemetry from hardware enclaves, verifier oracle attestations).
  * - SIMULATED: Representative operational dataset (Atlas), projected runway, or financial simulation models.
- * 
+ *
  * Separates Provenance (ontological source) from ValidationStatus (current verification/network health state).
  */
 
@@ -29,6 +29,8 @@ export interface EconomicMetricMetadata {
   source: string;
   network: string;
   period: string;
+  mint?: string;
+  unit?: string;
 }
 
 export interface EconomicMetric<T = number> {
@@ -74,7 +76,11 @@ export interface ExternalTelemetryOptions {
   isAttested?: boolean;
   verifiedAt?: string;
   error?: string;
-  currentTime?: number;
+  /**
+   * Optional isolated verifier instance for testing environments.
+   * In production, always falls back to defaultAttestationVerifier.
+   */
+  verifier?: AttestationVerifier;
 }
 
 /**
@@ -132,70 +138,275 @@ function decodePublicKey(pubkeyStr: string): Uint8Array | null {
   return null;
 }
 
+export class InvalidAttestationPayloadError extends Error {
+  constructor(message: string) {
+    super(`[Invalid Attestation Payload] ${message}`);
+    this.name = 'InvalidAttestationPayloadError';
+  }
+}
+
 /**
- * Serializes an AttestationPayload into its canonical byte representation.
+ * Validates the semantic structure and invariants of an AttestationPayload:
+ * - Domain and network must be non-empty strings without control characters.
+ * - Subject must be a valid account/PDA identifier (Base58 string).
+ * - EvidenceHash must be a valid 32-byte cryptographic digest (hex or Base58).
+ * - Nonce must be a non-empty unique string.
+ * - ExpiresAt must be a positive timestamp.
+ */
+export function validateAttestationPayload(payload: AttestationPayload): void {
+  if (!payload || typeof payload !== 'object') {
+    throw new InvalidAttestationPayloadError('Payload must be a non-null object');
+  }
+
+  // 1. Domain
+  if (typeof payload.domain !== 'string' || payload.domain.trim().length === 0) {
+    throw new InvalidAttestationPayloadError('domain must be a non-empty string');
+  }
+  if (!/^[a-zA-Z0-9_:.-]+$/.test(payload.domain.trim())) {
+    throw new InvalidAttestationPayloadError('domain contains illegal characters; expected alphanumeric, underscore, colon, dot, or dash');
+  }
+
+  // 2. Network
+  if (typeof payload.network !== 'string' || payload.network.trim().length === 0) {
+    throw new InvalidAttestationPayloadError('network must be a non-empty string');
+  }
+  if (!/^[a-zA-Z0-9_:.-]+$/.test(payload.network.trim())) {
+    throw new InvalidAttestationPayloadError('network contains illegal characters');
+  }
+
+  // 3. Subject (Agent PDA or WorkOrder PDA)
+  if (typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
+    throw new InvalidAttestationPayloadError('subject must be a non-empty identifier');
+  }
+  const cleanSubject = payload.subject.trim();
+  if (cleanSubject.length < 10 || cleanSubject.length > 128) {
+    throw new InvalidAttestationPayloadError(`subject length (${cleanSubject.length}) out of valid range (10-128 chars)`);
+  }
+
+  // 4. Evidence Hash (32-byte digest, 64 hex chars or 32-44 base58 chars)
+  if (typeof payload.evidenceHash !== 'string' || payload.evidenceHash.trim().length === 0) {
+    throw new InvalidAttestationPayloadError('evidenceHash must be a non-empty cryptographic digest');
+  }
+  const cleanHash = payload.evidenceHash.trim();
+  const isHex64 = /^[0-9a-fA-F]{64}$/.test(cleanHash);
+  const isBase58Hash = cleanHash.length >= 32 && cleanHash.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(cleanHash);
+  if (!isHex64 && !isBase58Hash) {
+    throw new InvalidAttestationPayloadError('evidenceHash must be a valid 32-byte cryptographic digest (64 hex characters or 32-44 Base58 characters)');
+  }
+
+  // 5. Nonce
+  if (typeof payload.nonce !== 'string' || payload.nonce.trim().length === 0) {
+    throw new InvalidAttestationPayloadError('nonce must be a non-empty string');
+  }
+
+  // 6. ExpiresAt
+  if (typeof payload.expiresAt !== 'number' || !Number.isFinite(payload.expiresAt) || payload.expiresAt <= 0) {
+    throw new InvalidAttestationPayloadError('expiresAt must be a positive numeric timestamp');
+  }
+
+  // 7. Optional economicValue
+  if (payload.economicValue !== undefined && (!Number.isFinite(payload.economicValue) || payload.economicValue < 0)) {
+    throw new InvalidAttestationPayloadError('economicValue, when provided, must be a non-negative finite number');
+  }
+}
+
+/**
+ * Encodes a single field using [1-byte tag][4-byte uint32 big-endian length][value bytes].
+ */
+function encodeLengthPrefixedField(tag: number, valueBytes: Uint8Array): Uint8Array {
+  const result = new Uint8Array(1 + 4 + valueBytes.length);
+  result[0] = tag;
+  const len = valueBytes.length;
+  result[1] = (len >>> 24) & 0xff;
+  result[2] = (len >>> 16) & 0xff;
+  result[3] = (len >>> 8) & 0xff;
+  result[4] = len & 0xff;
+  result.set(valueBytes, 5);
+  return result;
+}
+
+/**
+ * Serializes an AttestationPayload into an unequivocal, versioned binary format (CON1).
+ *
+ * Uses unambiguous length-prefixed Tag-Length-Value (TLV) encoding:
+ * - Magic header: 4 bytes `CON1` (0x43, 0x4F, 0x4E, 0x01)
+ * - Field count: 1 byte
+ * - Tag 0x01: domain (UTF-8 string)
+ * - Tag 0x02: network (UTF-8 string)
+ * - Tag 0x03: subject (UTF-8 string)
+ * - Tag 0x04: evidenceHash (UTF-8 string)
+ * - Tag 0x05: nonce (UTF-8 string)
+ * - Tag 0x06: expiresAt (8 bytes uint64 big-endian timestamp in seconds)
+ * - Tag 0x07: economicValue (optional, 8 bytes float64 big-endian)
+ *
+ * Length-prefixing makes delimiter injection and field boundary collision mathematically impossible.
  */
 export function serializeCanonicalAttestation(payload: AttestationPayload): Uint8Array {
-  const parts = [
-    `domain=${payload.domain}`,
-    `network=${payload.network}`,
-    `subject=${payload.subject}`,
-    `evidenceHash=${payload.evidenceHash}`,
-    `nonce=${payload.nonce}`,
-    `expiresAt=${payload.expiresAt}`,
-    payload.economicValue !== undefined ? `economicValue=${payload.economicValue}` : '',
-  ].filter(Boolean);
-  return new TextEncoder().encode(parts.join('&'));
+  validateAttestationPayload(payload);
+
+  const encoder = new TextEncoder();
+  const fields: Uint8Array[] = [
+    encodeLengthPrefixedField(0x01, encoder.encode(payload.domain.trim())),
+    encodeLengthPrefixedField(0x02, encoder.encode(payload.network.trim())),
+    encodeLengthPrefixedField(0x03, encoder.encode(payload.subject.trim())),
+    encodeLengthPrefixedField(0x04, encoder.encode(payload.evidenceHash.trim())),
+    encodeLengthPrefixedField(0x05, encoder.encode(payload.nonce.trim())),
+  ];
+
+  // Tag 0x06: expiresAt as 8-byte uint64 big-endian (seconds)
+  const expSec = payload.expiresAt > 1e11 ? Math.floor(payload.expiresAt / 1000) : Math.floor(payload.expiresAt);
+  const expBuf = new ArrayBuffer(8);
+  new DataView(expBuf).setBigUint64(0, BigInt(expSec), false);
+  fields.push(encodeLengthPrefixedField(0x06, new Uint8Array(expBuf)));
+
+  // Tag 0x07: optional economicValue
+  if (payload.economicValue !== undefined) {
+    const valBuf = new ArrayBuffer(8);
+    new DataView(valBuf).setFloat64(0, payload.economicValue, false);
+    fields.push(encodeLengthPrefixedField(0x07, new Uint8Array(valBuf)));
+  }
+
+  let totalSize = 4 + 1; // Magic + count
+  for (const f of fields) {
+    totalSize += f.length;
+  }
+
+  const result = new Uint8Array(totalSize);
+  let offset = 0;
+  result[offset++] = 0x43; // 'C'
+  result[offset++] = 0x4F; // 'O'
+  result[offset++] = 0x4E; // 'N'
+  result[offset++] = 0x01; // Version 1
+  result[offset++] = fields.length;
+
+  for (const f of fields) {
+    result.set(f, offset);
+    offset += f.length;
+  }
+
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clock & Replay Protection Abstractions
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface Clock {
+  /** Returns current UNIX timestamp in seconds */
+  now(): number;
+}
+
+export const SystemClock: Clock = Object.freeze({
+  now: () => Math.floor(Date.now() / 1000),
+});
+
+export interface NonceReplayStore {
+  has(key: string): boolean;
+  add(key: string): void;
+  clear?(): void;
 }
 
 /**
- * Protocol-controlled trusted verifier authorities registry.
- * Arbitrary callers cannot inject untrusted verifiers into validation functions.
+ * Local in-memory nonce store for single-session tab deduplication.
+ *
+ * ARCHITECTURAL SECURITY NOTE:
+ * This in-memory Set ONLY provides local client-side deduplication within the current browser
+ * window/session memory. It is NOT a cryptographic anti-replay guarantee for economic transactions
+ * across sessions, tabs, devices, or network participants.
+ *
+ * Economic finality and persistent anti-replay require durable on-chain state verification (e.g.
+ * Solana transaction nonce accounts or PDA state transitions) or consensus-backed indexing services
+ * implementing the `PersistentAttestationRegistry` interface.
  */
-const _trustedVerifierAuthorities = new Set<string>([
-  'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu', // Protocol Verifier Authority (config.ts)
-]);
+export class InMemoryNonceReplayStore implements NonceReplayStore {
+  private readonly nonces = new Set<string>();
 
-export const TRUSTED_VERIFIER_AUTHORITIES: readonly string[] = [
-  'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu',
-];
+  has(key: string): boolean {
+    return this.nonces.has(key);
+  }
 
-export function isTrustedVerifierAuthority(pubkey: string): boolean {
-  return _trustedVerifierAuthorities.has(pubkey);
+  add(key: string): void {
+    this.nonces.add(key);
+  }
+
+  clear(): void {
+    this.nonces.clear();
+  }
 }
 
-/**
- * Internal helper for registering ephemeral verifier authorities during testing ONLY.
- * Returns an unregister cleanup function to maintain test isolation.
- */
-export function _registerTestVerifierAuthority(pubkey: string): () => void {
-  _trustedVerifierAuthorities.add(pubkey);
-  return () => {
-    _trustedVerifierAuthorities.delete(pubkey);
-  };
-}
-
-/**
- * In-memory store for consumed nonces to prevent replay attacks.
- */
-const _consumedNonces = new Set<string>();
+export const defaultSessionNonceStore: NonceReplayStore = new InMemoryNonceReplayStore();
 
 export function isNonceConsumed(nonce: string, domain: string = 'conatus'): boolean {
-  return _consumedNonces.has(`${domain}:${nonce}`);
+  return defaultSessionNonceStore.has(`${domain}:${nonce}`);
 }
 
 export function consumeNonce(nonce: string, domain: string = 'conatus'): boolean {
   const key = `${domain}:${nonce}`;
-  if (_consumedNonces.has(key)) {
+  if (defaultSessionNonceStore.has(key)) {
     return false;
   }
-  _consumedNonces.add(key);
+  defaultSessionNonceStore.add(key);
   return true;
 }
 
 export function _resetNonceStoreForTesting(): void {
-  _consumedNonces.clear();
+  defaultSessionNonceStore.clear?.();
 }
+
+/**
+ * Interface for persistent cross-session, distributed attestation anti-replay verification.
+ *
+ * Future backend or indexing infrastructure will implement this interface against a durable,
+ * distributed datastore (e.g., PostgreSQL with transactional row locking, Redis with TTL, or
+ * Solana on-chain account state verification) to prevent cross-client or cross-session replay attacks.
+ */
+export interface PersistentAttestationRegistry {
+  /**
+   * Checks whether a specific attestation nonce has already been consumed for a given authority.
+   * @param verifierAuthority Base58 public key of the verifier
+   * @param nonce Unique attestation nonce
+   */
+  hasNonceBeenConsumed(verifierAuthority: string, nonce: string): Promise<boolean>;
+
+  /**
+   * Atomically records an attestation nonce as consumed with an expiration TTL.
+   * Rejects if the nonce was already consumed (atomic test-and-set).
+   * @param verifierAuthority Base58 public key of the verifier
+   * @param nonce Unique attestation nonce
+   * @param expiresAt UNIX timestamp in seconds after which the record can be pruned
+   * @param metadata Optional contextual audit metadata
+   */
+  recordNonceConsumption(
+    verifierAuthority: string,
+    nonce: string,
+    expiresAt: number,
+    metadata?: Record<string, unknown>
+  ): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Validates whether an attestation signature has been previously indexed or revoked.
+   * @param signature 64-byte Ed25519 signature in Base58
+   */
+  isSignatureRevoked(signature: string): Promise<boolean>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trust Registry & Attestation Verifier
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sealed protocol-controlled trusted verifier authorities registry.
+ * Arbitrary callers CANNOT inject untrusted verifiers into validation functions in production.
+ */
+export const PRODUCTION_TRUSTED_VERIFIER_AUTHORITIES: ReadonlySet<string> = Object.freeze(
+  new Set<string>([
+    'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu', // Protocol Verifier Authority (config.ts)
+  ])
+);
+
+export const TRUSTED_VERIFIER_AUTHORITIES: readonly string[] = [
+  'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu',
+];
 
 export interface ValidationResult {
   isValid: boolean;
@@ -203,177 +414,241 @@ export interface ValidationResult {
   reason?: string;
 }
 
+export interface AttestationVerifier {
+  validate(options?: {
+    verifierAuthority?: string;
+    attestationSignature?: string;
+    payload?: AttestationPayload;
+    isAttested?: boolean;
+  }): ValidationResult;
+  isTrusted(pubkey: string): boolean;
+}
+
+export class CryptographicAttestationVerifier implements AttestationVerifier {
+  private readonly trustedAuthorities: ReadonlySet<string>;
+  private readonly clock: Clock;
+  private readonly replayStore: NonceReplayStore;
+
+  constructor(options?: {
+    trustedAuthorities?: Iterable<string>;
+    clock?: Clock;
+    replayStore?: NonceReplayStore;
+  }) {
+    this.trustedAuthorities = options?.trustedAuthorities
+      ? new Set(options.trustedAuthorities)
+      : PRODUCTION_TRUSTED_VERIFIER_AUTHORITIES;
+    this.clock = options?.clock ?? SystemClock;
+    this.replayStore = options?.replayStore ?? defaultSessionNonceStore;
+  }
+
+  isTrusted(pubkey: string): boolean {
+    if (!pubkey || typeof pubkey !== 'string') return false;
+    return this.trustedAuthorities.has(pubkey);
+  }
+
+  validate(options?: {
+    verifierAuthority?: string;
+    attestationSignature?: string;
+    payload?: AttestationPayload;
+    isAttested?: boolean;
+  }): ValidationResult {
+    if (!options) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'No attestation metadata provided',
+      };
+    }
+
+    // 1. Boolean flag isAttested: true alone is strictly insufficient
+    if (options.isAttested && !options.attestationSignature) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Boolean flag isAttested=true is insufficient; cryptographic Ed25519 signature is required',
+      };
+    }
+
+    // 2. Attestation signature must be provided
+    if (!options.attestationSignature || typeof options.attestationSignature !== 'string') {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Missing cryptographic attestation signature',
+      };
+    }
+
+    const cleanSig = options.attestationSignature.trim();
+
+    // Reject placeholders
+    if (
+      cleanSig.toLowerCase().includes('placeholder') ||
+      cleanSig.toLowerCase().includes('mock') ||
+      cleanSig.toLowerCase().includes('dummy') ||
+      cleanSig.toLowerCase().includes('fake') ||
+      cleanSig.toLowerCase().includes('sig_')
+    ) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Placeholder or mock signature rejected',
+      };
+    }
+
+    // 3. Strict 64-byte decoding
+    const sigBytes = decodeSignature(cleanSig);
+    if (!sigBytes || sigBytes.length !== 64) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Signature must be strictly 64 decoded bytes (Ed25519 format)',
+      };
+    }
+
+    // 4. Verifier authority check: must be a registered trusted authority
+    if (!options.verifierAuthority || typeof options.verifierAuthority !== 'string') {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Missing verifier authority',
+      };
+    }
+
+    if (!this.isTrusted(options.verifierAuthority)) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: `Untrusted or unregistered verifier authority: ${options.verifierAuthority}`,
+      };
+    }
+
+    const pubKeyBytes = decodePublicKey(options.verifierAuthority);
+    if (!pubKeyBytes || pubKeyBytes.length !== 32) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Verifier authority public key must be strictly 32 decoded bytes',
+      };
+    }
+
+    // 5. Attestation payload binding
+    if (!options.payload) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Missing canonical attestation payload binding (domain, network, subject, evidenceHash, nonce, expiresAt)',
+      };
+    }
+
+    const { payload } = options;
+    try {
+      validateAttestationPayload(payload);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: `Malformed attestation payload: ${msg}`,
+      };
+    }
+
+    // 6. Expiration check using trusted clock (untrusted caller cannot alter)
+    const currentSec = this.clock.now();
+    const expiry = payload.expiresAt > 1e11 ? Math.floor(payload.expiresAt / 1000) : Math.floor(payload.expiresAt);
+    if (expiry <= currentSec) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Attestation has expired',
+      };
+    }
+
+    // 7. Nonce replay check
+    const replayKey = `${options.verifierAuthority}:${payload.domain}:${payload.nonce}`;
+    if (this.replayStore.has(replayKey)) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: `Nonce already consumed (replay detected): ${payload.nonce}`,
+      };
+    }
+
+    // 8. Authentic Ed25519 verification against canonical message
+    const canonicalBytes = serializeCanonicalAttestation(payload);
+    let isCryptoValid = false;
+    try {
+      isCryptoValid = ed25519.verify(sigBytes, canonicalBytes, pubKeyBytes);
+    } catch {
+      isCryptoValid = false;
+    }
+
+    if (!isCryptoValid) {
+      return {
+        isValid: false,
+        status: 'PENDING_ATTESTATION',
+        reason: 'Cryptographic Ed25519 signature verification failed (forged signature or tampered message)',
+      };
+    }
+
+    // 9. Consume the nonce upon successful verification to prevent replay
+    this.replayStore.add(replayKey);
+
+    return {
+      isValid: true,
+      status: 'VERIFIED',
+    };
+  }
+}
+
 /**
- * Validates cryptographic attestation signatures using real Ed25519 primitives.
- * 
- * Enforces:
- * - Real Ed25519 mathematical signature verification against authorized public key.
- * - Strict 64-byte signature and 32-byte public key decoding.
- * - Verification against the canonical serialized message (domain, network, subject, evidenceHash, nonce, expiry).
- * - Protocol-controlled trusted verifier authority registry (prevents arbitrary caller injection).
- * - Nonce replay protection.
- * - Expiration validation.
- * - Rejection of boolean flag `isAttested: true` alone without valid signature.
+ * Default production attestation verifier instance using sealed production trusted authorities,
+ * the trusted environment system clock, and the default session nonce store.
+ */
+export const defaultAttestationVerifier: AttestationVerifier = new CryptographicAttestationVerifier();
+
+/**
+ * Checks if a public key belongs to the production trusted authorities.
+ */
+export function isTrustedVerifierAuthority(pubkey: string): boolean {
+  return defaultAttestationVerifier.isTrusted(pubkey);
+}
+
+/**
+ * Validates cryptographic attestation signatures in production using real Ed25519 primitives,
+ * the immutable protocol trust registry, and the trusted environment clock.
  *
- * In all rejected/unverified cases, preserves EXTERNAL_VERIFIED provenance
- * but strictly enforces PENDING_ATTESTATION validation status; NEVER returns VERIFIED.
+ * Does NOT permit arbitrary callers to inject test authorities or alter the clock.
  */
 export function validateCryptographicAttestation(options?: {
   verifierAuthority?: string;
   attestationSignature?: string;
   payload?: AttestationPayload;
   isAttested?: boolean;
-  currentTime?: number;
 }): ValidationResult {
-  if (!options) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'No attestation metadata provided',
-    };
-  }
+  return defaultAttestationVerifier.validate(options);
+}
 
-  // 1. Boolean flag isAttested: true alone is strictly insufficient
-  if (options.isAttested && !options.attestationSignature) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Boolean flag isAttested=true is insufficient; cryptographic Ed25519 signature is required',
-    };
-  }
-
-  // 2. Attestation signature must be provided
-  if (!options.attestationSignature || typeof options.attestationSignature !== 'string') {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Missing cryptographic attestation signature',
-    };
-  }
-
-  const cleanSig = options.attestationSignature.trim();
-
-  // Reject placeholders
-  if (
-    cleanSig.toLowerCase().includes('placeholder') ||
-    cleanSig.toLowerCase().includes('mock') ||
-    cleanSig.toLowerCase().includes('dummy') ||
-    cleanSig.toLowerCase().includes('fake') ||
-    cleanSig.toLowerCase().includes('sig_')
-  ) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Placeholder or mock signature rejected',
-    };
-  }
-
-  // 3. Strict 64-byte decoding
-  const sigBytes = decodeSignature(cleanSig);
-  if (!sigBytes || sigBytes.length !== 64) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Signature must be strictly 64 decoded bytes (Ed25519 format)',
-    };
-  }
-
-  // 4. Verifier authority check: must be a registered trusted authority
-  if (!options.verifierAuthority || typeof options.verifierAuthority !== 'string') {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Missing verifier authority',
-    };
-  }
-
-  if (!isTrustedVerifierAuthority(options.verifierAuthority)) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: `Untrusted or unregistered verifier authority: ${options.verifierAuthority}`,
-    };
-  }
-
-  const pubKeyBytes = decodePublicKey(options.verifierAuthority);
-  if (!pubKeyBytes || pubKeyBytes.length !== 32) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Verifier authority public key must be strictly 32 decoded bytes',
-    };
-  }
-
-  // 5. Attestation payload binding
-  if (!options.payload) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Missing canonical attestation payload binding (domain, network, subject, evidenceHash, nonce, expiresAt)',
-    };
-  }
-
-  const { payload } = options;
-  if (
-    !payload.domain ||
-    !payload.network ||
-    !payload.subject ||
-    !payload.evidenceHash ||
-    !payload.nonce ||
-    typeof payload.expiresAt !== 'number'
-  ) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Malformed attestation payload (all canonical binding fields required)',
-    };
-  }
-
-  // 6. Expiration check
-  const now = options.currentTime ?? Math.floor(Date.now() / 1000);
-  const expiry = payload.expiresAt > 1e11 ? Math.floor(payload.expiresAt / 1000) : payload.expiresAt;
-  const currentSec = now > 1e11 ? Math.floor(now / 1000) : now;
-  if (expiry <= currentSec) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Attestation has expired',
-    };
-  }
-
-  // 7. Nonce replay check
-  if (isNonceConsumed(payload.nonce, payload.domain)) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: `Nonce already consumed (replay detected): ${payload.nonce}`,
-    };
-  }
-
-  // 8. Authentic Ed25519 verification against canonical message
-  const canonicalBytes = serializeCanonicalAttestation(payload);
-  let isCryptoValid = false;
-  try {
-    isCryptoValid = ed25519.verify(sigBytes, canonicalBytes, pubKeyBytes);
-  } catch {
-    isCryptoValid = false;
-  }
-
-  if (!isCryptoValid) {
-    return {
-      isValid: false,
-      status: 'PENDING_ATTESTATION',
-      reason: 'Cryptographic Ed25519 signature verification failed (forged signature or tampered message)',
-    };
-  }
-
-  // 9. Consume the nonce upon successful verification to prevent replay
-  consumeNonce(payload.nonce, payload.domain);
-
-  return {
-    isValid: true,
-    status: 'VERIFIED',
-  };
+/**
+ * Factory for creating an isolated attestation verifier instance.
+ * Strictly intended for test suites requiring ephemeral keys, custom authorities,
+ * mock clocks, or isolated replay stores.
+ *
+ * Does NOT mutate the production default verifier or the production trust registry.
+ */
+export function createIsolatedAttestationVerifier(options?: {
+  trustedAuthorities?: Iterable<string>;
+  clock?: Clock | (() => number);
+  replayStore?: NonceReplayStore;
+}): AttestationVerifier {
+  const clock: Clock =
+    typeof options?.clock === 'function'
+      ? { now: options.clock }
+      : (options?.clock ?? SystemClock);
+  return new CryptographicAttestationVerifier({
+    trustedAuthorities: options?.trustedAuthorities,
+    clock,
+    replayStore: options?.replayStore,
+  });
 }
 
 /**
@@ -552,12 +827,12 @@ export const PROVENANCE_SOURCES = {
     }
 
     // Authentic Ed25519 cryptographic signature and trusted verifier authority verification
-    const validation = validateCryptographicAttestation({
+    const verifier = opts.verifier ?? defaultAttestationVerifier;
+    const validation = verifier.validate({
       verifierAuthority: opts.verifierAuthority,
       attestationSignature: opts.attestationSignature,
       payload: opts.payload,
       isAttested: opts.isAttested,
-      currentTime: opts.currentTime,
     });
 
     const status: ValidationStatus = validation.status;
@@ -633,8 +908,32 @@ export const PROVENANCE_SOURCES = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Typed Provenance Aggregation Protection
+// Typed Provenance Aggregation Protection & Financial Guardrails
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ARCHITECTURAL & FINANCIAL GUARDRAIL:
+ *
+ * The provenance arithmetic helpers (`addMetrics`, `sumMetrics`, `averageMetrics`, `reduceMetrics`)
+ * enforce EPISTEMOLOGICAL DATA PROVENANCE COMPATIBILITY ONLY.
+ *
+ * They prevent the silent, corrupting aggregation of verified on-chain ledger state with simulated
+ * or projected Atlas scenarios.
+ *
+ * THEY DO NOT CONSTITUTE A FINANCIAL LEDGER OR ACCOUNTING ENGINE.
+ *
+ * Legitimate economic and monetary aggregation across tokens and network states requires
+ * strict multi-dimensional compatibility:
+ * 1. Asset & Mint Compatibility: You cannot add USDC with native SOL or disparate SPL mints without
+ *    an explicit, authenticated exchange rate or automated market maker (AMM) pool pricing.
+ * 2. Network & Cluster Compatibility: Balances from 'Solana Mainnet' cannot be summed with 'Localnet'
+ *    or 'Devnet' balances without creating fictitious asset totals.
+ * 3. Unit & Decimals Alignment: Atomic units (e.g. lamports with 9 decimals vs USDC micro-units with
+ *    6 decimals) must not be combined without decimal normalization.
+ *
+ * Do NOT use these provenance helpers as a substitute for on-chain ledger state or proper double-entry
+ * financial accounting.
+ */
 
 export class IncompatibleProvenanceAggregationError extends Error {
   public readonly operandProvenances: DataProvenance[];
@@ -680,6 +979,22 @@ export function addMetrics(
     );
   }
 
+  // Currency / Mint compatibility guardrail
+  if (a.meta.mint && b.meta.mint && a.meta.mint !== b.meta.mint) {
+    throw new IncompatibleProvenanceAggregationError(
+      [a.meta.provenance, b.meta.provenance],
+      `${context}: Incompatible token mints (${a.meta.mint} vs ${b.meta.mint}). Currency conversion required.`
+    );
+  }
+
+  // Monetary unit compatibility guardrail
+  if (a.meta.unit && b.meta.unit && a.meta.unit !== b.meta.unit) {
+    throw new IncompatibleProvenanceAggregationError(
+      [a.meta.provenance, b.meta.provenance],
+      `${context}: Incompatible monetary units (${a.meta.unit} vs ${b.meta.unit}). Normalization required.`
+    );
+  }
+
   let status: ValidationStatus = 'VERIFIED';
   if (a.meta.provenance === 'SIMULATED') {
     status = 'SIMULATED_PROJECTION';
@@ -701,6 +1016,8 @@ export function addMetrics(
       source: `Composite (${context})`,
       network: a.meta.network === b.meta.network ? a.meta.network : 'Multi-Network',
       period: a.meta.period,
+      mint: a.meta.mint === b.meta.mint ? a.meta.mint : undefined,
+      unit: a.meta.unit === b.meta.unit ? a.meta.unit : undefined,
     },
   };
 }
@@ -728,6 +1045,24 @@ export function sumMetrics(
     if (!areProvenancesCompatible(distinctProvenances[0], distinctProvenances[i])) {
       throw new IncompatibleProvenanceAggregationError(distinctProvenances, context);
     }
+  }
+
+  // Currency / Mint compatibility guardrail
+  const distinctMints = Array.from(new Set(metrics.map((m) => m.meta.mint).filter(Boolean)));
+  if (distinctMints.length > 1) {
+    throw new IncompatibleProvenanceAggregationError(
+      distinctProvenances,
+      `${context}: Incompatible token mints (${distinctMints.join(', ')}). Currency conversion required.`
+    );
+  }
+
+  // Monetary unit compatibility guardrail
+  const distinctUnits = Array.from(new Set(metrics.map((m) => m.meta.unit).filter(Boolean)));
+  if (distinctUnits.length > 1) {
+    throw new IncompatibleProvenanceAggregationError(
+      distinctProvenances,
+      `${context}: Incompatible monetary units (${distinctUnits.join(', ')}). Normalization required.`
+    );
   }
 
   const totalValue = metrics.reduce((sum, m) => sum + m.value, 0);
@@ -799,6 +1134,24 @@ export function reduceMetrics(
     if (!areProvenancesCompatible(distinctProvenances[0], distinctProvenances[i])) {
       throw new IncompatibleProvenanceAggregationError(distinctProvenances, context);
     }
+  }
+
+  // Currency / Mint compatibility guardrail
+  const distinctMints = Array.from(new Set(metrics.map((m) => m.meta.mint).filter(Boolean)));
+  if (distinctMints.length > 1) {
+    throw new IncompatibleProvenanceAggregationError(
+      distinctProvenances,
+      `${context}: Incompatible token mints (${distinctMints.join(', ')}). Currency conversion required.`
+    );
+  }
+
+  // Monetary unit compatibility guardrail
+  const distinctUnits = Array.from(new Set(metrics.map((m) => m.meta.unit).filter(Boolean)));
+  if (distinctUnits.length > 1) {
+    throw new IncompatibleProvenanceAggregationError(
+      distinctProvenances,
+      `${context}: Incompatible monetary units (${distinctUnits.join(', ')}). Normalization required.`
+    );
   }
 
   const reducedValue = metrics.reduce((acc, m) => reducer(acc, m.value), initialValue);
