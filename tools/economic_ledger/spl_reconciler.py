@@ -1,36 +1,37 @@
 """Authentic RPC and SPL Settlement Reconciler for Conatus / AeroSettle (CON-23).
 
-Verifies on-chain Solana transactions executed by the AeroSettle smart contract:
+Production-grade cryptographic and RPC verification of AeroSettle SPL settlements:
 1. Expected network and genesis hash.
-2. Real transaction existence, confirmed/finalized status, and successful execution (err is None).
+2. Real transaction existence, confirmed/finalized status, and execution without error.
 3. Program ID and settle_work_order instruction discriminator (0xa2462d3deabc0c76).
-4. WorkOrder PDA derivation, account ownership, and Settled status.
-5. Exact settlement mint and escrow vault draining to 0.
-6. Authorized economic beneficiary token account ownership.
-7. SPL pre/post token balance deltas:
-   - operator_payout = post_operator - pre_operator
-   - creator_refund = post_creator - pre_creator
-   - total_escrow_settled = pre_vault - post_vault
-   - Invariant: operator_payout + creator_refund == total_escrow_settled
-8. Exact attribution:
-   - Operator payout is credited to agent income.
-   - Creator refund is refunded to creator and NOT attributed to agent income.
-   - Zero-payout settlements produce zero-unit audit movements.
-9. Idempotent financial effect identification:
-   effect_id = f"{network}:{genesis}:{signature}:{instruction_index}:{destination}:{mint}"
-10. Deterministic, canonical evidence hash linking all verified settlement parameters.
+4. WorkOrderAccount on-chain decoding, owner verification, discriminator check,
+   canonical PDA derivation from Rust seeds, and Settled status validation.
+5. AgentAccount on-chain decoding, owner verification, discriminator check,
+   canonical PDA derivation, and frozen economic beneficiary validation.
+6. SPL token account ownership, mint matching, and Token Program validation.
+7. Inner TransferChecked instructions inspection matching settle_work_order index.
+8. Balance delta reconciliation vs inner transfers, handling surplus escrow donations
+   and shared operator/creator destinations without misattributing funds.
+9. Finality gating: 'confirmed' only records/observes PROVISIONAL movements;
+   'finalized' is strictly required for RECONCILED status.
+10. Explicit distinction between LIVE_RPC, HISTORICAL_FIXTURE, and SYNTHETIC_TEST sources.
+11. Idempotent financial effect identification:
+    effect_id = f"{network}:{genesis}:{signature}:{instruction_index}:{destination}:{mint}"
+12. Canonical evidence hash linking all verified settlement parameters.
 """
 from __future__ import annotations
 
 import base64
+from enum import Enum
 import hashlib
 import json
 import logging
+import struct
 import time
-import urllib.error
-import urllib.request
 from dataclasses import asdict, dataclass
 from typing import Any, Optional, Protocol, runtime_checkable
+import urllib.error
+import urllib.request
 
 from .models import (
     EconomicMovement,
@@ -44,24 +45,79 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Canonical AeroSettle Program Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
 DEFAULT_PROGRAM_ID = "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
 DEFAULT_GENESIS_HASH = "HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg"
 DEFAULT_NETWORK = "solana:localnet"
 DEFAULT_PROTOCOL_CONFIG = "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn"
 DEFAULT_TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
 
-# 8-byte Anchor discriminator for `settle_work_order`: sha256("global:settle_work_order")[0..8]
-SETTLE_WORK_ORDER_DISCRIMINATOR = bytes([162, 70, 45, 61, 234, 188, 12, 118])
-SETTLE_WORK_ORDER_DISCRIMINATOR_HEX = SETTLE_WORK_ORDER_DISCRIMINATOR.hex()
+# Anchor Account Discriminators: sha256("account:<Name>")[0..8]
+WORK_ORDER_ACCOUNT_DISCRIMINATOR = bytes([200, 252, 180, 124, 6, 47, 174, 229])  # 0xc8fcb47c062faee5
+AGENT_ACCOUNT_DISCRIMINATOR = bytes([241, 119, 69, 140, 233, 9, 112, 50])        # 0xf177458ce9097032
+PROTOCOL_CONFIG_DISCRIMINATOR = bytes([207, 91, 250, 28, 152, 179, 215, 209])    # 0xcf5bfa1c98b3d7d1
 
-# Base58 alphabet for Solana decoding
+# Anchor Instruction Discriminator: sha256("global:settle_work_order")[0..8]
+SETTLE_WORK_ORDER_DISCRIMINATOR = bytes([162, 70, 45, 61, 234, 188, 12, 118])     # 0xa2462d3deabc0c76
+
+# SPL Token Instruction Type: TransferChecked = 12
+SPL_TOKEN_TRANSFER_CHECKED_TYPE = 12
+
+# PDA Marker
+PDA_MARKER = b"ProgramDerivedAddress"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Enums
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class EvidenceSourceKind(str, Enum):
+    """Categorization of evidence origin for auditability."""
+
+    LIVE_RPC = "LIVE_RPC"
+    HISTORICAL_FIXTURE = "HISTORICAL_FIXTURE"
+    SYNTHETIC_TEST = "SYNTHETIC_TEST"
+
+
+class WorkOrderStatus(int, Enum):
+    """Anchor WorkOrderStatus enum matching Rust definition."""
+
+    Draft = 0
+    Open = 1
+    Claimed = 2
+    Submitted = 3
+    Verified = 4
+    Settled = 5
+    Cancelled = 6
+    Expired = 7
+
+
+class AgentStatus(int, Enum):
+    """Anchor AgentStatus enum matching Rust definition."""
+
+    Active = 0
+    OwnerSuspended = 1
+    AdminSuspended = 2
+    Revoked = 3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Base58 & Cryptographic Curve Utilities
+# ─────────────────────────────────────────────────────────────────────────────
+
 B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 B58MAP = {c: i for i, c in enumerate(B58)}
+P_ED25519 = 2**255 - 19
+D_ED25519 = (-121665 * pow(121666, P_ED25519 - 2, P_ED25519)) % P_ED25519
 
 
-def b58decode(value: str) -> bytes:
-    """Decodes a base58 string into raw bytes."""
+def b58decode(value: str, expected_len: Optional[int] = None) -> bytes:
+    """Decodes a base58 string into raw bytes with optional length check."""
     if not isinstance(value, str) or not value:
         return b""
     n = 0
@@ -70,7 +126,10 @@ def b58decode(value: str) -> bytes:
             raise ValueError(f"Invalid base58 character: {c!r}")
         n = n * 58 + B58MAP[c]
     raw = n.to_bytes((n.bit_length() + 7) // 8, "big") if n else b""
-    return b"\0" * (len(value) - len(value.lstrip("1"))) + raw
+    res = b"\0" * (len(value) - len(value.lstrip("1"))) + raw
+    if expected_len is not None and len(res) != expected_len:
+        raise ValueError(f"Expected base58 length {expected_len}, got {len(res)}")
+    return res
 
 
 def b58encode(data: bytes) -> str:
@@ -83,6 +142,328 @@ def b58encode(data: bytes) -> str:
     return "1" * (len(data) - len(data.lstrip(b"\0"))) + chars
 
 
+def is_on_curve(compressed: bytes) -> bool:
+    """Check compressed Edwards-y decompression to verify if point is on Ed25519 curve."""
+    if len(compressed) != 32:
+        return False
+    yraw = int.from_bytes(compressed, "little")
+    y, sign = yraw & ((1 << 255) - 1), yraw >> 255
+    if y >= P_ED25519:
+        return False
+    y2 = (y * y) % P_ED25519
+    numerator = (y2 - 1) % P_ED25519
+    denominator = (D_ED25519 * y2 + 1) % P_ED25519
+    if denominator == 0:
+        return False
+    x2 = (numerator * pow(denominator, P_ED25519 - 2, P_ED25519)) % P_ED25519
+    x = pow(x2, (P_ED25519 + 3) // 8, P_ED25519)
+    if (x * x) % P_ED25519 != x2:
+        x = (x * pow(2, (P_ED25519 - 1) // 4, P_ED25519)) % P_ED25519
+    if (x * x) % P_ED25519 != x2 or (x == 0 and sign):
+        return False
+    return True
+
+
+def create_program_address(seeds: list[bytes], program_id_bytes: bytes) -> Optional[bytes]:
+    """Computes program derived address; returns None if address falls on Ed25519 curve."""
+    buffer = b"".join(seeds) + program_id_bytes + PDA_MARKER
+    h = hashlib.sha256(buffer).digest()
+    if is_on_curve(h):
+        return None
+    return h
+
+
+def find_program_address(seeds: list[bytes], program_id: str) -> tuple[str, int]:
+    """Finds canonical Solana PDA by scanning bump seeds from 255 down to 0."""
+    prog_bytes = b58decode(program_id, 32)
+    for bump in range(255, -1, -1):
+        candidate_seeds = list(seeds) + [bytes([bump])]
+        addr = create_program_address(candidate_seeds, prog_bytes)
+        if addr is not None:
+            return b58encode(addr), bump
+    raise ValueError(f"Unable to find valid PDA for program {program_id}")
+
+
+def derive_work_order_pda(
+    protocol_config: str,
+    creator: str,
+    work_order_id: bytes,
+    program_id: str = DEFAULT_PROGRAM_ID,
+) -> tuple[str, int]:
+    """Derives canonical WorkOrder PDA using seeds: [b'work_order', config, creator, order_id]."""
+    seeds = [
+        b"work_order",
+        b58decode(protocol_config, 32),
+        b58decode(creator, 32),
+        work_order_id,
+    ]
+    return find_program_address(seeds, program_id)
+
+
+def derive_agent_pda(
+    protocol_config: str,
+    agent_id: bytes,
+    program_id: str = DEFAULT_PROGRAM_ID,
+) -> tuple[str, int]:
+    """Derives canonical Agent PDA using seeds: [b'agent', config, agent_id]."""
+    seeds = [
+        b"agent",
+        b58decode(protocol_config, 32),
+        agent_id,
+    ]
+    return find_program_address(seeds, program_id)
+
+
+def derive_escrow_vault_pda(
+    work_order_pubkey: str,
+    program_id: str = DEFAULT_PROGRAM_ID,
+) -> tuple[str, int]:
+    """Derives canonical Escrow Vault PDA using seeds: [b'escrow', work_order]."""
+    seeds = [
+        b"escrow",
+        b58decode(work_order_pubkey, 32),
+    ]
+    return find_program_address(seeds, program_id)
+
+
+def derive_protocol_config_pda(program_id: str = DEFAULT_PROGRAM_ID) -> tuple[str, int]:
+    """Derives canonical ProtocolConfig PDA using seeds: [b'protocol_config']."""
+    return find_program_address([b"protocol_config"], program_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Account Decoding and Encoding Utilities
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def decode_work_order_account(raw: bytes) -> dict[str, Any]:
+    """Decodes a serialized on-chain WorkOrderAccount into structured fields."""
+    if len(raw) < 585:
+        raise ValueError(f"Truncated WorkOrderAccount data: len={len(raw)}, expected at least 585")
+    disc = raw[:8]
+    if disc != WORK_ORDER_ACCOUNT_DISCRIMINATOR:
+        raise ValueError(f"Invalid WorkOrderAccount discriminator: {disc.hex()}")
+
+    protocol_version = raw[8]
+    protocol_config = b58encode(raw[9:41])
+    work_order_id = raw[41:73]
+    creator = b58encode(raw[73:105])
+    work_type = raw[105]
+    required_capabilities = struct.unpack("<Q", raw[106:114])[0]
+    evidence_requirements = struct.unpack("<Q", raw[114:122])[0]
+    manifest_hash = raw[122:154]
+    token_mint = b58encode(raw[154:186])
+    total_amount = struct.unpack("<Q", raw[186:194])[0]
+    payment_model = raw[194]
+    verifier = b58encode(raw[195:227])
+    escrow_vault = b58encode(raw[227:259])
+    token_program = b58encode(raw[259:291])
+    execution_deadline = struct.unpack("<q", raw[291:299])[0]
+    verification_deadline = struct.unpack("<q", raw[299:307])[0]
+    status_int = raw[307]
+    claimed_agent = b58encode(raw[308:340])
+    settlement_beneficiary = b58encode(raw[340:372])
+    bump = raw[584]
+
+    return {
+        "protocol_version": protocol_version,
+        "protocol_config": protocol_config,
+        "work_order_id": work_order_id,
+        "creator": creator,
+        "work_type": work_type,
+        "required_capabilities": required_capabilities,
+        "evidence_requirements": evidence_requirements,
+        "manifest_hash": manifest_hash,
+        "token_mint": token_mint,
+        "total_amount": total_amount,
+        "payment_model": payment_model,
+        "verifier": verifier,
+        "escrow_vault": escrow_vault,
+        "token_program": token_program,
+        "execution_deadline": execution_deadline,
+        "verification_deadline": verification_deadline,
+        "status": status_int,
+        "claimed_agent": claimed_agent,
+        "settlement_beneficiary": settlement_beneficiary,
+        "bump": bump,
+    }
+
+
+def encode_work_order_account(
+    *,
+    protocol_version: int = 1,
+    protocol_config: str,
+    work_order_id: bytes,
+    creator: str,
+    work_type: int = 0,
+    required_capabilities: int = 1,
+    evidence_requirements: int = 1,
+    manifest_hash: bytes = b"\x00" * 32,
+    token_mint: str,
+    total_amount: int,
+    payment_model: int = 0,
+    verifier: str,
+    escrow_vault: str,
+    token_program: str = DEFAULT_TOKEN_PROGRAM,
+    execution_deadline: int = 1800000000,
+    verification_deadline: int = 1800000000,
+    status: int = WorkOrderStatus.Settled.value,
+    claimed_agent: str,
+    settlement_beneficiary: str,
+    bump: int = 254,
+) -> bytes:
+    """Serializes a WorkOrderAccount buffer for tests and fixtures."""
+    buf = bytearray(WORK_ORDER_ACCOUNT_DISCRIMINATOR)
+    buf.append(protocol_version)
+    buf.extend(b58decode(protocol_config, 32))
+    assert len(work_order_id) == 32
+    buf.extend(work_order_id)
+    buf.extend(b58decode(creator, 32))
+    buf.append(work_type)
+    buf.extend(struct.pack("<Q", required_capabilities))
+    buf.extend(struct.pack("<Q", evidence_requirements))
+    assert len(manifest_hash) == 32
+    buf.extend(manifest_hash)
+    buf.extend(b58decode(token_mint, 32))
+    buf.extend(struct.pack("<Q", total_amount))
+    buf.append(payment_model)
+    buf.extend(b58decode(verifier, 32))
+    buf.extend(b58decode(escrow_vault, 32))
+    buf.extend(b58decode(token_program, 32))
+    buf.extend(struct.pack("<q", execution_deadline))
+    buf.extend(struct.pack("<q", verification_deadline))
+    buf.append(status)
+    buf.extend(b58decode(claimed_agent, 32))
+    buf.extend(b58decode(settlement_beneficiary, 32))
+    buf.extend(b"\x00" * 96)  # receipt_hash, manifest_hash, signer
+    buf.extend(b"\x00" * 32)  # sequence, evidence, started, ended
+    buf.extend(b"\x00" * 32)  # verification_attestation_hash
+    buf.extend(bytes([1, 0]))  # Some(Accepted)
+    buf.extend(struct.pack("<H", 10000))  # completion_bps = 10000
+    buf.extend(struct.pack("<qqqqqq", 1700000000, 1700000001, 1700000002, 1700000003, 1700000004, 1700000005))
+    buf.append(bump)
+    assert len(buf) == 585
+    return bytes(buf)
+
+
+def decode_agent_account(raw: bytes) -> dict[str, Any]:
+    """Decodes a serialized on-chain AgentAccount into structured fields."""
+    if len(raw) < 196:
+        raise ValueError(f"Truncated AgentAccount data: len={len(raw)}, expected at least 196")
+    disc = raw[:8]
+    if disc != AGENT_ACCOUNT_DISCRIMINATOR:
+        raise ValueError(f"Invalid AgentAccount discriminator: {disc.hex()}")
+
+    protocol_version = raw[8]
+    protocol_config = b58encode(raw[9:41])
+    agent_id = raw[41:73]
+    owner = b58encode(raw[73:105])
+    signing_authority = b58encode(raw[105:137])
+    agent_type = raw[137]
+    capabilities = struct.unpack("<Q", raw[138:146])[0]
+    metadata_hash = raw[146:178]
+    status_int = raw[178]
+    next_sequence = struct.unpack("<Q", raw[179:187])[0]
+    bump = raw[187]
+    registered_at = struct.unpack("<q", raw[188:196])[0]
+
+    return {
+        "protocol_version": protocol_version,
+        "protocol_config": protocol_config,
+        "agent_id": agent_id,
+        "owner": owner,
+        "signing_authority": signing_authority,
+        "agent_type": agent_type,
+        "capabilities": capabilities,
+        "metadata_hash": metadata_hash,
+        "status": status_int,
+        "next_sequence": next_sequence,
+        "bump": bump,
+        "registered_at": registered_at,
+    }
+
+
+def encode_agent_account(
+    *,
+    protocol_version: int = 1,
+    protocol_config: str,
+    agent_id: bytes,
+    owner: str,
+    signing_authority: str,
+    agent_type: int = 1,
+    capabilities: int = 1,
+    metadata_hash: bytes = b"\x00" * 32,
+    status: int = AgentStatus.Active.value,
+    next_sequence: int = 1,
+    bump: int = 255,
+    registered_at: int = 1700000000,
+) -> bytes:
+    """Serializes an AgentAccount buffer for tests and fixtures."""
+    buf = bytearray(AGENT_ACCOUNT_DISCRIMINATOR)
+    buf.append(protocol_version)
+    buf.extend(b58decode(protocol_config, 32))
+    assert len(agent_id) == 32
+    buf.extend(agent_id)
+    buf.extend(b58decode(owner, 32))
+    buf.extend(b58decode(signing_authority, 32))
+    buf.append(agent_type)
+    buf.extend(struct.pack("<Q", capabilities))
+    assert len(metadata_hash) == 32
+    buf.extend(metadata_hash)
+    buf.append(status)
+    buf.extend(struct.pack("<Q", next_sequence))
+    buf.append(bump)
+    buf.extend(struct.pack("<q", registered_at))
+    assert len(buf) == 196
+    return bytes(buf)
+
+
+def decode_token_account(raw: bytes) -> dict[str, Any]:
+    """Decodes a serialized SPL Token Account (165 bytes)."""
+    if len(raw) < 165:
+        raise ValueError(f"Truncated SPL Token account: len={len(raw)}, expected at least 165")
+    mint = b58encode(raw[0:32])
+    owner = b58encode(raw[32:64])
+    amount = struct.unpack("<Q", raw[64:72])[0]
+    state = raw[108]  # 1 = Initialized
+    return {
+        "mint": mint,
+        "owner": owner,
+        "amount": amount,
+        "is_initialized": state == 1,
+    }
+
+
+def encode_token_account(
+    *,
+    mint: str,
+    owner: str,
+    amount: int,
+    state: int = 1,
+) -> bytes:
+    """Serializes an SPL Token Account buffer (165 bytes)."""
+    buf = bytearray(165)
+    buf[0:32] = b58decode(mint, 32)
+    buf[32:64] = b58decode(owner, 32)
+    buf[64:72] = struct.pack("<Q", amount)
+    buf[108] = state
+    return bytes(buf)
+
+
+def encode_spl_transfer_checked(amount: int, decimals: int) -> bytes:
+    """Encodes an SPL Token TransferChecked instruction body: [12, amount:u64, decimals:u8]."""
+    return bytes([SPL_TOKEN_TRANSFER_CHECKED_TYPE]) + struct.pack("<Q", amount) + bytes([decimals])
+
+
+def decode_spl_transfer_checked(data: bytes) -> tuple[int, int]:
+    """Decodes an SPL Token TransferChecked instruction; returns (amount, decimals)."""
+    if len(data) < 10 or data[0] != SPL_TOKEN_TRANSFER_CHECKED_TYPE:
+        raise ValueError("Not a valid SPL TransferChecked instruction data buffer")
+    amount = struct.unpack("<Q", data[1:9])[0]
+    decimals = data[9]
+    return amount, decimals
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Exceptions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -90,41 +471,61 @@ def b58encode(data: bytes) -> str:
 
 class SettlementVerificationError(LedgerValidationError):
     """Base error for on-chain settlement reconciliation failures."""
+
     pass
 
 
 class RpcError(SettlementVerificationError):
     """Raised when communication with the Solana RPC fails."""
+
     pass
 
 
 class TransactionNotFoundError(SettlementVerificationError):
     """Raised when the specified transaction signature does not exist on-chain."""
+
     pass
 
 
 class TransactionFailedError(SettlementVerificationError):
     """Raised when the transaction completed on-chain with an error (err is not None)."""
+
     pass
 
 
 class InstructionMismatchError(SettlementVerificationError):
     """Raised when the transaction does not execute settle_work_order for the target program."""
+
     pass
 
 
 class AccountMismatchError(SettlementVerificationError):
-    """Raised when work order, mint, or beneficiary accounts mismatch."""
+    """Raised when work order, agent, mint, or beneficiary accounts mismatch."""
+
+    pass
+
+
+class WorkOrderNotSettledError(AccountMismatchError):
+    """Raised when WorkOrder status is not WorkOrderStatus::Settled."""
+
+    pass
+
+
+class AgentMismatchError(AccountMismatchError):
+    """Raised when agent identity, account, or frozen beneficiary does not match."""
+
     pass
 
 
 class AmountMismatchError(SettlementVerificationError):
     """Raised when SPL token balance transfers do not match expected economic amounts."""
+
     pass
 
 
 class CommitmentUnsatisfiedError(SettlementVerificationError):
     """Raised when the transaction has not achieved the required confirmation commitment."""
+
     pass
 
 
@@ -162,6 +563,10 @@ class SettlementReceipt:
     block_time: Optional[int]
     instruction_index: int
     work_order_account: str
+    agent_account: str
+    agent_id: str
+    owner_pubkey: str
+    settlement_beneficiary: str
     token_mint: str
     escrow_vault: str
     operator_token_account: str
@@ -169,7 +574,9 @@ class SettlementReceipt:
     operator_payout: int
     creator_refund: int
     total_escrow_settled: int
+    surplus: int
     commitment: str
+    evidence_source: str
     effect_id: str
     evidence_hash: str
 
@@ -184,7 +591,7 @@ class SettlementReceipt:
 def compute_canonical_evidence_hash(evidence_data: dict[str, Any]) -> str:
     """Computes SHA-256 over canonical sorted JSON of verified settlement receipt."""
     payload = {
-        "version": "conatus:spl-settlement:v1",
+        "version": "conatus:spl-settlement:v2",
         "network": str(evidence_data.get("network", "")),
         "genesis_hash": str(evidence_data.get("genesis_hash", "")),
         "program_id": str(evidence_data.get("program_id", "")),
@@ -192,6 +599,10 @@ def compute_canonical_evidence_hash(evidence_data: dict[str, Any]) -> str:
         "slot": int(evidence_data.get("slot", 0)),
         "instruction_index": int(evidence_data.get("instruction_index", 0)),
         "work_order_account": str(evidence_data.get("work_order_account", "")),
+        "agent_account": str(evidence_data.get("agent_account", "")),
+        "agent_id": str(evidence_data.get("agent_id", "")),
+        "owner_pubkey": str(evidence_data.get("owner_pubkey", "")),
+        "settlement_beneficiary": str(evidence_data.get("settlement_beneficiary", "")),
         "token_mint": str(evidence_data.get("token_mint", "")),
         "escrow_vault": str(evidence_data.get("escrow_vault", "")),
         "operator_token_account": str(evidence_data.get("operator_token_account", "")),
@@ -199,8 +610,9 @@ def compute_canonical_evidence_hash(evidence_data: dict[str, Any]) -> str:
         "operator_payout": int(evidence_data.get("operator_payout", 0)),
         "creator_refund": int(evidence_data.get("creator_refund", 0)),
         "total_escrow_settled": int(evidence_data.get("total_escrow_settled", 0)),
+        "surplus": int(evidence_data.get("surplus", 0)),
+        "evidence_source": str(evidence_data.get("evidence_source", EvidenceSourceKind.LIVE_RPC.value)),
         "effect_id": str(evidence_data.get("effect_id", "")),
-        "commitment": str(evidence_data.get("commitment", "confirmed")),
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
@@ -222,7 +634,7 @@ class SolanaRpcClientProtocol(Protocol):
         self,
         tx_signature: str,
         *,
-        commitment: str = "confirmed",
+        commitment: str = "finalized",
     ) -> Optional[dict[str, Any]]:
         ...
 
@@ -282,7 +694,7 @@ class SolanaRpcClient:
         self,
         tx_signature: str,
         *,
-        commitment: str = "confirmed",
+        commitment: str = "finalized",
     ) -> Optional[dict[str, Any]]:
         params = [
             tx_signature,
@@ -338,13 +750,31 @@ class MockRpcClient:
         tx_signature: str,
         tx_data: dict[str, Any],
         *,
-        commitment: str = "confirmed",
+        commitment: str = "finalized",
     ) -> None:
         self.transactions[tx_signature] = tx_data
         self.transaction_commitments[tx_signature] = commitment
 
-    def register_account(self, pubkey: str, account_data: dict[str, Any]) -> None:
-        self.accounts[pubkey] = account_data
+    def register_account(
+        self,
+        pubkey: str,
+        account_data: Any,
+        *,
+        owner: str = DEFAULT_PROGRAM_ID,
+        lamports: int = 1_000_000,
+    ) -> None:
+        if isinstance(account_data, (bytes, bytearray)):
+            b64_str = base64.b64encode(bytes(account_data)).decode("utf-8")
+            self.accounts[pubkey] = {
+                "data": [b64_str, "base64"],
+                "owner": owner,
+                "lamports": lamports,
+                "space": len(account_data),
+            }
+        elif isinstance(account_data, dict):
+            self.accounts[pubkey] = account_data
+        else:
+            raise ValueError(f"Unsupported account data type: {type(account_data)}")
 
     def set_error(self, exc: Optional[Exception]) -> None:
         self.should_fail = exc
@@ -358,7 +788,7 @@ class MockRpcClient:
         self,
         tx_signature: str,
         *,
-        commitment: str = "confirmed",
+        commitment: str = "finalized",
     ) -> Optional[dict[str, Any]]:
         if self.should_fail:
             raise self.should_fail
@@ -366,10 +796,9 @@ class MockRpcClient:
         if tx is None:
             return None
 
-        # Check commitment filter
-        tx_comm = self.transaction_commitments.get(tx_signature, "confirmed")
+        # Check commitment filter: if caller requires finalized, confirmed is not returned
+        tx_comm = self.transaction_commitments.get(tx_signature, "finalized")
         if commitment == "finalized" and tx_comm != "finalized":
-            # If caller strictly requires finalized, but tx is only confirmed, return None
             return None
 
         return tx
@@ -391,6 +820,25 @@ class MockRpcClient:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Helper Functions for Account Inspection
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def extract_account_bytes(account_info: Optional[dict[str, Any]]) -> bytes:
+    """Extracts raw bytes from an RPC getAccountInfo result object."""
+    if not account_info or not isinstance(account_info, dict):
+        return b""
+    data = account_info.get("data")
+    if isinstance(data, list) and len(data) >= 1:
+        raw_b64 = data[0]
+        if isinstance(raw_b64, str):
+            return base64.b64decode(raw_b64)
+    elif isinstance(data, str):
+        return base64.b64decode(data)
+    return b""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SplSettlementReconciler
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -407,7 +855,7 @@ class SplSettlementReconciler:
         expected_genesis_hash: str = DEFAULT_GENESIS_HASH,
         expected_program_id: str = DEFAULT_PROGRAM_ID,
         expected_protocol_config: Optional[str] = DEFAULT_PROTOCOL_CONFIG,
-        min_commitment: str = "confirmed",
+        min_commitment: str = "finalized",
         authority: str = "conatus:protocol:reconciler:v1",
     ) -> None:
         self.rpc: SolanaRpcClientProtocol = (
@@ -433,10 +881,13 @@ class SplSettlementReconciler:
         expected_mint: Optional[str] = None,
         expected_beneficiary: Optional[str] = None,
         expected_operator_amount: Optional[int] = None,
+        require_finalized: bool = True,
+        source_kind: EvidenceSourceKind = EvidenceSourceKind.LIVE_RPC,
     ) -> SettlementReceipt:
         """Thoroughly inspects and verifies an on-chain settlement transaction via RPC.
 
-        Fails closed on any inconsistency between instructions, token balances, or contract terms.
+        Fails closed on any inconsistency between instructions, inner SPL transfers,
+        token balances, or verified on-chain account states.
         """
         # 1. Validate network & genesis hash
         try:
@@ -449,15 +900,28 @@ class SplSettlementReconciler:
                 f"Genesis hash mismatch: expected '{self.expected_genesis_hash}', got '{actual_genesis}'"
             )
 
-        # 2. Fetch transaction
+        # 2. Fetch transaction at required commitment level
+        commitment_to_fetch = "finalized" if require_finalized else "confirmed"
         try:
-            tx = self.rpc.get_transaction(tx_signature, commitment=self.min_commitment)
+            tx = self.rpc.get_transaction(tx_signature, commitment=commitment_to_fetch)
         except Exception as exc:
             raise RpcError(f"Failed to fetch transaction '{tx_signature}' from RPC: {exc}") from exc
 
+        actual_tx_commitment = commitment_to_fetch
         if tx is None:
+            # If searching for finalized failed, check if it exists at confirmed to provide accurate error
+            if require_finalized:
+                try:
+                    tx_confirmed = self.rpc.get_transaction(tx_signature, commitment="confirmed")
+                except Exception:
+                    tx_confirmed = None
+                if tx_confirmed is not None:
+                    raise CommitmentUnsatisfiedError(
+                        f"Transaction '{tx_signature}' is confirmed but not finalized; "
+                        "finalized commitment is strictly required for reconciliation"
+                    )
             raise TransactionNotFoundError(
-                f"Transaction '{tx_signature}' was not found on-chain at commitment '{self.min_commitment}'"
+                f"Transaction '{tx_signature}' was not found on-chain at commitment '{commitment_to_fetch}'"
             )
 
         # 3. Check transaction execution status
@@ -490,13 +954,12 @@ class SplSettlementReconciler:
         if not account_keys:
             raise SettlementVerificationError(f"Transaction '{tx_signature}' has empty accountKeys")
 
-        # 5. Locate settle_work_order instruction
+        # 5. Locate settle_work_order instruction (supports multi-instruction transactions)
         instructions = message.get("instructions", [])
         settle_ix: Optional[dict[str, Any]] = None
         settle_ix_index: int = -1
 
         for idx, ix in enumerate(instructions):
-            # Resolve program ID
             prog_id: Optional[str] = None
             if "programIdIndex" in ix:
                 prog_idx = ix["programIdIndex"]
@@ -508,7 +971,7 @@ class SplSettlementReconciler:
             if prog_id != self.expected_program_id:
                 continue
 
-            # Decode data bytes
+            # Decode instruction data
             data_bytes = b""
             if "data" in ix:
                 raw_data = ix["data"]
@@ -532,14 +995,13 @@ class SplSettlementReconciler:
                 f"for program '{self.expected_program_id}'"
             )
 
-        # 6. Extract instruction accounts
+        # 6. Extract and validate instruction accounts order
         ix_accounts = settle_ix.get("accounts", [])
         if len(ix_accounts) < 7:
             raise InstructionMismatchError(
                 f"Instruction 'settle_work_order' has {len(ix_accounts)} accounts, expected at least 7"
             )
 
-        # Map indices to pubkeys
         def resolve_pubkey(idx_val: Any) -> str:
             if isinstance(idx_val, int) and 0 <= idx_val < len(account_keys):
                 return account_keys[idx_val]
@@ -553,6 +1015,13 @@ class SplSettlementReconciler:
         mint_pubkey = resolve_pubkey(ix_accounts[3])
         operator_token_account_pubkey = resolve_pubkey(ix_accounts[4])
         creator_refund_token_account_pubkey = resolve_pubkey(ix_accounts[5])
+        token_program_pubkey = resolve_pubkey(ix_accounts[6])
+
+        # Validate Token Program
+        if token_program_pubkey not in (DEFAULT_TOKEN_PROGRAM, TOKEN_2022_PROGRAM):
+            raise InstructionMismatchError(
+                f"Instruction 'settle_work_order' account 6 is not a valid Token Program: '{token_program_pubkey}'"
+            )
 
         if self.expected_protocol_config and protocol_config_pubkey != self.expected_protocol_config:
             raise AccountMismatchError(
@@ -569,7 +1038,226 @@ class SplSettlementReconciler:
                 f"Settlement mint mismatch: expected '{expected_mint}', got '{mint_pubkey}'"
             )
 
-        # 7. Extract SPL Token Balance Changes
+        # 7. Decode and verify WorkOrderAccount on-chain
+        try:
+            wo_info = self.rpc.get_account_info(work_order_pubkey)
+        except Exception as exc:
+            raise RpcError(f"Failed to fetch WorkOrder account '{work_order_pubkey}': {exc}") from exc
+
+        if wo_info is None:
+            raise AccountMismatchError(f"WorkOrder account '{work_order_pubkey}' does not exist on-chain")
+
+        if wo_info.get("owner") != self.expected_program_id:
+            raise AccountMismatchError(
+                f"WorkOrder account owner mismatch: expected '{self.expected_program_id}', "
+                f"got '{wo_info.get('owner')}'"
+            )
+
+        wo_bytes = extract_account_bytes(wo_info)
+        try:
+            wo_data = decode_work_order_account(wo_bytes)
+        except Exception as exc:
+            raise AccountMismatchError(f"Failed to decode WorkOrderAccount '{work_order_pubkey}': {exc}") from exc
+
+        # Verify WorkOrder Status == Settled
+        if wo_data["status"] != WorkOrderStatus.Settled.value:
+            raise WorkOrderNotSettledError(
+                f"WorkOrder '{work_order_pubkey}' is not Settled: status={wo_data['status']} "
+                f"(expected {WorkOrderStatus.Settled.value})"
+            )
+
+        # Verify Canonical WorkOrder PDA derivation
+        try:
+            expected_wo_pda, _ = derive_work_order_pda(
+                wo_data["protocol_config"],
+                wo_data["creator"],
+                wo_data["work_order_id"],
+                self.expected_program_id,
+            )
+        except Exception as exc:
+            raise AccountMismatchError(f"Error computing canonical WorkOrder PDA: {exc}") from exc
+
+        if expected_wo_pda != work_order_pubkey:
+            raise AccountMismatchError(
+                f"WorkOrder address '{work_order_pubkey}' does not match canonical PDA '{expected_wo_pda}'"
+            )
+
+        # Verify parameters consistency
+        if wo_data["protocol_config"] != protocol_config_pubkey:
+            raise AccountMismatchError(
+                f"WorkOrder protocol_config mismatch: account has '{wo_data['protocol_config']}', "
+                f"tx has '{protocol_config_pubkey}'"
+            )
+        if wo_data["token_mint"] != mint_pubkey:
+            raise AccountMismatchError(
+                f"WorkOrder token_mint mismatch: account has '{wo_data['token_mint']}', tx has '{mint_pubkey}'"
+            )
+        if wo_data["escrow_vault"] != escrow_vault_pubkey:
+            raise AccountMismatchError(
+                f"WorkOrder escrow_vault mismatch: account has '{wo_data['escrow_vault']}', "
+                f"tx has '{escrow_vault_pubkey}'"
+            )
+        if wo_data["token_program"] != token_program_pubkey:
+            raise AccountMismatchError(
+                f"WorkOrder token_program mismatch: account has '{wo_data['token_program']}', "
+                f"tx has '{token_program_pubkey}'"
+            )
+
+        # Verify Escrow Vault Canonical PDA
+        expected_vault_pda, _ = derive_escrow_vault_pda(work_order_pubkey, self.expected_program_id)
+        if expected_vault_pda != escrow_vault_pubkey:
+            raise AccountMismatchError(
+                f"Escrow vault address '{escrow_vault_pubkey}' does not match canonical PDA '{expected_vault_pda}'"
+            )
+
+        claimed_agent_pubkey = wo_data["claimed_agent"]
+        settlement_beneficiary = wo_data["settlement_beneficiary"]
+
+        if not claimed_agent_pubkey or claimed_agent_pubkey == "1" * 32 or claimed_agent_pubkey == b58encode(bytes(32)):
+            raise AccountMismatchError(f"WorkOrder '{work_order_pubkey}' has invalid or empty claimed_agent")
+        if not settlement_beneficiary or settlement_beneficiary == "1" * 32 or settlement_beneficiary == b58encode(bytes(32)):
+            raise AccountMismatchError(f"WorkOrder '{work_order_pubkey}' has uninitialized settlement_beneficiary")
+
+        # 8. Decode and verify AgentAccount on-chain
+        try:
+            agent_info = self.rpc.get_account_info(claimed_agent_pubkey)
+        except Exception as exc:
+            raise RpcError(f"Failed to fetch Agent account '{claimed_agent_pubkey}': {exc}") from exc
+
+        if agent_info is None:
+            raise AgentMismatchError(f"Claimed AgentAccount '{claimed_agent_pubkey}' does not exist on-chain")
+
+        if agent_info.get("owner") != self.expected_program_id:
+            raise AgentMismatchError(
+                f"AgentAccount owner mismatch: expected '{self.expected_program_id}', "
+                f"got '{agent_info.get('owner')}'"
+            )
+
+        agent_bytes = extract_account_bytes(agent_info)
+        try:
+            agent_data = decode_agent_account(agent_bytes)
+        except Exception as exc:
+            raise AgentMismatchError(f"Failed to decode AgentAccount '{claimed_agent_pubkey}': {exc}") from exc
+
+        # Verify Canonical Agent PDA derivation
+        try:
+            expected_agent_pda, _ = derive_agent_pda(
+                agent_data["protocol_config"],
+                agent_data["agent_id"],
+                self.expected_program_id,
+            )
+        except Exception as exc:
+            raise AgentMismatchError(f"Error computing canonical Agent PDA: {exc}") from exc
+
+        if expected_agent_pda != claimed_agent_pubkey:
+            raise AgentMismatchError(
+                f"Agent account address '{claimed_agent_pubkey}' does not match canonical PDA '{expected_agent_pda}'"
+            )
+
+        # 9. Verify relationship between AgentAccount and frozen settlement beneficiary
+        if agent_data["owner"] != settlement_beneficiary:
+            raise AgentMismatchError(
+                f"Settlement beneficiary mismatch: WorkOrder frozen beneficiary is '{settlement_beneficiary}', "
+                f"but AgentAccount owner is '{agent_data['owner']}'"
+            )
+
+        if expected_beneficiary and settlement_beneficiary != expected_beneficiary:
+            raise AgentMismatchError(
+                f"Expected beneficiary '{expected_beneficiary}' does not match on-chain '{settlement_beneficiary}'"
+            )
+
+        # 10. Examine Inner TransferChecked Instructions for settle_work_order
+        inner_instructions_list = meta.get("innerInstructions") or []
+        settle_inner_block: Optional[dict[str, Any]] = None
+        for block in inner_instructions_list:
+            if block.get("index") == settle_ix_index:
+                settle_inner_block = block
+                break
+
+        if settle_inner_block is None:
+            raise InstructionMismatchError(
+                f"Transaction '{tx_signature}' is missing inner CPI instructions for settle_work_order (index {settle_ix_index})"
+            )
+
+        inner_operator_transferred = 0
+        inner_creator_transferred = 0
+        inner_ix_list = settle_inner_block.get("instructions") or []
+
+        for in_ix in inner_ix_list:
+            # Check program
+            prog_id = None
+            if "programIdIndex" in in_ix:
+                pidx = in_ix["programIdIndex"]
+                if 0 <= pidx < len(account_keys):
+                    prog_id = account_keys[pidx]
+            elif "programId" in in_ix:
+                prog_id = in_ix["programId"]
+
+            if prog_id != token_program_pubkey:
+                raise InstructionMismatchError(
+                    f"Unexpected inner instruction program '{prog_id}', expected '{token_program_pubkey}'"
+                )
+
+            # Decode data
+            cpi_data = b""
+            if "data" in in_ix:
+                raw_cpi = in_ix["data"]
+                if isinstance(raw_cpi, str):
+                    try:
+                        cpi_data = b58decode(raw_cpi)
+                    except Exception:
+                        try:
+                            cpi_data = base64.b64decode(raw_cpi)
+                        except Exception:
+                            cpi_data = b""
+
+            if len(cpi_data) < 10 or cpi_data[0] != SPL_TOKEN_TRANSFER_CHECKED_TYPE:
+                raise InstructionMismatchError(
+                    "Inner CPI instruction is not a valid SPL TransferChecked instruction"
+                )
+
+            amount_transferred, decimals = decode_spl_transfer_checked(cpi_data)
+
+            # Check accounts: [source, mint, destination, authority]
+            in_accounts = in_ix.get("accounts", [])
+            if len(in_accounts) < 4:
+                raise InstructionMismatchError("Inner TransferChecked has fewer than 4 accounts")
+
+            cpi_source = resolve_pubkey(in_accounts[0])
+            cpi_mint = resolve_pubkey(in_accounts[1])
+            cpi_dest = resolve_pubkey(in_accounts[2])
+            cpi_auth = resolve_pubkey(in_accounts[3])
+
+            if cpi_source != escrow_vault_pubkey:
+                raise InstructionMismatchError(
+                    f"Inner transfer source '{cpi_source}' != escrow_vault '{escrow_vault_pubkey}'"
+                )
+            if cpi_mint != mint_pubkey:
+                raise InstructionMismatchError(
+                    f"Inner transfer mint '{cpi_mint}' != expected mint '{mint_pubkey}'"
+                )
+            if cpi_auth != escrow_vault_pubkey:
+                raise InstructionMismatchError(
+                    f"Inner transfer authority '{cpi_auth}' != escrow_vault '{escrow_vault_pubkey}'"
+                )
+
+            if cpi_dest == operator_token_account_pubkey and cpi_dest != creator_refund_token_account_pubkey:
+                inner_operator_transferred += amount_transferred
+            elif cpi_dest == creator_refund_token_account_pubkey and cpi_dest != operator_token_account_pubkey:
+                inner_creator_transferred += amount_transferred
+            elif cpi_dest == operator_token_account_pubkey and cpi_dest == creator_refund_token_account_pubkey:
+                # Shared destination case: distinguish sequentially
+                # First CPI in settle_work_order is operator payout; second is creator refund
+                if inner_operator_transferred == 0:
+                    inner_operator_transferred = amount_transferred
+                else:
+                    inner_creator_transferred += amount_transferred
+            else:
+                raise InstructionMismatchError(
+                    f"Inner TransferChecked routed to unauthorized destination '{cpi_dest}'"
+                )
+
+        # 11. Extract and reconcile SPL Token Pre/Post Balances
         pre_token_balances = meta.get("preTokenBalances") or []
         post_token_balances = meta.get("postTokenBalances") or []
 
@@ -577,12 +1265,33 @@ class SplSettlementReconciler:
             target_idx = account_keys.index(target_pubkey) if target_pubkey in account_keys else -1
             for b in balances:
                 b_idx = b.get("accountIndex")
-                # Either matches by accountIndex or account pubkey
                 if (target_idx >= 0 and b_idx == target_idx) or b.get("account") == target_pubkey:
                     ui_amount = b.get("uiTokenAmount", {})
                     amount_str = ui_amount.get("amount", "0")
                     return int(amount_str)
             return 0
+
+        def get_token_owner(balances: list[dict[str, Any]], target_pubkey: str) -> Optional[str]:
+            target_idx = account_keys.index(target_pubkey) if target_pubkey in account_keys else -1
+            for b in balances:
+                b_idx = b.get("accountIndex")
+                if (target_idx >= 0 and b_idx == target_idx) or b.get("account") == target_pubkey:
+                    return b.get("owner")
+            return None
+
+        # Check Token Account owners from balance records or RPC
+        op_owner = get_token_owner(post_token_balances + pre_token_balances, operator_token_account_pubkey)
+        if op_owner and op_owner != settlement_beneficiary:
+            raise AccountMismatchError(
+                f"Operator token account owner '{op_owner}' does not match settlement beneficiary '{settlement_beneficiary}'"
+            )
+
+        if operator_token_account_pubkey != creator_refund_token_account_pubkey:
+            creator_owner = get_token_owner(post_token_balances + pre_token_balances, creator_refund_token_account_pubkey)
+            if creator_owner and creator_owner != wo_data["creator"]:
+                raise AccountMismatchError(
+                    f"Creator refund token account owner '{creator_owner}' does not match creator '{wo_data['creator']}'"
+                )
 
         pre_vault = get_token_amount(pre_token_balances, escrow_vault_pubkey)
         post_vault = get_token_amount(post_token_balances, escrow_vault_pubkey)
@@ -593,7 +1302,7 @@ class SplSettlementReconciler:
         pre_creator = get_token_amount(pre_token_balances, creator_refund_token_account_pubkey)
         post_creator = get_token_amount(post_token_balances, creator_refund_token_account_pubkey)
 
-        # Escrow vault must be completely depleted
+        # Escrow vault must be completely drained
         if post_vault != 0:
             raise AmountMismatchError(
                 f"Escrow vault '{escrow_vault_pubkey}' was not completely drained (post balance = {post_vault})"
@@ -605,58 +1314,59 @@ class SplSettlementReconciler:
                 f"Escrow vault '{escrow_vault_pubkey}' had no pre-settlement balance ({total_escrow_settled})"
             )
 
-        operator_payout = post_operator - pre_operator
-        creator_refund = post_creator - pre_creator
-
-        # Handle same destination case (operator is also creator)
+        # Reconcile inner transfers against balance deltas
         if operator_token_account_pubkey == creator_refund_token_account_pubkey:
-            total_delta = post_operator - pre_operator
-            if total_delta != total_escrow_settled:
+            delta_combined = post_operator - pre_operator
+            if delta_combined != (inner_operator_transferred + inner_creator_transferred):
                 raise AmountMismatchError(
-                    f"Combined operator/creator delta ({total_delta}) does not match escrow settled ({total_escrow_settled})"
+                    f"Combined balance delta ({delta_combined}) != inner transfers sum "
+                    f"({inner_operator_transferred + inner_creator_transferred})"
                 )
-            if expected_operator_amount is not None:
-                operator_payout = expected_operator_amount
-                creator_refund = total_escrow_settled - operator_payout
-            else:
-                operator_payout = total_delta
-                creator_refund = 0
+            operator_payout = inner_operator_transferred
+            creator_refund = inner_creator_transferred
         else:
-            if operator_payout < 0:
-                raise AmountMismatchError(f"Operator payout delta is negative ({operator_payout})")
-            if creator_refund < 0:
-                raise AmountMismatchError(f"Creator refund delta is negative ({creator_refund})")
+            delta_operator = post_operator - pre_operator
+            delta_creator = post_creator - pre_creator
 
-            # Fundamental Invariant: Operator Payout + Creator Refund == Escrow Settled
-            if operator_payout + creator_refund != total_escrow_settled:
+            if delta_operator != inner_operator_transferred:
                 raise AmountMismatchError(
-                    f"Conservation of value violated: operator_payout ({operator_payout}) + "
-                    f"creator_refund ({creator_refund}) != total_escrow_settled ({total_escrow_settled})"
+                    f"Operator balance delta ({delta_operator}) does not match inner TransferChecked ({inner_operator_transferred})"
                 )
+            if delta_creator != inner_creator_transferred:
+                raise AmountMismatchError(
+                    f"Creator refund delta ({delta_creator}) does not match inner TransferChecked ({inner_creator_transferred})"
+                )
+            operator_payout = delta_operator
+            creator_refund = delta_creator
+
+        # Check for surplus in escrow vault
+        order_total_amount = wo_data["total_amount"]
+        surplus = max(0, total_escrow_settled - order_total_amount)
+
+        # Invariant: Operator payout cannot exceed contracted work order total amount
+        if operator_payout > order_total_amount:
+            raise AmountMismatchError(
+                f"Operator payout ({operator_payout}) exceeds WorkOrder contracted amount ({order_total_amount})"
+            )
+
+        # Invariant: Conservation of value
+        if operator_payout + creator_refund != total_escrow_settled:
+            raise AmountMismatchError(
+                f"Conservation of value violated: operator_payout ({operator_payout}) + "
+                f"creator_refund ({creator_refund}) != total_escrow_settled ({total_escrow_settled})"
+            )
 
         if expected_operator_amount is not None and operator_payout != expected_operator_amount:
             raise AmountMismatchError(
                 f"Operator payout mismatch: expected {expected_operator_amount}, on-chain delta is {operator_payout}"
             )
 
-        # 8. Check Beneficiary Token Account Owner if expected_beneficiary is supplied
-        if expected_beneficiary:
-            # Query owner of operator_token_account from token balances or RPC
-            actual_owner: Optional[str] = None
-            for b in post_token_balances + pre_token_balances:
-                if (
-                    operator_token_account_pubkey in account_keys
-                    and b.get("accountIndex") == account_keys.index(operator_token_account_pubkey)
-                ):
-                    actual_owner = b.get("owner")
-                    break
-            if actual_owner and actual_owner != expected_beneficiary:
-                raise AccountMismatchError(
-                    f"Beneficiary mismatch: operator token account owner '{actual_owner}' "
-                    f"does not match expected beneficiary '{expected_beneficiary}'"
-                )
+        # 12. Derive verified agent identities
+        verified_agent_account = claimed_agent_pubkey
+        verified_agent_id = agent_data["agent_id"].hex()
+        verified_owner_pubkey = agent_data["owner"]
 
-        # 9. Build Financial Effect Identifier & Canonical Evidence Hash
+        # 13. Build Financial Effect Identifier & Canonical Evidence Hash
         effect_id = build_financial_effect_id(
             network=self.expected_network,
             genesis_hash=self.expected_genesis_hash,
@@ -674,6 +1384,10 @@ class SplSettlementReconciler:
             "slot": slot,
             "instruction_index": settle_ix_index,
             "work_order_account": work_order_pubkey,
+            "agent_account": verified_agent_account,
+            "agent_id": verified_agent_id,
+            "owner_pubkey": verified_owner_pubkey,
+            "settlement_beneficiary": settlement_beneficiary,
             "token_mint": mint_pubkey,
             "escrow_vault": escrow_vault_pubkey,
             "operator_token_account": operator_token_account_pubkey,
@@ -681,8 +1395,9 @@ class SplSettlementReconciler:
             "operator_payout": operator_payout,
             "creator_refund": creator_refund,
             "total_escrow_settled": total_escrow_settled,
+            "surplus": surplus,
+            "evidence_source": source_kind.value,
             "effect_id": effect_id,
-            "commitment": self.min_commitment,
         }
         evidence_hash = compute_canonical_evidence_hash(evidence_payload)
 
@@ -695,6 +1410,10 @@ class SplSettlementReconciler:
             block_time=block_time,
             instruction_index=settle_ix_index,
             work_order_account=work_order_pubkey,
+            agent_account=verified_agent_account,
+            agent_id=verified_agent_id,
+            owner_pubkey=verified_owner_pubkey,
+            settlement_beneficiary=settlement_beneficiary,
             token_mint=mint_pubkey,
             escrow_vault=escrow_vault_pubkey,
             operator_token_account=operator_token_account_pubkey,
@@ -702,7 +1421,9 @@ class SplSettlementReconciler:
             operator_payout=operator_payout,
             creator_refund=creator_refund,
             total_escrow_settled=total_escrow_settled,
-            commitment=self.min_commitment,
+            surplus=surplus,
+            commitment=actual_tx_commitment,
+            evidence_source=source_kind.value,
             effect_id=effect_id,
             evidence_hash=evidence_hash,
         )
@@ -727,6 +1448,7 @@ class SplSettlementReconciler:
         """Verifies an economic movement promotion request against authentic on-chain evidence.
 
         Implements the ReconciliationVerifier protocol defined in CON-22.
+        Enforces that RECONCILED status strictly requires finalized commitment.
         """
         if authorized_by != self.authority:
             logger.warning(
@@ -740,16 +1462,37 @@ class SplSettlementReconciler:
             expected_wo = movement.work_order_account if movement else None
             expected_mint = movement.token_mint if movement else None
             expected_amt = movement.amount_base_units if movement else None
+            expected_beneficiary = movement.owner_pubkey if movement else None
 
+            # Strictly require finalized commitment for RECONCILED status
             receipt = self.verify_settlement_transaction(
                 tx_signature,
                 expected_work_order=expected_wo,
                 expected_mint=expected_mint,
+                expected_beneficiary=expected_beneficiary,
                 expected_operator_amount=expected_amt,
+                require_finalized=True,
             )
         except Exception as exc:
             logger.warning("Reconciliation verification failed for tx '%s': %s", tx_signature, exc)
             return False
+
+        # Verify that movement agent identities match verified receipt
+        if movement:
+            if movement.agent_account != receipt.agent_account:
+                logger.warning(
+                    "Reconciliation rejected: movement agent_account '%s' != verified '%s'",
+                    movement.agent_account,
+                    receipt.agent_account,
+                )
+                return False
+            if movement.owner_pubkey != receipt.owner_pubkey:
+                logger.warning(
+                    "Reconciliation rejected: movement owner_pubkey '%s' != verified '%s'",
+                    movement.owner_pubkey,
+                    receipt.owner_pubkey,
+                )
+                return False
 
         # Slot consistency: tx slot must be at or after the claimed slot
         if receipt.slot < slot:
@@ -775,7 +1518,7 @@ class SplSettlementReconciler:
         return True
 
     # ─────────────────────────────────────────────────────────────────────────
-    # High-Level Settlement Reconciliation Ingestion
+    # High-Level Settlement Ingestion
     # ─────────────────────────────────────────────────────────────────────────
 
     def reconcile_settlement(
@@ -788,43 +1531,80 @@ class SplSettlementReconciler:
         agent_id: Optional[str] = None,
         owner_pubkey: Optional[str] = None,
         authorized_by: Optional[str] = None,
+        source_kind: EvidenceSourceKind = EvidenceSourceKind.LIVE_RPC,
     ) -> tuple[EconomicMovement, SettlementReceipt]:
         """Atomically ingests and reconciles an authentic on-chain settlement into EconomicLedger.
 
-        Guarantees:
-        - Exact operator payout credited as INCOME.
-        - Unearned escrow refunded to creator is NOT attributed to agent.
-        - Fails closed on any inconsistency or unconfirmed transaction.
-        - Strictly idempotent against retries and restarts.
+        Finality Policy:
+        - If transaction is only 'confirmed', records an observed PROVISIONAL movement.
+          Does NOT promote to RECONCILED until finalized.
+        - If transaction is 'finalized', records/promotes movement to RECONCILED.
+        - Cross-validates caller-provided agent identities against decoded on-chain accounts.
+        - Prevents silent aggregation and guarantees exact value attribution.
         """
         auth = authorized_by or self.authority
 
-        # 1. Verify on-chain settlement transaction via RPC
-        receipt = self.verify_settlement_transaction(
-            tx_signature,
-            expected_work_order=work_order_account,
-        )
+        # First, attempt to verify at finalized; if not available, fall back to confirmed for observation
+        is_finalized = True
+        try:
+            receipt = self.verify_settlement_transaction(
+                tx_signature,
+                expected_work_order=work_order_account,
+                require_finalized=True,
+                source_kind=source_kind,
+            )
+        except CommitmentUnsatisfiedError:
+            is_finalized = False
+            receipt = self.verify_settlement_transaction(
+                tx_signature,
+                expected_work_order=work_order_account,
+                require_finalized=False,
+                source_kind=source_kind,
+            )
+
+        # Cross-validate caller-provided agent parameters against verified on-chain accounts
+        if agent_account is not None and agent_account != receipt.agent_account:
+            raise AgentMismatchError(
+                f"Caller-provided agent_account '{agent_account}' does not match "
+                f"verified on-chain AgentAccount '{receipt.agent_account}'"
+            )
+
+        if owner_pubkey is not None and owner_pubkey != receipt.owner_pubkey:
+            raise AgentMismatchError(
+                f"Caller-provided owner_pubkey '{owner_pubkey}' does not match "
+                f"verified on-chain owner '{receipt.owner_pubkey}'"
+            )
+
+        if agent_id is not None:
+            clean_id = agent_id.lower().replace("-", "")
+            if clean_id != receipt.agent_id.lower() and clean_id != receipt.agent_account:
+                raise AgentMismatchError(
+                    f"Caller-provided agent_id '{agent_id}' does not match "
+                    f"verified on-chain agent_id '{receipt.agent_id}'"
+                )
 
         wo_account = receipt.work_order_account
-        ag_account = agent_account or receipt.operator_token_account
-        ag_id = agent_id or ("11" * 32)
-        own_pubkey = owner_pubkey or receipt.operator_token_account
+        ag_account = receipt.agent_account
+        ag_id = receipt.agent_id
+        own_pubkey = receipt.owner_pubkey
 
-        # 2. Check if a movement already exists for this financial effect
+        # Check if movement already exists for this idempotent financial effect
         existing = ledger.get_by_idempotency_key(receipt.effect_id)
         if existing:
             if existing.status == MovementStatus.RECONCILED:
                 return existing, receipt
 
-            # Transition existing provisional movement to RECONCILED
-            reconciled = ledger.reconcile_movement(
-                existing.movement_id,
-                evidence_hash=receipt.evidence_hash,
-                authorized_by=auth,
-                slot=receipt.slot,
-                tx_signature=tx_signature,
-            )
-            return reconciled, receipt
+            if is_finalized:
+                reconciled = ledger.reconcile_movement(
+                    existing.movement_id,
+                    evidence_hash=receipt.evidence_hash,
+                    authorized_by=auth,
+                    slot=receipt.slot,
+                    tx_signature=tx_signature,
+                )
+                return reconciled, receipt
+            else:
+                return existing, receipt
 
         # Check by work_order_account and tx_signature fallback
         movements, _ = ledger.list_movements(ag_account, limit=100)
@@ -836,19 +1616,23 @@ class SplSettlementReconciler:
             target_mov = matching[0]
             if target_mov.status == MovementStatus.RECONCILED:
                 return target_mov, receipt
-            reconciled = ledger.reconcile_movement(
-                target_mov.movement_id,
-                evidence_hash=receipt.evidence_hash,
-                authorized_by=auth,
-                slot=receipt.slot,
-                tx_signature=tx_signature,
-            )
-            return reconciled, receipt
+            if is_finalized:
+                reconciled = ledger.reconcile_movement(
+                    target_mov.movement_id,
+                    evidence_hash=receipt.evidence_hash,
+                    authorized_by=auth,
+                    slot=receipt.slot,
+                    tx_signature=tx_signature,
+                )
+                return reconciled, receipt
+            else:
+                return target_mov, receipt
 
-        # 3. Create initial PROVISIONAL movement with exact operator payout
+        # Record initial PROVISIONAL movement with exact verified operator payout
         nature = MovementNature.INCOME if receipt.operator_payout > 0 else MovementNature.ADJUSTMENT
         meta = {
             "reconciliation_effect": "operator_payout",
+            "evidence_source": receipt.evidence_source,
             "settlement_receipt": receipt.to_dict(),
         }
 
@@ -871,7 +1655,11 @@ class SplSettlementReconciler:
             metadata=meta,
         )
 
-        # 4. Promote to RECONCILED
+        if not is_finalized:
+            # Finality gate: confirmed movement remains PROVISIONAL
+            return provisional, receipt
+
+        # Promote to RECONCILED once finalized
         reconciled = ledger.reconcile_movement(
             provisional.movement_id,
             evidence_hash=receipt.evidence_hash,
@@ -881,3 +1669,54 @@ class SplSettlementReconciler:
         )
 
         return reconciled, receipt
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Historical Localnet Audit & Verification Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def audit_historical_localnet_settlement(
+    rpc_client: Optional[SolanaRpcClientProtocol] = None,
+    rpc_url: str = "http://127.0.0.1:8899",
+) -> dict[str, Any]:
+    """Inspects the historical Localnet deployment in read-only mode.
+
+    Explicitly reports when live historical transactions are unverifiable due to
+    validator downtime, preventing synthetic data from masquerading as authentic proof.
+    """
+    client = rpc_client or SolanaRpcClient(rpc_url)
+    target_wo = "EnkZQWDqF5HeFeusZ7xnj7tngVN9xASofmKvXtDLeqbx"
+
+    try:
+        genesis = client.get_genesis_hash()
+        if genesis != DEFAULT_GENESIS_HASH:
+            return {
+                "status": "UNVERIFIABLE_ON_LIVE_RPC",
+                "live_verified": False,
+                "reason": f"Cluster genesis hash mismatch: expected {DEFAULT_GENESIS_HASH}, got {genesis}",
+                "target_work_order": target_wo,
+            }
+
+        wo_info = client.get_account_info(target_wo)
+        if wo_info is None:
+            return {
+                "status": "UNVERIFIABLE_ON_LIVE_RPC",
+                "live_verified": False,
+                "reason": "Localnet validator is running but target WorkOrder account was not found in live memory.",
+                "target_work_order": target_wo,
+            }
+
+        return {
+            "status": "LIVE_ACCOUNT_DETECTED",
+            "live_verified": True,
+            "target_work_order": target_wo,
+            "account_info": wo_info,
+        }
+    except Exception as exc:
+        return {
+            "status": "UNVERIFIABLE_ON_LIVE_RPC",
+            "live_verified": False,
+            "reason": f"Localnet validator at {rpc_url} is offline or unreachable: {exc}",
+            "target_work_order": target_wo,
+        }
