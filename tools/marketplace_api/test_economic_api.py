@@ -215,7 +215,7 @@ class EconomicApiTests(unittest.TestCase):
 
     def test_balances_and_filtered_movements(self):
         # Ingest movements via trusted internal ledger service
-        self.provider.ledger.record_movement(
+        m1 = self.provider.ledger.record_movement(
             idempotency_key="mov-inc-1",
             agent_id="11" * 32,
             agent_account=DRONE,
@@ -226,11 +226,17 @@ class EconomicApiTests(unittest.TestCase):
             token_mint=MINT_USDC,
             amount_base_units=10_000_000,
             nature=MovementNature.INCOME,
-            status=MovementStatus.RECONCILED,
-            tx_signature="sig-inc-1",
+            tx_signature="sig-inc-111111111111111111111111",
+        )
+        self.provider.ledger.reconcile_movement(
+            m1.movement_id,
+            evidence_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            authorized_by="conatus:protocol:reconciler:v1",
+            slot=100,
+            tx_signature="sig-inc-111111111111111111111111",
         )
 
-        self.provider.ledger.record_movement(
+        m2 = self.provider.ledger.record_movement(
             idempotency_key="mov-exp-1",
             agent_id="11" * 32,
             agent_account=DRONE,
@@ -241,8 +247,14 @@ class EconomicApiTests(unittest.TestCase):
             token_mint=MINT_USDC,
             amount_base_units=3_000_000,
             nature=MovementNature.EXPENSE,
-            status=MovementStatus.RECONCILED,
-            tx_signature="sig-exp-1",
+            tx_signature="sig-exp-111111111111111111111111",
+        )
+        self.provider.ledger.reconcile_movement(
+            m2.movement_id,
+            evidence_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            authorized_by="conatus:protocol:reconciler:v1",
+            slot=101,
+            tx_signature="sig-exp-111111111111111111111111",
         )
 
         self.provider.ledger.record_movement(
@@ -256,8 +268,7 @@ class EconomicApiTests(unittest.TestCase):
             token_mint=MINT_USDC,
             amount_base_units=1_500_000,
             nature=MovementNature.INCOME,
-            status=MovementStatus.PROVISIONAL,
-            tx_signature="sig-prov-1",
+            tx_signature="sig-prov-1111111111111111111111",
         )
 
         # Check balances with cryptographic authentication:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -26,6 +27,11 @@ from .schema import run_migrations
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / ".aerosettle-local" / "economic_ledger.db"
 
+DEFAULT_TRUSTED_RECONCILER_AUTHORITIES: frozenset[str] = frozenset({
+    "conatus:protocol:reconciler:v1",
+    "conatus:internal:settlement-validator:v1",
+})
+
 
 class ExactSum:
     """Custom SQLite aggregate ensuring arbitrary-precision integer accumulation without float drift."""
@@ -44,30 +50,55 @@ class ExactSum:
 def _check_idempotency_match(
     existing: EconomicMovement,
     *,
+    agent_id: str,
     agent_account: str,
-    amount_base_units: int,
-    token_mint: str,
-    nature: MovementNature,
-    network: str,
     owner_pubkey: str,
+    network: str,
+    genesis_hash: str,
+    program_id: str,
+    token_mint: str,
+    amount_base_units: int,
+    nature: MovementNature,
+    provenance_source: ProvenanceSource,
     work_order_account: Optional[str],
+    work_order_id: Optional[str],
+    tx_signature: Optional[str],
+    evidence_hash: Optional[str],
 ) -> None:
-    """Verifies that a reused idempotency key exactly matches all essential event fields."""
+    """Verifies that a reused idempotency key exactly matches all immutable event fields.
+
+    Crucially, lifecycle state ('status') is NOT compared, allowing legitimate retries
+    to return existing movements even after subsequent state transitions (e.g. to RECONCILED).
+    """
     mismatches: list[str] = []
+    if existing.agent_id != agent_id:
+        mismatches.append(f"agent_id ({existing.agent_id} != {agent_id})")
     if existing.agent_account != agent_account:
         mismatches.append(f"agent_account ({existing.agent_account} != {agent_account})")
-    if existing.amount_base_units != amount_base_units:
-        mismatches.append(f"amount_base_units ({existing.amount_base_units} != {amount_base_units})")
-    if existing.token_mint != token_mint:
-        mismatches.append(f"token_mint ({existing.token_mint} != {token_mint})")
-    if existing.nature != nature:
-        mismatches.append(f"nature ({existing.nature.value} != {nature.value})")
-    if existing.network != network:
-        mismatches.append(f"network ({existing.network} != {network})")
     if existing.owner_pubkey != owner_pubkey:
         mismatches.append(f"owner_pubkey ({existing.owner_pubkey} != {owner_pubkey})")
+    if existing.network != network:
+        mismatches.append(f"network ({existing.network} != {network})")
+    if existing.genesis_hash != genesis_hash:
+        mismatches.append(f"genesis_hash ({existing.genesis_hash} != {genesis_hash})")
+    if existing.program_id != program_id:
+        mismatches.append(f"program_id ({existing.program_id} != {program_id})")
+    if existing.token_mint != token_mint:
+        mismatches.append(f"token_mint ({existing.token_mint} != {token_mint})")
+    if existing.amount_base_units != amount_base_units:
+        mismatches.append(f"amount_base_units ({existing.amount_base_units} != {amount_base_units})")
+    if existing.nature != nature:
+        mismatches.append(f"nature ({existing.nature.value} != {nature.value})")
+    if existing.provenance_source != provenance_source:
+        mismatches.append(f"provenance_source ({existing.provenance_source.value} != {provenance_source.value})")
     if (existing.work_order_account or None) != (work_order_account or None):
         mismatches.append(f"work_order_account ({existing.work_order_account} != {work_order_account})")
+    if (existing.work_order_id or None) != (work_order_id or None):
+        mismatches.append(f"work_order_id ({existing.work_order_id} != {work_order_id})")
+    if (existing.tx_signature or None) != (tx_signature or None):
+        mismatches.append(f"tx_signature ({existing.tx_signature} != {tx_signature})")
+    if (existing.evidence_hash or None) != (evidence_hash or None):
+        mismatches.append(f"evidence_hash ({existing.evidence_hash} != {evidence_hash})")
 
     if mismatches:
         raise IdempotencyConflictError(
@@ -79,7 +110,12 @@ def _check_idempotency_match(
 class EconomicLedger:
     """ACID-compliant, thread-safe persistent economic ledger for Conatus/AeroSettle agents."""
 
-    def __init__(self, db_path: str | Path = DEFAULT_DB_PATH):
+    def __init__(
+        self,
+        db_path: str | Path = DEFAULT_DB_PATH,
+        *,
+        trusted_reconciler_authorities: Optional[set[str] | frozenset[str]] = None,
+    ):
         if str(db_path) != ":memory:":
             self.db_path = Path(db_path)
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +138,13 @@ class EconomicLedger:
 
         # Register custom exact aggregate to avoid float conversions in SQLite
         self._conn.create_aggregate("exact_sum", 1, ExactSum)
+
+        # Configure trusted reconcilers
+        self._trusted_reconcilers = (
+            set(trusted_reconciler_authorities)
+            if trusted_reconciler_authorities is not None
+            else set(DEFAULT_TRUSTED_RECONCILER_AUTHORITIES)
+        )
 
         # Run versioned schema migrations
         run_migrations(self._conn)
@@ -160,6 +203,15 @@ class EconomicLedger:
         amount_int = validate_base_units(amount_base_units, allow_zero=allow_zero)
         amount_str = str(amount_int)
 
+        # Conservative Reconciliation Gate for CON-22:
+        # All initial economic movements must start as PROVISIONAL.
+        # Direct assignment of RECONCILED is restricted exclusively to system contrasientos (reversals).
+        if reversal_of_movement_id is None and status_enum == MovementStatus.RECONCILED:
+            raise LedgerValidationError(
+                "Initial economic movements must be recorded as PROVISIONAL; "
+                "transition to RECONCILED requires verified evidence via reconcile_movement()."
+            )
+
         # Reconciliation Guard: MANUAL_ENTRY cannot directly set RECONCILED or REVERTED
         if source_enum == ProvenanceSource.MANUAL_ENTRY and status_enum != MovementStatus.PROVISIONAL:
             raise LedgerValidationError(
@@ -175,18 +227,25 @@ class EconomicLedger:
                 "ONCHAIN_VERIFIED requires verifiable on-chain evidence (tx_signature, attestation_id, or evidence_hash)"
             )
 
-        # Check existing by idempotency_key first (Fast Read with Semantic Matching)
+        # Check existing by idempotency_key first (Fast Read with Complete Semantic Matching)
         existing = self.get_by_idempotency_key(clean_idempotency_key)
         if existing:
             _check_idempotency_match(
                 existing,
+                agent_id=agent_id,
                 agent_account=agent_account,
-                amount_base_units=amount_int,
-                token_mint=token_mint,
-                nature=nature_enum,
-                network=network,
                 owner_pubkey=owner_pubkey,
+                network=network,
+                genesis_hash=genesis_hash,
+                program_id=program_id,
+                token_mint=token_mint,
+                amount_base_units=amount_int,
+                nature=nature_enum,
+                provenance_source=source_enum,
                 work_order_account=work_order_account,
+                work_order_id=work_order_id,
+                tx_signature=tx_signature,
+                evidence_hash=evidence_hash,
             )
             return existing
 
@@ -214,7 +273,6 @@ class EconomicLedger:
                     )
                 )
         else:
-            # Generate default balanced double-entry legs based on movement nature
             legs = self._generate_default_legs(
                 journal_entry_id=journal_entry_id,
                 agent_account=agent_account,
@@ -244,13 +302,20 @@ class EconomicLedger:
                 if locked_existing:
                     _check_idempotency_match(
                         locked_existing,
+                        agent_id=agent_id,
                         agent_account=agent_account,
-                        amount_base_units=amount_int,
-                        token_mint=token_mint,
-                        nature=nature_enum,
-                        network=network,
                         owner_pubkey=owner_pubkey,
+                        network=network,
+                        genesis_hash=genesis_hash,
+                        program_id=program_id,
+                        token_mint=token_mint,
+                        amount_base_units=amount_int,
+                        nature=nature_enum,
+                        provenance_source=source_enum,
                         work_order_account=work_order_account,
+                        work_order_id=work_order_id,
+                        tx_signature=tx_signature,
+                        evidence_hash=evidence_hash,
                     )
                     return locked_existing
 
@@ -353,13 +418,20 @@ class EconomicLedger:
             if existing:
                 _check_idempotency_match(
                     existing,
+                    agent_id=agent_id,
                     agent_account=agent_account,
-                    amount_base_units=amount_int,
-                    token_mint=token_mint,
-                    nature=nature_enum,
-                    network=network,
                     owner_pubkey=owner_pubkey,
+                    network=network,
+                    genesis_hash=genesis_hash,
+                    program_id=program_id,
+                    token_mint=token_mint,
+                    amount_base_units=amount_int,
+                    nature=nature_enum,
+                    provenance_source=source_enum,
                     work_order_account=work_order_account,
+                    work_order_id=work_order_id,
+                    tx_signature=tx_signature,
+                    evidence_hash=evidence_hash,
                 )
                 return existing
             raise LedgerValidationError(f"Integrity violation: {exc}") from exc
@@ -376,7 +448,7 @@ class EconomicLedger:
         return created
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Reconciliation Transition (Internal Authorized Evidence)
+    # Reconciliation Transition (Internal Trusted Reconciler Verification)
     # ─────────────────────────────────────────────────────────────────────────
 
     def reconcile_movement(
@@ -385,14 +457,50 @@ class EconomicLedger:
         *,
         evidence_hash: str,
         authorized_by: str,
-        slot: Optional[int] = None,
-        tx_signature: Optional[str] = None,
+        slot: int,
+        tx_signature: str,
     ) -> EconomicMovement:
-        """Transitions a PROVISIONAL movement to RECONCILED with authorized cryptographic evidence."""
-        if not evidence_hash or not evidence_hash.strip():
-            raise LedgerValidationError("evidence_hash is required for reconciliation")
+        """Transitions a PROVISIONAL movement to RECONCILED with verified evidence from a trusted reconciler.
+
+        Guards:
+        1. Falsified or unauthorized reconcilers are strictly rejected.
+        2. Evidence hash format must be a canonical 64-char hex SHA-256 string.
+        3. Confirmed block slot must be a strictly positive integer (> 0).
+        4. Valid on-chain transaction signature format is mandatory.
+        5. Conflicting evidence or signatures against previously recorded movements fail closed.
+        """
         if not authorized_by or not authorized_by.strip():
             raise LedgerValidationError("authorized_by is required for reconciliation")
+
+        auth_clean = authorized_by.strip()
+        if auth_clean not in self._trusted_reconcilers:
+            raise LedgerValidationError(
+                f"Reconciliation rejected: unauthorized reconciler authority '{auth_clean}'"
+            )
+
+        if not evidence_hash or not evidence_hash.strip():
+            raise LedgerValidationError("evidence_hash is required for reconciliation")
+
+        hash_clean = evidence_hash.strip()
+        hex_part = hash_clean[7:] if hash_clean.startswith("sha256:") else hash_clean
+        if len(hex_part) != 64 or not all(c in "0123456789abcdefABCDEF" for c in hex_part):
+            raise LedgerValidationError(
+                f"Reconciliation rejected: falsified or invalid evidence hash format '{evidence_hash}'"
+            )
+
+        if slot is None or not isinstance(slot, int) or slot <= 0:
+            raise LedgerValidationError(
+                f"Reconciliation rejected: slot must be a positive confirmed block slot, got {slot}"
+            )
+
+        if not tx_signature or not tx_signature.strip():
+            raise LedgerValidationError("Reconciliation rejected: valid on-chain tx_signature is required")
+
+        sig_clean = tx_signature.strip()
+        if len(sig_clean) < 8 or len(sig_clean) > 128:
+            raise LedgerValidationError(
+                f"Reconciliation rejected: invalid transaction signature format '{tx_signature}'"
+            )
 
         cursor = self._conn.cursor()
         try:
@@ -416,26 +524,36 @@ class EconomicLedger:
                     f"Only PROVISIONAL movements can be reconciled, got {current_status}"
                 )
 
+            # Check consistency with previously recorded movement evidence/signature
+            if row["tx_signature"] and row["tx_signature"] != sig_clean:
+                raise LedgerValidationError(
+                    f"Reconciliation rejected: tx_signature '{sig_clean}' conflicts with recorded movement tx_signature '{row['tx_signature']}'"
+                )
+            if row["evidence_hash"] and row["evidence_hash"] != hash_clean:
+                raise LedgerValidationError(
+                    f"Reconciliation rejected: evidence_hash '{hash_clean}' conflicts with recorded movement evidence_hash '{row['evidence_hash']}'"
+                )
+
             now = int(time.time())
             meta = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
             meta["reconciliation"] = {
                 "reconciled_at": now,
-                "authorized_by": authorized_by.strip(),
-                "evidence_hash": evidence_hash.strip(),
+                "authorized_by": auth_clean,
+                "evidence_hash": hash_clean,
                 "slot": slot,
-                "tx_signature": tx_signature,
+                "tx_signature": sig_clean,
             }
 
             cursor.execute(
                 """
                 UPDATE economic_movements
-                SET status = ?, evidence_hash = ?, tx_signature = COALESCE(?, tx_signature), metadata_json = ?
+                SET status = ?, evidence_hash = ?, tx_signature = ?, metadata_json = ?
                 WHERE movement_id = ?;
                 """,
                 (
                     MovementStatus.RECONCILED.value,
-                    evidence_hash.strip(),
-                    tx_signature,
+                    hash_clean,
+                    sig_clean,
                     json.dumps(meta),
                     movement_id,
                 ),
@@ -445,12 +563,12 @@ class EconomicLedger:
                 cursor.execute(
                     """
                     UPDATE journal_entries
-                    SET status = ?, tx_signature = COALESCE(?, tx_signature)
+                    SET status = ?, tx_signature = ?
                     WHERE journal_entry_id = ?;
                     """,
                     (
                         MovementStatus.RECONCILED.value,
-                        tx_signature,
+                        sig_clean,
                         row["journal_entry_id"],
                     ),
                 )
@@ -486,13 +604,13 @@ class EconomicLedger:
         token_mint: str,
         tx_signature: Optional[str] = None,
         observed_at: Optional[int] = None,
-        is_reconciled: bool = False,
     ) -> EconomicMovement:
         """Records an economic movement resulting from an on-chain work order settlement.
 
         CRITICAL GUARDS:
-        1. Does NOT assume total_amount is agent income: computes exact operator payout.
-        2. Non-disbursement (0 payout) settlements are recorded as 0-unit audit movements,
+        1. Starts in PROVISIONAL status. Reconciled status is never assumed on observation.
+        2. Does NOT assume total_amount is agent income: computes exact operator payout.
+        3. Non-disbursement (0 payout) settlements are recorded as 0-unit audit movements,
            completely eliminating symbolic 1 base unit workarounds.
         """
         total_amount = validate_base_units(work_order_data.get("total_amount", 0), allow_zero=True)
@@ -509,7 +627,6 @@ class EconomicLedger:
         )
 
         creator_refund = total_amount - operator_payout
-        status = MovementStatus.RECONCILED if is_reconciled else MovementStatus.PROVISIONAL
         attestation_hash = work_order_data.get("verification_attestation_hash")
         idempotency_key = f"settlement:{work_order_account}:{tx_signature or 'payout'}"
 
@@ -535,7 +652,7 @@ class EconomicLedger:
                 token_mint=token_mint,
                 amount_base_units=0,  # Exact 0 base units without distortion
                 nature=MovementNature.ADJUSTMENT,
-                status=status,
+                status=MovementStatus.PROVISIONAL,
                 provenance_source=ProvenanceSource.SETTLEMENT_EVENT,
                 work_order_account=work_order_account,
                 work_order_id=work_order_id,
@@ -567,7 +684,7 @@ class EconomicLedger:
             token_mint=token_mint,
             amount_base_units=operator_payout,
             nature=MovementNature.INCOME,
-            status=status,
+            status=MovementStatus.PROVISIONAL,
             provenance_source=ProvenanceSource.SETTLEMENT_EVENT,
             work_order_account=work_order_account,
             work_order_id=work_order_id,
@@ -666,7 +783,6 @@ class EconomicLedger:
                 )
                 orig_legs = cursor.fetchall()
                 for leg in orig_legs:
-                    # Invert DEBIT <-> CREDIT
                     inverted_type = (
                         EntryType.CREDIT
                         if leg["entry_type"] == EntryType.DEBIT.value
@@ -685,7 +801,6 @@ class EconomicLedger:
                     )
 
             if not reversal_legs:
-                # Fallback if no prior journal entry: generate inverted default legs
                 default_legs = self._generate_default_legs(
                     journal_entry_id=comp_journal_id,
                     agent_account=row["agent_account"],

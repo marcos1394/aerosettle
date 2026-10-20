@@ -1,6 +1,6 @@
 """Conatus / AeroSettle Economic Ledger Package."""
 from . import auth, ed25519
-from .ledger import EconomicLedger
+from .ledger import DEFAULT_TRUSTED_RECONCILER_AUTHORITIES, EconomicLedger
 from .models import (
     BalanceReport,
     EconomicMovement,
@@ -17,6 +17,7 @@ from .models import (
 from .schema import run_migrations
 
 __all__ = [
+    "DEFAULT_TRUSTED_RECONCILER_AUTHORITIES",
     "EconomicLedger",
     "EconomicMovement",
     "JournalEntry",
