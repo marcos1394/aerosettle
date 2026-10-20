@@ -18,6 +18,7 @@ import rust_matching
 import cursor_pagination
 import openapi_spec
 
+from tools.economic_ledger.auth import AuthError, verify_request_auth
 from tools.economic_ledger.ledger import EconomicLedger
 from tools.economic_ledger.models import (
     LedgerValidationError,
@@ -38,39 +39,13 @@ def get_ledger(provider=None) -> EconomicLedger:
     return _DEFAULT_LEDGER
 
 
-def authorize_agent_access(agent: dict, headers: dict | None) -> None:
-    """Enforce authorization for agent economic movements and balances."""
-    if headers is None:
-        headers = {}
-
-    hdrs = {str(k).lower(): str(v) for k, v in headers.items()}
-    owner_header = hdrs.get("x-owner-pubkey")
-    auth_header = hdrs.get("authorization")
-    admin_header = hdrs.get("x-protocol-admin")
-
-    if admin_header == "conatus-admin-key":
-        return
-
-    caller_pubkey = None
-    if owner_header:
-        caller_pubkey = owner_header.strip()
-    elif auth_header and auth_header.startswith("Bearer "):
-        caller_pubkey = auth_header[7:].strip()
-
-    if not caller_pubkey:
-        raise ApiError(
-            401,
-            "UNAUTHORIZED",
-            "Authorization required: provide X-Owner-Pubkey or Authorization: Bearer <pubkey>",
-        )
-
-    expected_owner = agent.get("owner")
-    if expected_owner and caller_pubkey != expected_owner:
-        raise ApiError(
-            403,
-            "FORBIDDEN",
-            f"Unauthorized: caller {caller_pubkey} is not the registered owner of this agent",
-        )
+def authorize_agent_access(agent: dict, headers: dict | None, agent_account: str | None = None) -> str:
+    """Enforce authentic Ed25519 cryptographic authorization for agent economic access."""
+    acc = agent_account or agent.get("agent_account", "")
+    try:
+        return verify_request_auth(headers, agent, acc)
+    except AuthError as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
 
 PROGRAM_ID = "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
 GENESIS = "HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg"
@@ -513,7 +488,7 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
             )
 
         if len(pieces) == 4 and pieces[3] == "economic-movements":
-            authorize_agent_access(agent, headers)
+            authorize_agent_access(agent, headers, pieces[2])
 
             from_ts = int(query["from_ts"]) if "from_ts" in query else None
             to_ts = int(query["to_ts"]) if "to_ts" in query else None
@@ -547,7 +522,7 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
             }
 
         if len(pieces) == 4 and pieces[3] == "balances":
-            authorize_agent_access(agent, headers)
+            authorize_agent_access(agent, headers, pieces[2])
 
             ledger = get_ledger(provider)
             balances = ledger.get_balances(
@@ -577,7 +552,7 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                 (a for a in snapshot["agents"] if a["agent_account"] == movement.agent_account),
                 None,
             )
-            authorize_agent_access(agent or {"owner": movement.owner_pubkey}, headers)
+            authorize_agent_access(agent or {"owner": movement.owner_pubkey}, headers, movement.agent_account)
 
             return 200, {
                 "data": movement.to_dict(),
@@ -818,93 +793,7 @@ def handler_for(provider):
                 )
 
         def do_POST(self):
-            parts = urlsplit(self.path)
-            pieces = [p for p in parts.path.split("/") if p]
-            if len(pieces) >= 2 and pieces[0] == "v1" and pieces[1] == "economic-movements":
-                try:
-                    content_len = int(self.headers.get("Content-Length", 0))
-                    raw_body = self.rfile.read(content_len) if content_len > 0 else b"{}"
-                    body = json.loads(raw_body.decode("utf-8"))
-
-                    snapshot = provider.snapshot()
-                    meta = metadata(snapshot)
-                    ledger = get_ledger(provider)
-
-                    if len(pieces) == 2:
-                        agent_account = body.get("agent_account")
-                        if not agent_account:
-                            raise ApiError(400, "MISSING_FIELD", "agent_account is required")
-                        require_pubkey(agent_account)
-
-                        agent = next(
-                            (a for a in snapshot["agents"] if a["agent_account"] == agent_account),
-                            None,
-                        )
-                        authorize_agent_access(agent or {"owner": body.get("owner_pubkey")}, self.headers)
-
-                        movement = ledger.record_movement(
-                            idempotency_key=body["idempotency_key"],
-                            agent_id=body.get("agent_id", (agent["agent_id"] if agent else "00" * 32)),
-                            agent_account=agent_account,
-                            owner_pubkey=body.get("owner_pubkey", (agent.get("owner") if agent else "")),
-                            network=body.get("network", "solana:localnet"),
-                            genesis_hash=body.get("genesis_hash", GENESIS),
-                            program_id=body.get("program_id", PROGRAM_ID),
-                            token_mint=body["token_mint"],
-                            amount_base_units=body["amount_base_units"],
-                            nature=body["nature"],
-                            status=body.get("status", "PROVISIONAL"),
-                            provenance_source=body.get("provenance_source", "MANUAL_ENTRY"),
-                            work_order_account=body.get("work_order_account"),
-                            work_order_id=body.get("work_order_id"),
-                            evidence_hash=body.get("evidence_hash"),
-                            attestation_id=body.get("attestation_id"),
-                            tx_signature=body.get("tx_signature"),
-                            external_ref=body.get("external_ref"),
-                            observed_at=body.get("observed_at"),
-                            metadata=body.get("metadata"),
-                        )
-                        self.respond(201, {"data": movement.to_dict(), "meta": meta})
-                        return
-
-                    elif len(pieces) == 4 and pieces[3] == "revert":
-                        movement_id = pieces[2]
-                        reason = body.get("reason")
-                        if not reason:
-                            raise ApiError(400, "MISSING_FIELD", "reason is required for reversal")
-                        movement = ledger.get_movement(movement_id)
-                        if not movement:
-                            raise ApiError(404, "MOVEMENT_NOT_FOUND", "Movement not found")
-
-                        agent = next(
-                            (a for a in snapshot["agents"] if a["agent_account"] == movement.agent_account),
-                            None,
-                        )
-                        authorize_agent_access(agent or {"owner": movement.owner_pubkey}, self.headers)
-
-                        reverted, comp = ledger.revert_movement(
-                            movement_id,
-                            reason=reason,
-                            authorized_by=self.headers.get("X-Owner-Pubkey", movement.owner_pubkey),
-                        )
-                        self.respond(200, {
-                            "data": {
-                                "reverted": reverted.to_dict(),
-                                "compensating": comp.to_dict(),
-                            },
-                            "meta": meta,
-                        })
-                        return
-                except ApiError as exc:
-                    self.respond(exc.status, {"error": {"code": exc.code, "message": str(exc)}})
-                    return
-                except LedgerValidationError as exc:
-                    self.respond(400, {"error": {"code": "VALIDATION_ERROR", "message": str(exc)}})
-                    return
-                except Exception as exc:
-                    self.respond(500, {"error": {"code": "SERVER_ERROR", "message": str(exc)}})
-                    return
-
+            # External write endpoints disabled: ingestion must occur through trusted internal services
             self.unsupported()
 
         def unsupported(self):
@@ -913,7 +802,7 @@ def handler_for(provider):
                 {
                     "error": {
                         "code": "METHOD_NOT_ALLOWED",
-                        "message": "Read-only: GET only",
+                        "message": "Read-only: GET only. Ingestion of economic movements must be performed via trusted internal services.",
                     }
                 },
                 {"Allow": "GET"},

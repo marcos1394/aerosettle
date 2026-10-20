@@ -1,9 +1,11 @@
 """Conatus / AeroSettle Economic Ledger Package."""
+from . import auth, ed25519
 from .ledger import EconomicLedger
 from .models import (
     BalanceReport,
     EconomicMovement,
     EntryType,
+    IdempotencyConflictError,
     JournalEntry,
     LedgerLeg,
     LedgerValidationError,
@@ -25,6 +27,9 @@ __all__ = [
     "ProvenanceSource",
     "EntryType",
     "LedgerValidationError",
+    "IdempotencyConflictError",
     "validate_base_units",
     "run_migrations",
+    "auth",
+    "ed25519",
 ]

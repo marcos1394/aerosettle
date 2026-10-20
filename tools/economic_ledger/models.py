@@ -38,8 +38,13 @@ class LedgerValidationError(Exception):
     pass
 
 
-def validate_base_units(amount: Any) -> int:
-    """Validate that amount is a strictly positive integer, rejecting floating point."""
+class IdempotencyConflictError(LedgerValidationError):
+    """Raised when an idempotency key is reused with mismatched payload parameters."""
+    pass
+
+
+def validate_base_units(amount: Any, allow_zero: bool = False) -> int:
+    """Validate that amount is an exact integer in base units, rejecting floating point."""
     if isinstance(amount, float):
         raise LedgerValidationError(
             f"Floating point values not permitted in monetary operations: {amount!r}"
@@ -57,8 +62,12 @@ def validate_base_units(amount: Any) -> int:
             f"Amount must be integer or digit string, got {type(amount).__name__}"
         )
 
-    if val <= 0:
-        raise LedgerValidationError(f"Amount must be strictly positive (> 0), got {val}")
+    if allow_zero:
+        if val < 0:
+            raise LedgerValidationError(f"Amount must be non-negative (>= 0), got {val}")
+    else:
+        if val <= 0:
+            raise LedgerValidationError(f"Amount must be strictly positive (> 0), got {val}")
     return val
 
 

@@ -1,19 +1,31 @@
 """Integration and HTTP API tests for the Economic Ledger endpoints (CON-22)."""
 import json
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
+import agent_discovery as discovery
 import server
+from tools.economic_ledger import ed25519
+from tools.economic_ledger.auth import create_auth_headers
 from tools.economic_ledger.ledger import EconomicLedger
-from tools.economic_ledger.models import MovementNature, MovementStatus
+from tools.economic_ledger.models import MovementNature, MovementStatus, ProvenanceSource
 
 DRONE = "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB"
 SENSOR = "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7"
-OWNER_DRONE = "8rPDpYsLZxNBm8Q8GKSKki8Ag6dodkasedhUT9x3Ec1D"
-OWNER_OTHER = "9aA2jeb1Cds7m4VMhYRpGCv9UJzdREZBZAVEYmBxAzeZ"
+
+# Deterministic test Ed25519 keypairs
+OWNER_DRONE_SECRET = b"\x01" * 32
+OWNER_DRONE_PUBKEY_BYTES = ed25519.public_key_from_secret(OWNER_DRONE_SECRET)
+OWNER_DRONE = discovery.b58encode(OWNER_DRONE_PUBKEY_BYTES)
+
+OWNER_OTHER_SECRET = b"\x02" * 32
+OWNER_OTHER_PUBKEY_BYTES = ed25519.public_key_from_secret(OWNER_OTHER_SECRET)
+OWNER_OTHER = discovery.b58encode(OWNER_OTHER_PUBKEY_BYTES)
+
 MINT_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 CONFIG = "3qnN5ZjRL516znKdWHeEvSGLWL6sf4EoCPcG8e28je62"
 
@@ -76,11 +88,17 @@ class EconomicApiTests(unittest.TestCase):
         self.httpd.shutdown()
         self.provider.ledger.close()
 
-    def request(self, path: str, method: str = "GET", body: dict | None = None, headers: dict | None = None) -> tuple[int, dict]:
+    def request(
+        self,
+        path: str,
+        method: str = "GET",
+        body: dict | None = None,
+        headers: dict | None = None,
+    ) -> tuple[int, dict]:
         req_headers = {"Content-Type": "application/json"}
         if headers:
             req_headers.update(headers)
-        
+
         data = json.dumps(body).encode("utf-8") if body else None
         req = urllib.request.Request(
             f"{self.url}{path}",
@@ -98,130 +116,156 @@ class EconomicApiTests(unittest.TestCase):
             return err.code, err_content
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Security: Authentication & Authorization Tests
+    # 1. API Security: Cryptographic Ed25519 Authentication & Backdoor Removal
     # ─────────────────────────────────────────────────────────────────────────
 
     def test_unauthorized_access_fails_closed(self):
-        # 1. Access without any auth header -> 401 UNAUTHORIZED
+        # 1. Request without authentication headers -> 401 UNAUTHORIZED
         status, res = self.request(f"/v1/agents/{DRONE}/economic-movements")
         self.assertEqual(status, 401)
         self.assertEqual(res["error"]["code"], "UNAUTHORIZED")
 
-        # 2. Access with wrong owner header -> 403 FORBIDDEN
+        # 2. Legacy self-asserted X-Owner-Pubkey header without signature -> 401 UNAUTHORIZED
         status, res = self.request(
             f"/v1/agents/{DRONE}/economic-movements",
-            headers={"X-Owner-Pubkey": OWNER_OTHER},
+            headers={"X-Owner-Pubkey": OWNER_DRONE},
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(res["error"]["code"], "UNAUTHORIZED")
+
+        # 3. Eliminated admin backdoor header X-Protocol-Admin -> 401 UNAUTHORIZED
+        status, res = self.request(
+            f"/v1/agents/{DRONE}/economic-movements",
+            headers={"X-Protocol-Admin": "conatus-admin-key"},
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(res["error"]["code"], "UNAUTHORIZED")
+
+        # 4. Forged / invalid signature -> 401 INVALID_SIGNATURE
+        bad_headers = {
+            "X-Signer-Pubkey": OWNER_DRONE,
+            "X-Timestamp": str(int(time.time())),
+            "X-Signature": discovery.b58encode(b"\x00" * 64),
+        }
+        status, res = self.request(
+            f"/v1/agents/{DRONE}/economic-movements",
+            headers=bad_headers,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(res["error"]["code"], "INVALID_SIGNATURE")
+
+        # 5. Expired timestamp (> 300s window) -> 401 EXPIRED_CREDENTIALS
+        expired_ts = int(time.time()) - 400
+        expired_headers = create_auth_headers(OWNER_DRONE_SECRET, DRONE, timestamp=expired_ts)
+        status, res = self.request(
+            f"/v1/agents/{DRONE}/economic-movements",
+            headers=expired_headers,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(res["error"]["code"], "EXPIRED_CREDENTIALS")
+
+        # 6. Valid signature from non-owner -> 403 FORBIDDEN
+        other_headers = create_auth_headers(OWNER_OTHER_SECRET, DRONE)
+        status, res = self.request(
+            f"/v1/agents/{DRONE}/economic-movements",
+            headers=other_headers,
         )
         self.assertEqual(status, 403)
         self.assertEqual(res["error"]["code"], "FORBIDDEN")
 
-        # 3. Access with correct owner header -> 200 OK
+        # 7. Authentic Ed25519 signature from genuine registered owner -> 200 OK
+        valid_headers = create_auth_headers(OWNER_DRONE_SECRET, DRONE)
         status, res = self.request(
             f"/v1/agents/{DRONE}/economic-movements",
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+            headers=valid_headers,
         )
         self.assertEqual(status, 200)
         self.assertIn("data", res)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Movement Ingestion & Idempotency over HTTP
+    # 2. Disabled HTTP Write Endpoints (Method Not Allowed)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def test_post_movement_and_idempotency_over_http(self):
-        payload = {
-            "idempotency_key": "http-idemp-001",
-            "agent_account": DRONE,
-            "owner_pubkey": OWNER_DRONE,
-            "token_mint": MINT_USDC,
-            "amount_base_units": 5_000_000,
-            "nature": "INCOME",
-            "status": "RECONCILED",
-            "provenance_source": "ONCHAIN_VERIFIED",
-        }
-
-        # 1. First POST: creates movement (201 Created)
+    def test_write_endpoints_disabled_method_not_allowed(self):
+        # External HTTP POST to record movement is disabled (405 METHOD_NOT_ALLOWED)
         status, res = self.request(
             "/v1/economic-movements",
             method="POST",
-            body=payload,
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+            body={
+                "idempotency_key": "write-attempt-1",
+                "agent_account": DRONE,
+                "amount_base_units": 1_000_000,
+            },
         )
-        self.assertEqual(status, 201)
-        mov_id = res["data"]["movement_id"]
-        self.assertEqual(res["data"]["amount_base_units"], 5_000_000)
+        self.assertEqual(status, 405)
+        self.assertEqual(res["error"]["code"], "METHOD_NOT_ALLOWED")
 
-        # 2. Second POST with identical idempotency_key: returns existing movement idempotently
-        status2, res2 = self.request(
-            "/v1/economic-movements",
+        # External HTTP POST to revert movement is disabled (405 METHOD_NOT_ALLOWED)
+        status, res = self.request(
+            "/v1/economic-movements/dummy-id/revert",
             method="POST",
-            body=payload,
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+            body={"reason": "test"},
         )
-        self.assertEqual(status2, 201)
-        self.assertEqual(res2["data"]["movement_id"], mov_id)
-
-        # 3. Retrieve movement directly by ID
-        status_get, res_get = self.request(
-            f"/v1/economic-movements/{mov_id}",
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
-        )
-        self.assertEqual(status_get, 200)
-        self.assertEqual(res_get["data"]["movement_id"], mov_id)
+        self.assertEqual(status, 405)
+        self.assertEqual(res["error"]["code"], "METHOD_NOT_ALLOWED")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Balances and Filtered Movement Lists
+    # 3. Balances and Filtered Movement Lists via Trusted Ingestion
     # ─────────────────────────────────────────────────────────────────────────
 
     def test_balances_and_filtered_movements(self):
-        # Ingest income
-        self.request(
-            "/v1/economic-movements",
-            method="POST",
-            body={
-                "idempotency_key": "mov-inc-1",
-                "agent_account": DRONE,
-                "token_mint": MINT_USDC,
-                "amount_base_units": 10_000_000,
-                "nature": "INCOME",
-                "status": "RECONCILED",
-            },
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+        # Ingest movements via trusted internal ledger service
+        self.provider.ledger.record_movement(
+            idempotency_key="mov-inc-1",
+            agent_id="11" * 32,
+            agent_account=DRONE,
+            owner_pubkey=OWNER_DRONE,
+            network="solana:localnet",
+            genesis_hash=server.GENESIS,
+            program_id=server.PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=10_000_000,
+            nature=MovementNature.INCOME,
+            status=MovementStatus.RECONCILED,
+            tx_signature="sig-inc-1",
         )
 
-        # Ingest expense
-        self.request(
-            "/v1/economic-movements",
-            method="POST",
-            body={
-                "idempotency_key": "mov-exp-1",
-                "agent_account": DRONE,
-                "token_mint": MINT_USDC,
-                "amount_base_units": 3_000_000,
-                "nature": "EXPENSE",
-                "status": "RECONCILED",
-            },
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+        self.provider.ledger.record_movement(
+            idempotency_key="mov-exp-1",
+            agent_id="11" * 32,
+            agent_account=DRONE,
+            owner_pubkey=OWNER_DRONE,
+            network="solana:localnet",
+            genesis_hash=server.GENESIS,
+            program_id=server.PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=3_000_000,
+            nature=MovementNature.EXPENSE,
+            status=MovementStatus.RECONCILED,
+            tx_signature="sig-exp-1",
         )
 
-        # Ingest provisional income
-        self.request(
-            "/v1/economic-movements",
-            method="POST",
-            body={
-                "idempotency_key": "mov-prov-1",
-                "agent_account": DRONE,
-                "token_mint": MINT_USDC,
-                "amount_base_units": 1_500_000,
-                "nature": "INCOME",
-                "status": "PROVISIONAL",
-            },
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+        self.provider.ledger.record_movement(
+            idempotency_key="mov-prov-1",
+            agent_id="11" * 32,
+            agent_account=DRONE,
+            owner_pubkey=OWNER_DRONE,
+            network="solana:localnet",
+            genesis_hash=server.GENESIS,
+            program_id=server.PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=1_500_000,
+            nature=MovementNature.INCOME,
+            status=MovementStatus.PROVISIONAL,
+            tx_signature="sig-prov-1",
         )
 
-        # Check balances: Reconciled = 10M - 3M = 7M; Provisional = 1.5M; Total = 8.5M
+        # Check balances with cryptographic authentication:
+        # Reconciled = 10M - 3M = 7M; Provisional = 1.5M; Total = 8.5M
+        auth_headers = create_auth_headers(OWNER_DRONE_SECRET, DRONE)
         status, bal_res = self.request(
             f"/v1/agents/{DRONE}/balances?mint={MINT_USDC}",
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+            headers=auth_headers,
         )
         self.assertEqual(status, 200)
         self.assertEqual(len(bal_res["data"]), 1)
@@ -233,7 +277,7 @@ class EconomicApiTests(unittest.TestCase):
         # Filter movements by nature=EXPENSE
         status, exp_list = self.request(
             f"/v1/agents/{DRONE}/economic-movements?nature=EXPENSE",
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+            headers=auth_headers,
         )
         self.assertEqual(status, 200)
         self.assertEqual(len(exp_list["data"]), 1)
@@ -242,44 +286,11 @@ class EconomicApiTests(unittest.TestCase):
         # Filter movements by status=PROVISIONAL
         status, prov_list = self.request(
             f"/v1/agents/{DRONE}/economic-movements?status=PROVISIONAL",
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
+            headers=auth_headers,
         )
         self.assertEqual(status, 200)
         self.assertEqual(len(prov_list["data"]), 1)
         self.assertEqual(prov_list["data"][0]["nature"], "INCOME")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Movement Reversals over HTTP
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def test_revert_movement_over_http(self):
-        # Create an expense
-        _, create_res = self.request(
-            "/v1/economic-movements",
-            method="POST",
-            body={
-                "idempotency_key": "rev-test-expense",
-                "agent_account": DRONE,
-                "token_mint": MINT_USDC,
-                "amount_base_units": 800_000,
-                "nature": "EXPENSE",
-                "status": "RECONCILED",
-            },
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
-        )
-        mov_id = create_res["data"]["movement_id"]
-
-        # Call revert endpoint
-        status, rev_res = self.request(
-            f"/v1/economic-movements/{mov_id}/revert",
-            method="POST",
-            body={"reason": "Hardware telemetry falsely reported extra cycle"},
-            headers={"X-Owner-Pubkey": OWNER_DRONE},
-        )
-        self.assertEqual(status, 200)
-        self.assertEqual(rev_res["data"]["reverted"]["status"], "REVERTED")
-        self.assertEqual(rev_res["data"]["compensating"]["nature"], "ADJUSTMENT")
-        self.assertEqual(rev_res["data"]["compensating"]["reversal_of_movement_id"], mov_id)
 
 
 if __name__ == "__main__":

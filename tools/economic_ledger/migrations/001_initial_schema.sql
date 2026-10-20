@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     agent_account TEXT,
     account_name TEXT NOT NULL,
     entry_type TEXT NOT NULL CHECK(entry_type IN ('DEBIT', 'CREDIT')),
-    amount_base_units INTEGER NOT NULL CHECK(amount_base_units > 0),
+    amount_base_units TEXT NOT NULL CHECK(amount_base_units >= 0),
     created_at INTEGER NOT NULL
 );
 
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS economic_movements (
     genesis_hash TEXT NOT NULL,
     program_id TEXT NOT NULL,
     token_mint TEXT NOT NULL,
-    amount_base_units INTEGER NOT NULL CHECK(amount_base_units > 0),
+    amount_base_units TEXT NOT NULL CHECK(amount_base_units >= 0),
     amount_str TEXT NOT NULL,
     nature TEXT NOT NULL CHECK(nature IN ('INCOME', 'EXPENSE', 'RESERVE', 'ADJUSTMENT')),
     status TEXT NOT NULL CHECK(status IN ('PROVISIONAL', 'RECONCILED', 'REVERTED')),
