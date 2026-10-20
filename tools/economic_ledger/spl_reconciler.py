@@ -6,15 +6,17 @@ Production-grade cryptographic and RPC verification of AeroSettle SPL settlement
 3. Program ID and settle_work_order instruction discriminator (0xa2462d3deabc0c76).
 4. WorkOrderAccount on-chain decoding, owner verification, discriminator check,
    canonical PDA derivation from Rust seeds, and Settled status validation.
-5. AgentAccount on-chain decoding, owner verification, discriminator check,
-   canonical PDA derivation, and frozen economic beneficiary validation.
-6. SPL token account ownership, mint matching, and Token Program validation.
-7. Inner TransferChecked instructions inspection matching settle_work_order index.
-8. Balance delta reconciliation vs inner transfers, handling surplus escrow donations
-   and shared operator/creator destinations without misattributing funds.
+5. Contractual settlement calculation matching Rust verified_operator_payout() and
+   allocation_for_verification() for Fixed and Proportional payment models.
+6. AgentAccount on-chain decoding, owner verification, discriminator check,
+   canonical PDA derivation, and frozen economic beneficiary preservation.
+7. Strict SPL token account ownership, mint matching, and Token Program validation
+   (fails closed on missing or third-party owners).
+8. Inner TransferChecked instructions inspection matching contractual allocation,
+   disambiguating shared operator/creator destinations and zero-payout refunds.
 9. Finality gating: 'confirmed' only records/observes PROVISIONAL movements;
    'finalized' is strictly required for RECONCILED status.
-10. Explicit distinction between LIVE_RPC, HISTORICAL_FIXTURE, and SYNTHETIC_TEST sources.
+10. Strict separation of evidence sources: LIVE_RPC, HISTORICAL_FIXTURE, and SYNTHETIC_TEST.
 11. Idempotent financial effect identification:
     effect_id = f"{network}:{genesis}:{signature}:{instruction_index}:{destination}:{mint}"
 12. Canonical evidence hash linking all verified settlement parameters.
@@ -104,6 +106,20 @@ class AgentStatus(int, Enum):
     OwnerSuspended = 1
     AdminSuspended = 2
     Revoked = 3
+
+
+class PaymentModel(int, Enum):
+    """Anchor PaymentModel enum matching Rust definition."""
+
+    Fixed = 0
+    Proportional = 1
+
+
+class VerificationStatus(int, Enum):
+    """Anchor VerificationStatus enum matching Rust definition."""
+
+    Accepted = 0
+    Rejected = 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -232,6 +248,80 @@ def derive_protocol_config_pda(program_id: str = DEFAULT_PROGRAM_ID) -> tuple[st
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Contractual Economic Policy (Rust Equivalents)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def compute_contractual_operator_payout(
+    *,
+    payment_model: int,
+    verification_status: Optional[int],
+    total_amount: int,
+    completion_bps: int,
+) -> Optional[int]:
+    """Calculates operator payout strictly matching Rust verified_operator_payout()."""
+    if completion_bps > 10_000:
+        return None
+
+    if verification_status == VerificationStatus.Rejected.value:
+        return 0 if completion_bps == 0 else None
+
+    if verification_status != VerificationStatus.Accepted.value:
+        return None
+
+    if payment_model == PaymentModel.Fixed.value:
+        return total_amount if completion_bps == 10_000 else 0
+
+    if payment_model == PaymentModel.Proportional.value:
+        numerator = total_amount * completion_bps
+        payout = numerator // 10_000
+        return payout
+
+    return None
+
+
+def compute_contractual_allocation(
+    *,
+    payment_model: int,
+    verification_status: Optional[int],
+    total_amount: int,
+    completion_bps: int,
+    vault_balance: int,
+) -> tuple[int, int, int]:
+    """Computes exact (operator_payout, creator_refund, surplus) matching Rust handle_settle_work_order.
+
+    Invariants enforced:
+    - Operator payout is calculated via verified_operator_payout().
+    - unearned_refund = total_amount - operator_payout.
+    - surplus = max(0, vault_balance - total_amount).
+    - creator_refund = unearned_refund + surplus.
+    - Invariant: operator_payout + creator_refund == vault_balance.
+    """
+    operator_payout = compute_contractual_operator_payout(
+        payment_model=payment_model,
+        verification_status=verification_status,
+        total_amount=total_amount,
+        completion_bps=completion_bps,
+    )
+    if operator_payout is None:
+        raise AmountMismatchError(
+            f"Invalid settlement terms: model={payment_model}, status={verification_status}, "
+            f"completion_bps={completion_bps}, total_amount={total_amount}"
+        )
+
+    if vault_balance < total_amount:
+        raise AmountMismatchError(
+            f"Insufficient escrow vault balance: {vault_balance} < total_amount {total_amount}"
+        )
+
+    surplus = vault_balance - total_amount
+    unearned_refund = total_amount - operator_payout
+    creator_refund = unearned_refund + surplus
+
+    return operator_payout, creator_refund, surplus
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Account Decoding and Encoding Utilities
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -263,6 +353,10 @@ def decode_work_order_account(raw: bytes) -> dict[str, Any]:
     status_int = raw[307]
     claimed_agent = b58encode(raw[308:340])
     settlement_beneficiary = b58encode(raw[340:372])
+
+    is_some_verification = raw[532] == 1
+    verification_status = raw[533] if is_some_verification else None
+    completion_bps = struct.unpack("<H", raw[534:536])[0]
     bump = raw[584]
 
     return {
@@ -285,6 +379,8 @@ def decode_work_order_account(raw: bytes) -> dict[str, Any]:
         "status": status_int,
         "claimed_agent": claimed_agent,
         "settlement_beneficiary": settlement_beneficiary,
+        "verification_status": verification_status,
+        "completion_bps": completion_bps,
         "bump": bump,
     }
 
@@ -301,7 +397,7 @@ def encode_work_order_account(
     manifest_hash: bytes = b"\x00" * 32,
     token_mint: str,
     total_amount: int,
-    payment_model: int = 0,
+    payment_model: int = PaymentModel.Fixed.value,
     verifier: str,
     escrow_vault: str,
     token_program: str = DEFAULT_TOKEN_PROGRAM,
@@ -310,6 +406,8 @@ def encode_work_order_account(
     status: int = WorkOrderStatus.Settled.value,
     claimed_agent: str,
     settlement_beneficiary: str,
+    verification_status: Optional[int] = VerificationStatus.Accepted.value,
+    completion_bps: int = 10000,
     bump: int = 254,
 ) -> bytes:
     """Serializes a WorkOrderAccount buffer for tests and fixtures."""
@@ -338,8 +436,13 @@ def encode_work_order_account(
     buf.extend(b"\x00" * 96)  # receipt_hash, manifest_hash, signer
     buf.extend(b"\x00" * 32)  # sequence, evidence, started, ended
     buf.extend(b"\x00" * 32)  # verification_attestation_hash
-    buf.extend(bytes([1, 0]))  # Some(Accepted)
-    buf.extend(struct.pack("<H", 10000))  # completion_bps = 10000
+
+    if verification_status is not None:
+        buf.extend(bytes([1, verification_status]))
+    else:
+        buf.extend(bytes([0, 0]))
+
+    buf.extend(struct.pack("<H", completion_bps))
     buf.extend(struct.pack("<qqqqqq", 1700000000, 1700000001, 1700000002, 1700000003, 1700000004, 1700000005))
     buf.append(bump)
     assert len(buf) == 585
@@ -567,6 +670,7 @@ class SettlementReceipt:
     agent_id: str
     owner_pubkey: str
     settlement_beneficiary: str
+    agent_owner_current: str
     token_mint: str
     escrow_vault: str
     operator_token_account: str
@@ -591,7 +695,7 @@ class SettlementReceipt:
 def compute_canonical_evidence_hash(evidence_data: dict[str, Any]) -> str:
     """Computes SHA-256 over canonical sorted JSON of verified settlement receipt."""
     payload = {
-        "version": "conatus:spl-settlement:v2",
+        "version": "conatus:spl-settlement:v3",
         "network": str(evidence_data.get("network", "")),
         "genesis_hash": str(evidence_data.get("genesis_hash", "")),
         "program_id": str(evidence_data.get("program_id", "")),
@@ -603,6 +707,7 @@ def compute_canonical_evidence_hash(evidence_data: dict[str, Any]) -> str:
         "agent_id": str(evidence_data.get("agent_id", "")),
         "owner_pubkey": str(evidence_data.get("owner_pubkey", "")),
         "settlement_beneficiary": str(evidence_data.get("settlement_beneficiary", "")),
+        "agent_owner_current": str(evidence_data.get("agent_owner_current", "")),
         "token_mint": str(evidence_data.get("token_mint", "")),
         "escrow_vault": str(evidence_data.get("escrow_vault", "")),
         "operator_token_account": str(evidence_data.get("operator_token_account", "")),
@@ -651,7 +756,7 @@ class SolanaRpcClientProtocol(Protocol):
 
 
 class SolanaRpcClient:
-    """Production JSON-RPC client for querying Solana nodes."""
+    """Production JSON-RPC client for querying authentic Solana nodes."""
 
     def __init__(self, rpc_url: str = "http://127.0.0.1:8899", timeout: float = 10.0) -> None:
         self.rpc_url = rpc_url.rstrip("/")
@@ -731,7 +836,7 @@ class SolanaRpcClient:
 
 
 class MockRpcClient:
-    """Deterministic in-memory RPC client for automated test suites and historical fixtures."""
+    """Deterministic in-memory RPC client for test suites and offline historical fixtures."""
 
     def __init__(
         self,
@@ -882,13 +987,21 @@ class SplSettlementReconciler:
         expected_beneficiary: Optional[str] = None,
         expected_operator_amount: Optional[int] = None,
         require_finalized: bool = True,
-        source_kind: EvidenceSourceKind = EvidenceSourceKind.LIVE_RPC,
+        source_kind: Optional[EvidenceSourceKind] = None,
     ) -> SettlementReceipt:
         """Thoroughly inspects and verifies an on-chain settlement transaction via RPC.
 
         Fails closed on any inconsistency between instructions, inner SPL transfers,
         token balances, or verified on-chain account states.
         """
+        # Detect evidence source kind cleanly: never let mock RPC masquerade as LIVE_RPC
+        effective_source = source_kind
+        if effective_source is None:
+            if isinstance(self.rpc, SolanaRpcClient):
+                effective_source = EvidenceSourceKind.LIVE_RPC
+            else:
+                effective_source = EvidenceSourceKind.SYNTHETIC_TEST
+
         # 1. Validate network & genesis hash
         try:
             actual_genesis = self.rpc.get_genesis_hash()
@@ -909,7 +1022,6 @@ class SplSettlementReconciler:
 
         actual_tx_commitment = commitment_to_fetch
         if tx is None:
-            # If searching for finalized failed, check if it exists at confirmed to provide accurate error
             if require_finalized:
                 try:
                     tx_confirmed = self.rpc.get_transaction(tx_signature, commitment="confirmed")
@@ -1154,19 +1266,127 @@ class SplSettlementReconciler:
                 f"Agent account address '{claimed_agent_pubkey}' does not match canonical PDA '{expected_agent_pda}'"
             )
 
-        # 9. Verify relationship between AgentAccount and frozen settlement beneficiary
-        if agent_data["owner"] != settlement_beneficiary:
-            raise AgentMismatchError(
-                f"Settlement beneficiary mismatch: WorkOrder frozen beneficiary is '{settlement_beneficiary}', "
-                f"but AgentAccount owner is '{agent_data['owner']}'"
-            )
+        # 9. Preservation of Frozen Settlement Beneficiary
+        # Note: in AeroSettle protocol, order.settlement_beneficiary is frozen at claim.
+        # If agent ownership was transferred post-claim, agent_data["owner"] will differ,
+        # but the settlement payout MUST be attributed to the frozen settlement_beneficiary.
+        current_agent_owner = agent_data["owner"]
 
         if expected_beneficiary and settlement_beneficiary != expected_beneficiary:
             raise AgentMismatchError(
                 f"Expected beneficiary '{expected_beneficiary}' does not match on-chain '{settlement_beneficiary}'"
             )
 
-        # 10. Examine Inner TransferChecked Instructions for settle_work_order
+        # 10. Extract Pre-settlement Escrow Vault Balance
+        pre_token_balances = meta.get("preTokenBalances") or []
+        post_token_balances = meta.get("postTokenBalances") or []
+
+        def get_token_amount(balances: list[dict[str, Any]], target_pubkey: str) -> int:
+            target_idx = account_keys.index(target_pubkey) if target_pubkey in account_keys else -1
+            for b in balances:
+                b_idx = b.get("accountIndex")
+                if (target_idx >= 0 and b_idx == target_idx) or b.get("account") == target_pubkey:
+                    ui_amount = b.get("uiTokenAmount", {})
+                    amount_str = ui_amount.get("amount", "0")
+                    return int(amount_str)
+            return 0
+
+        pre_vault = get_token_amount(pre_token_balances, escrow_vault_pubkey)
+        post_vault = get_token_amount(post_token_balances, escrow_vault_pubkey)
+
+        if post_vault != 0:
+            raise AmountMismatchError(
+                f"Escrow vault '{escrow_vault_pubkey}' was not completely drained (post balance = {post_vault})"
+            )
+
+        total_escrow_settled = pre_vault
+        if total_escrow_settled <= 0:
+            raise AmountMismatchError(
+                f"Escrow vault '{escrow_vault_pubkey}' had no pre-settlement balance ({total_escrow_settled})"
+            )
+
+        # 11. Compute exact contractual allocation matching Rust verified_operator_payout()
+        try:
+            contract_operator, contract_creator, contract_surplus = compute_contractual_allocation(
+                payment_model=wo_data["payment_model"],
+                verification_status=wo_data["verification_status"],
+                total_amount=wo_data["total_amount"],
+                completion_bps=wo_data["completion_bps"],
+                vault_balance=total_escrow_settled,
+            )
+        except Exception as exc:
+            raise AmountMismatchError(f"Failed to calculate contractual settlement allocation: {exc}") from exc
+
+        # 12. Strict Token Account Validations (Fails closed on missing or third-party owners)
+        def resolve_token_account_metadata(account_pubkey: str) -> tuple[str, str]:
+            owner = None
+            mint = None
+            target_idx = account_keys.index(account_pubkey) if account_pubkey in account_keys else -1
+            for b in post_token_balances + pre_token_balances:
+                if (target_idx >= 0 and b.get("accountIndex") == target_idx) or b.get("account") == account_pubkey:
+                    if b.get("owner"):
+                        owner = b["owner"]
+                    if b.get("mint"):
+                        mint = b["mint"]
+                    if owner and mint:
+                        break
+
+            if not owner or not mint:
+                acc_info = self.rpc.get_account_info(account_pubkey)
+                if acc_info:
+                    raw = extract_account_bytes(acc_info)
+                    if len(raw) >= 165:
+                        decoded = decode_token_account(raw)
+                        owner = owner or decoded.get("owner")
+                        mint = mint or decoded.get("mint")
+
+            if not owner:
+                raise AccountMismatchError(
+                    f"Token account '{account_pubkey}' owner is missing from transaction metadata and RPC"
+                )
+            if not mint:
+                raise AccountMismatchError(
+                    f"Token account '{account_pubkey}' mint is missing from transaction metadata and RPC"
+                )
+
+            return owner, mint
+
+        op_owner, op_mint = resolve_token_account_metadata(operator_token_account_pubkey)
+        if op_mint != mint_pubkey:
+            raise AccountMismatchError(
+                f"Operator token account mint '{op_mint}' does not match expected mint '{mint_pubkey}'"
+            )
+
+        if operator_token_account_pubkey != creator_refund_token_account_pubkey:
+            if op_owner != settlement_beneficiary:
+                raise AccountMismatchError(
+                    f"Operator token account owner '{op_owner}' does not match settlement beneficiary '{settlement_beneficiary}'"
+                )
+            cr_owner, cr_mint = resolve_token_account_metadata(creator_refund_token_account_pubkey)
+            if cr_mint != mint_pubkey:
+                raise AccountMismatchError(
+                    f"Creator refund token account mint '{cr_mint}' does not match expected mint '{mint_pubkey}'"
+                )
+            if cr_owner != wo_data["creator"]:
+                raise AccountMismatchError(
+                    f"Creator refund token account owner '{cr_owner}' does not match creator '{wo_data['creator']}'"
+                )
+        else:
+            # Shared destination:
+            # If operator payout > 0, owner must match settlement_beneficiary
+            # If operator payout == 0 (pure refund), owner must match creator or settlement_beneficiary
+            if contract_operator > 0:
+                if op_owner != settlement_beneficiary:
+                    raise AccountMismatchError(
+                        f"Shared token account owner '{op_owner}' does not match settlement beneficiary '{settlement_beneficiary}'"
+                    )
+            else:
+                if op_owner != settlement_beneficiary and op_owner != wo_data["creator"]:
+                    raise AccountMismatchError(
+                        f"Shared token account owner '{op_owner}' is an unauthorized third party"
+                    )
+
+        # 13. Examine Inner TransferChecked Instructions for settle_work_order
         inner_instructions_list = meta.get("innerInstructions") or []
         settle_inner_block: Optional[dict[str, Any]] = None
         for block in inner_instructions_list:
@@ -1179,12 +1399,27 @@ class SplSettlementReconciler:
                 f"Transaction '{tx_signature}' is missing inner CPI instructions for settle_work_order (index {settle_ix_index})"
             )
 
-        inner_operator_transferred = 0
-        inner_creator_transferred = 0
         inner_ix_list = settle_inner_block.get("instructions") or []
 
-        for in_ix in inner_ix_list:
-            # Check program
+        # Determine expected CPI transfers count and order based on Rust contract:
+        # In Rust:
+        #   if allocation.operator_amount > 0 -> CPI 1: TransferChecked to operator_token_account
+        #   if creator_refund > 0 -> CPI 2: TransferChecked to creator_refund_token_account
+        expected_cpis: list[tuple[str, int, str]] = []
+        if contract_operator > 0:
+            expected_cpis.append((operator_token_account_pubkey, contract_operator, "operator_payout"))
+        if contract_creator > 0:
+            expected_cpis.append((creator_refund_token_account_pubkey, contract_creator, "creator_refund"))
+
+        if len(inner_ix_list) != len(expected_cpis):
+            raise InstructionMismatchError(
+                f"Inner TransferChecked count mismatch: expected {len(expected_cpis)} CPIs "
+                f"({[c[2] for c in expected_cpis]}), but found {len(inner_ix_list)} CPIs in transaction"
+            )
+
+        for cpi_idx, (expected_dest, expected_amt, cpi_role) in enumerate(expected_cpis):
+            in_ix = inner_ix_list[cpi_idx]
+
             prog_id = None
             if "programIdIndex" in in_ix:
                 pidx = in_ix["programIdIndex"]
@@ -1198,7 +1433,6 @@ class SplSettlementReconciler:
                     f"Unexpected inner instruction program '{prog_id}', expected '{token_program_pubkey}'"
                 )
 
-            # Decode data
             cpi_data = b""
             if "data" in in_ix:
                 raw_cpi = in_ix["data"]
@@ -1218,7 +1452,6 @@ class SplSettlementReconciler:
 
             amount_transferred, decimals = decode_spl_transfer_checked(cpi_data)
 
-            # Check accounts: [source, mint, destination, authority]
             in_accounts = in_ix.get("accounts", [])
             if len(in_accounts) < 4:
                 raise InstructionMismatchError("Inner TransferChecked has fewer than 4 accounts")
@@ -1240,114 +1473,44 @@ class SplSettlementReconciler:
                 raise InstructionMismatchError(
                     f"Inner transfer authority '{cpi_auth}' != escrow_vault '{escrow_vault_pubkey}'"
                 )
-
-            if cpi_dest == operator_token_account_pubkey and cpi_dest != creator_refund_token_account_pubkey:
-                inner_operator_transferred += amount_transferred
-            elif cpi_dest == creator_refund_token_account_pubkey and cpi_dest != operator_token_account_pubkey:
-                inner_creator_transferred += amount_transferred
-            elif cpi_dest == operator_token_account_pubkey and cpi_dest == creator_refund_token_account_pubkey:
-                # Shared destination case: distinguish sequentially
-                # First CPI in settle_work_order is operator payout; second is creator refund
-                if inner_operator_transferred == 0:
-                    inner_operator_transferred = amount_transferred
-                else:
-                    inner_creator_transferred += amount_transferred
-            else:
+            if cpi_dest != expected_dest:
                 raise InstructionMismatchError(
-                    f"Inner TransferChecked routed to unauthorized destination '{cpi_dest}'"
+                    f"Inner transfer {cpi_role} destination '{cpi_dest}' != expected '{expected_dest}'"
+                )
+            if amount_transferred != expected_amt:
+                raise AmountMismatchError(
+                    f"Inner transfer {cpi_role} amount {amount_transferred} != expected {expected_amt}"
                 )
 
-        # 11. Extract and reconcile SPL Token Pre/Post Balances
-        pre_token_balances = meta.get("preTokenBalances") or []
-        post_token_balances = meta.get("postTokenBalances") or []
+        operator_payout = contract_operator
+        creator_refund = contract_creator
+        surplus = contract_surplus
 
-        def get_token_amount(balances: list[dict[str, Any]], target_pubkey: str) -> int:
-            target_idx = account_keys.index(target_pubkey) if target_pubkey in account_keys else -1
-            for b in balances:
-                b_idx = b.get("accountIndex")
-                if (target_idx >= 0 and b_idx == target_idx) or b.get("account") == target_pubkey:
-                    ui_amount = b.get("uiTokenAmount", {})
-                    amount_str = ui_amount.get("amount", "0")
-                    return int(amount_str)
-            return 0
-
-        def get_token_owner(balances: list[dict[str, Any]], target_pubkey: str) -> Optional[str]:
-            target_idx = account_keys.index(target_pubkey) if target_pubkey in account_keys else -1
-            for b in balances:
-                b_idx = b.get("accountIndex")
-                if (target_idx >= 0 and b_idx == target_idx) or b.get("account") == target_pubkey:
-                    return b.get("owner")
-            return None
-
-        # Check Token Account owners from balance records or RPC
-        op_owner = get_token_owner(post_token_balances + pre_token_balances, operator_token_account_pubkey)
-        if op_owner and op_owner != settlement_beneficiary:
-            raise AccountMismatchError(
-                f"Operator token account owner '{op_owner}' does not match settlement beneficiary '{settlement_beneficiary}'"
-            )
-
-        if operator_token_account_pubkey != creator_refund_token_account_pubkey:
-            creator_owner = get_token_owner(post_token_balances + pre_token_balances, creator_refund_token_account_pubkey)
-            if creator_owner and creator_owner != wo_data["creator"]:
-                raise AccountMismatchError(
-                    f"Creator refund token account owner '{creator_owner}' does not match creator '{wo_data['creator']}'"
-                )
-
-        pre_vault = get_token_amount(pre_token_balances, escrow_vault_pubkey)
-        post_vault = get_token_amount(post_token_balances, escrow_vault_pubkey)
-
+        # 14. Verify Token Balance Deltas vs Contractual Amounts
         pre_operator = get_token_amount(pre_token_balances, operator_token_account_pubkey)
         post_operator = get_token_amount(post_token_balances, operator_token_account_pubkey)
 
         pre_creator = get_token_amount(pre_token_balances, creator_refund_token_account_pubkey)
         post_creator = get_token_amount(post_token_balances, creator_refund_token_account_pubkey)
 
-        # Escrow vault must be completely drained
-        if post_vault != 0:
-            raise AmountMismatchError(
-                f"Escrow vault '{escrow_vault_pubkey}' was not completely drained (post balance = {post_vault})"
-            )
-
-        total_escrow_settled = pre_vault
-        if total_escrow_settled <= 0:
-            raise AmountMismatchError(
-                f"Escrow vault '{escrow_vault_pubkey}' had no pre-settlement balance ({total_escrow_settled})"
-            )
-
-        # Reconcile inner transfers against balance deltas
         if operator_token_account_pubkey == creator_refund_token_account_pubkey:
             delta_combined = post_operator - pre_operator
-            if delta_combined != (inner_operator_transferred + inner_creator_transferred):
+            if delta_combined != (operator_payout + creator_refund):
                 raise AmountMismatchError(
-                    f"Combined balance delta ({delta_combined}) != inner transfers sum "
-                    f"({inner_operator_transferred + inner_creator_transferred})"
+                    f"Combined balance delta ({delta_combined}) != total distribution ({operator_payout + creator_refund})"
                 )
-            operator_payout = inner_operator_transferred
-            creator_refund = inner_creator_transferred
         else:
             delta_operator = post_operator - pre_operator
             delta_creator = post_creator - pre_creator
 
-            if delta_operator != inner_operator_transferred:
+            if delta_operator != operator_payout:
                 raise AmountMismatchError(
-                    f"Operator balance delta ({delta_operator}) does not match inner TransferChecked ({inner_operator_transferred})"
+                    f"Operator balance delta ({delta_operator}) != expected payout ({operator_payout})"
                 )
-            if delta_creator != inner_creator_transferred:
+            if delta_creator != creator_refund:
                 raise AmountMismatchError(
-                    f"Creator refund delta ({delta_creator}) does not match inner TransferChecked ({inner_creator_transferred})"
+                    f"Creator refund delta ({delta_creator}) != expected refund ({creator_refund})"
                 )
-            operator_payout = delta_operator
-            creator_refund = delta_creator
-
-        # Check for surplus in escrow vault
-        order_total_amount = wo_data["total_amount"]
-        surplus = max(0, total_escrow_settled - order_total_amount)
-
-        # Invariant: Operator payout cannot exceed contracted work order total amount
-        if operator_payout > order_total_amount:
-            raise AmountMismatchError(
-                f"Operator payout ({operator_payout}) exceeds WorkOrder contracted amount ({order_total_amount})"
-            )
 
         # Invariant: Conservation of value
         if operator_payout + creator_refund != total_escrow_settled:
@@ -1361,12 +1524,13 @@ class SplSettlementReconciler:
                 f"Operator payout mismatch: expected {expected_operator_amount}, on-chain delta is {operator_payout}"
             )
 
-        # 12. Derive verified agent identities
+        # 15. Derive verified agent identities
         verified_agent_account = claimed_agent_pubkey
         verified_agent_id = agent_data["agent_id"].hex()
-        verified_owner_pubkey = agent_data["owner"]
+        # The financial recipient of this settlement is the frozen settlement beneficiary
+        verified_owner_pubkey = settlement_beneficiary
 
-        # 13. Build Financial Effect Identifier & Canonical Evidence Hash
+        # 16. Build Financial Effect Identifier & Canonical Evidence Hash
         effect_id = build_financial_effect_id(
             network=self.expected_network,
             genesis_hash=self.expected_genesis_hash,
@@ -1388,6 +1552,7 @@ class SplSettlementReconciler:
             "agent_id": verified_agent_id,
             "owner_pubkey": verified_owner_pubkey,
             "settlement_beneficiary": settlement_beneficiary,
+            "agent_owner_current": current_agent_owner,
             "token_mint": mint_pubkey,
             "escrow_vault": escrow_vault_pubkey,
             "operator_token_account": operator_token_account_pubkey,
@@ -1396,7 +1561,7 @@ class SplSettlementReconciler:
             "creator_refund": creator_refund,
             "total_escrow_settled": total_escrow_settled,
             "surplus": surplus,
-            "evidence_source": source_kind.value,
+            "evidence_source": effective_source.value,
             "effect_id": effect_id,
         }
         evidence_hash = compute_canonical_evidence_hash(evidence_payload)
@@ -1414,6 +1579,7 @@ class SplSettlementReconciler:
             agent_id=verified_agent_id,
             owner_pubkey=verified_owner_pubkey,
             settlement_beneficiary=settlement_beneficiary,
+            agent_owner_current=current_agent_owner,
             token_mint=mint_pubkey,
             escrow_vault=escrow_vault_pubkey,
             operator_token_account=operator_token_account_pubkey,
@@ -1423,7 +1589,7 @@ class SplSettlementReconciler:
             total_escrow_settled=total_escrow_settled,
             surplus=surplus,
             commitment=actual_tx_commitment,
-            evidence_source=source_kind.value,
+            evidence_source=effective_source.value,
             effect_id=effect_id,
             evidence_hash=evidence_hash,
         )
@@ -1531,7 +1697,7 @@ class SplSettlementReconciler:
         agent_id: Optional[str] = None,
         owner_pubkey: Optional[str] = None,
         authorized_by: Optional[str] = None,
-        source_kind: EvidenceSourceKind = EvidenceSourceKind.LIVE_RPC,
+        source_kind: Optional[EvidenceSourceKind] = None,
     ) -> tuple[EconomicMovement, SettlementReceipt]:
         """Atomically ingests and reconciles an authentic on-chain settlement into EconomicLedger.
 
@@ -1539,12 +1705,12 @@ class SplSettlementReconciler:
         - If transaction is only 'confirmed', records an observed PROVISIONAL movement.
           Does NOT promote to RECONCILED until finalized.
         - If transaction is 'finalized', records/promotes movement to RECONCILED.
-        - Cross-validates caller-provided agent identities against decoded on-chain accounts.
-        - Prevents silent aggregation and guarantees exact value attribution.
+        - Preserves the frozen settlement_beneficiary from WorkOrderAccount even if
+          ownership was transferred post-claim.
         """
         auth = authorized_by or self.authority
 
-        # First, attempt to verify at finalized; if not available, fall back to confirmed for observation
+        # First attempt to verify at finalized; if not available, fall back to confirmed for observation
         is_finalized = True
         try:
             receipt = self.verify_settlement_transaction(
@@ -1572,7 +1738,7 @@ class SplSettlementReconciler:
         if owner_pubkey is not None and owner_pubkey != receipt.owner_pubkey:
             raise AgentMismatchError(
                 f"Caller-provided owner_pubkey '{owner_pubkey}' does not match "
-                f"verified on-chain owner '{receipt.owner_pubkey}'"
+                f"verified settlement beneficiary '{receipt.owner_pubkey}'"
             )
 
         if agent_id is not None:
@@ -1633,6 +1799,9 @@ class SplSettlementReconciler:
         meta = {
             "reconciliation_effect": "operator_payout",
             "evidence_source": receipt.evidence_source,
+            "settlement_beneficiary": receipt.settlement_beneficiary,
+            "agent_owner_current": receipt.agent_owner_current,
+            "ownership_transferred_post_claim": receipt.agent_owner_current != receipt.settlement_beneficiary,
             "settlement_receipt": receipt.to_dict(),
         }
 

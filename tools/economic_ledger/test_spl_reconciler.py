@@ -65,6 +65,7 @@ from tools.economic_ledger.spl_reconciler import (
     EvidenceSourceKind,
     InstructionMismatchError,
     MockRpcClient,
+    PaymentModel,
     RpcError,
     SettlementReceipt,
     SettlementVerificationError,
@@ -72,6 +73,7 @@ from tools.economic_ledger.spl_reconciler import (
     SplSettlementReconciler,
     TransactionFailedError,
     TransactionNotFoundError,
+    VerificationStatus,
     WorkOrderNotSettledError,
     WorkOrderStatus,
     audit_historical_localnet_settlement,
@@ -130,6 +132,9 @@ def setup_canonical_mock_accounts(
     creator_refund_token_account: str = REFUND_ACCOUNT_TARGET,
     work_order_owner: str = DEFAULT_PROGRAM_ID,
     agent_owner_program: str = DEFAULT_PROGRAM_ID,
+    payment_model: int = PaymentModel.Fixed.value,
+    verification_status: int = VerificationStatus.Accepted.value,
+    completion_bps: int = 10_000,
     custom_wo_raw: Optional[bytes] = None,
     custom_agent_raw: Optional[bytes] = None,
 ) -> None:
@@ -148,6 +153,9 @@ def setup_canonical_mock_accounts(
             status=work_order_status,
             claimed_agent=claimed_agent,
             settlement_beneficiary=settlement_beneficiary,
+            payment_model=payment_model,
+            verification_status=verification_status,
+            completion_bps=completion_bps,
         )
         mock_rpc.register_account(work_order_pubkey, wo_raw, owner=work_order_owner)
 
@@ -409,6 +417,11 @@ class SplSettlementReconcilerTests(unittest.TestCase):
     # ─────────────────────────────────────────────────────────────────────────
 
     def test_condition_2_proportional_settlement(self) -> None:
+        setup_canonical_mock_accounts(
+            self.mock_rpc,
+            payment_model=PaymentModel.Proportional.value,
+            completion_bps=6_000,
+        )
         sig = "5ProportionalPayoutSig222222222222222222222222222"
         # 60% completion: 6.0 USDC to operator, 4.0 USDC to creator
         tx = make_settlement_tx(
@@ -440,6 +453,11 @@ class SplSettlementReconcilerTests(unittest.TestCase):
     # ─────────────────────────────────────────────────────────────────────────
 
     def test_condition_3_creator_refund_full(self) -> None:
+        setup_canonical_mock_accounts(
+            self.mock_rpc,
+            verification_status=VerificationStatus.Rejected.value,
+            completion_bps=0,
+        )
         sig = "5CreatorRefundOnlySig3333333333333333333333333333"
         tx = make_settlement_tx(
             tx_signature=sig,
@@ -468,6 +486,11 @@ class SplSettlementReconcilerTests(unittest.TestCase):
     # ─────────────────────────────────────────────────────────────────────────
 
     def test_condition_4_zero_payout_creates_audit_movement(self) -> None:
+        setup_canonical_mock_accounts(
+            self.mock_rpc,
+            verification_status=VerificationStatus.Rejected.value,
+            completion_bps=0,
+        )
         sig = "5ZeroPayoutSig44444444444444444444444444444444444"
         tx = make_settlement_tx(
             tx_signature=sig,
@@ -548,6 +571,11 @@ class SplSettlementReconcilerTests(unittest.TestCase):
     # ─────────────────────────────────────────────────────────────────────────
 
     def test_condition_9_mismatched_amount(self) -> None:
+        setup_canonical_mock_accounts(
+            self.mock_rpc,
+            payment_model=PaymentModel.Proportional.value,
+            completion_bps=5_000,
+        )
         sig = "5MismatchedAmountSig9999999999999999999999999999"
         # On-chain says 5.0 USDC, caller expected 10.0 USDC
         tx = make_settlement_tx(
@@ -874,22 +902,63 @@ class SplSettlementReconcilerTests(unittest.TestCase):
         self.assertIn("does not match canonical PDA", str(ctx.exception))
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Negative Test 25: Beneficiary Mismatch (Agent Owner != WorkOrder Beneficiary)
+    # Condition 25: Post-Claim Agent Ownership Transfer Preserves Frozen Beneficiary
     # ─────────────────────────────────────────────────────────────────────────
 
-    def test_negative_25_beneficiary_mismatch(self) -> None:
-        sig = "5BeneficiaryMismatchSig252525252525252525252525"
+    def test_25_post_claim_agent_ownership_transfer_preserves_frozen_beneficiary(self) -> None:
+        """Requirement 3: On Solana, AgentAccount can change owner post-initialization.
+
+        WorkOrderAccount freezes settlement_beneficiary at claim. The reconciler must
+        preserve the frozen beneficiary and credit that historical owner without fail.
+        """
+        sig = "5PostClaimTransferSig252525252525252525252525"
         tx = make_settlement_tx(tx_signature=sig)
         self.mock_rpc.register_transaction(sig, tx, commitment="finalized")
-        # Agent owner is malicious key != BENEFICIARY_TARGET
+
+        new_agent_owner = "99999999999999999999999999999999999999999999"
+        # Agent owner is updated to new_agent_owner, but WorkOrder settlement_beneficiary stays BENEFICIARY_TARGET
         setup_canonical_mock_accounts(
             self.mock_rpc,
-            agent_owner="99999999999999999999999999999999999999999999",
+            agent_owner=new_agent_owner,
+            settlement_beneficiary=BENEFICIARY_TARGET,
         )
 
-        with self.assertRaises(AgentMismatchError) as ctx:
+        receipt = self.reconciler.verify_settlement_transaction(sig)
+        self.assertEqual(receipt.settlement_beneficiary, BENEFICIARY_TARGET)
+        self.assertEqual(receipt.agent_owner_current, new_agent_owner)
+        self.assertEqual(receipt.owner_pubkey, BENEFICIARY_TARGET)
+
+        movement, _ = self.reconciler.reconcile_settlement(self.ledger, tx_signature=sig)
+        # Movement credits strictly the frozen settlement beneficiary
+        self.assertEqual(movement.owner_pubkey, BENEFICIARY_TARGET)
+        self.assertTrue(movement.metadata["ownership_transferred_post_claim"])
+        self.assertEqual(movement.metadata["agent_owner_current"], new_agent_owner)
+        self.assertEqual(movement.metadata["settlement_beneficiary"], BENEFICIARY_TARGET)
+
+    def test_negative_operator_token_account_owner_not_settlement_beneficiary(self) -> None:
+        """If the operator token account owner does not match the frozen settlement beneficiary,
+
+        it must fail closed with AccountMismatchError.
+        """
+        sig = "5TokenAccountOwnerMismatchSig25252525252525"
+        tx = make_settlement_tx(
+            tx_signature=sig,
+            beneficiary_owner="99999999999999999999999999999999999999999999",
+        )
+        self.mock_rpc.register_transaction(sig, tx, commitment="finalized")
+        self.mock_rpc.register_account(
+            PAYOUT_ACCOUNT_TARGET,
+            encode_token_account(
+                mint=MINT_TARGET,
+                owner="99999999999999999999999999999999999999999999",
+                amount=10_000_000,
+            ),
+            owner=DEFAULT_TOKEN_PROGRAM,
+        )
+
+        with self.assertRaises(AccountMismatchError) as ctx:
             self.reconciler.verify_settlement_transaction(sig)
-        self.assertIn("Settlement beneficiary mismatch", str(ctx.exception))
+        self.assertIn("does not match settlement beneficiary", str(ctx.exception))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Negative Test 26: Caller Identity Spoofing Fails Closed
@@ -977,6 +1046,11 @@ class SplSettlementReconcilerTests(unittest.TestCase):
     # ─────────────────────────────────────────────────────────────────────────
 
     def test_adversarial_30_shared_destination_no_overattribution(self) -> None:
+        setup_canonical_mock_accounts(
+            self.mock_rpc,
+            payment_model=PaymentModel.Proportional.value,
+            completion_bps=6_000,
+        )
         sig = "5SharedDestSig303030303030303030303030303030303030"
         # Operator and creator share destination token account!
         # Operator payout = 6.0 USDC, Creator refund = 4.0 USDC. Total delta = 10.0 USDC.
@@ -1026,7 +1100,8 @@ class SplSettlementReconcilerTests(unittest.TestCase):
         self.assertEqual(receipt.surplus, 5_000_000)
         self.assertEqual(receipt.total_escrow_settled, 15_000_000)
 
-        # If an attacker attempts to claim operator payout = 15_000_000, it must fail closed
+        # If an attacker attempts to claim operator payout = 15_000_000 with 1 CPI,
+        # it fails closed because 2 CPIs were contractually expected (payout + surplus refund)
         sig_corrupt = "5SurplusCorruptSig3131313131313131313131313131"
         tx_corrupt = make_settlement_tx(
             tx_signature=sig_corrupt,
@@ -1036,9 +1111,140 @@ class SplSettlementReconcilerTests(unittest.TestCase):
         )
         self.mock_rpc.register_transaction(sig_corrupt, tx_corrupt, commitment="finalized")
 
-        with self.assertRaises(AmountMismatchError) as ctx:
+        with self.assertRaises(SettlementVerificationError) as ctx:
             self.reconciler.verify_settlement_transaction(sig_corrupt)
-        self.assertIn("exceeds WorkOrder contracted amount", str(ctx.exception))
+        self.assertIn("count mismatch", str(ctx.exception))
+
+        # If an attacker crafts 2 CPIs trying to divert surplus into operator payout (15M payout, 0 refund)
+        sig_corrupt_2cpi = "5SurplusCorrupt2Cpi31313131313131313131313131"
+        tx_corrupt_2cpi = make_settlement_tx(
+            tx_signature=sig_corrupt_2cpi,
+            operator_payout=15_000_000,
+            creator_refund=1,
+            total_escrow=15_000_000,
+        )
+        # Corrupt the second CPI to 0 so total matches 15M
+        tx_corrupt_2cpi["meta"]["innerInstructions"][0]["instructions"][1]["data"] = b58encode(
+            encode_spl_transfer_checked(0, 6)
+        )
+        self.mock_rpc.register_transaction(sig_corrupt_2cpi, tx_corrupt_2cpi, commitment="finalized")
+        with self.assertRaises(AmountMismatchError) as ctx2:
+            self.reconciler.verify_settlement_transaction(sig_corrupt_2cpi)
+        self.assertIn("amount 15000000 != expected 10000000", str(ctx2.exception))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Additional Hardening Tests (Audit Requirements)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def test_shared_destination_zero_payout_refund_only(self) -> None:
+        """When operator and creator share destination token account, but operator payout
+
+        is 0 (rejected work order), the single CPI is a refund and must NOT be attributed to operator.
+        """
+        setup_canonical_mock_accounts(
+            self.mock_rpc,
+            verification_status=VerificationStatus.Rejected.value,
+            completion_bps=0,
+            operator_token_account=REFUND_ACCOUNT_TARGET,
+            creator_refund_token_account=REFUND_ACCOUNT_TARGET,
+        )
+        sig = "5SharedDestZeroPayoutSig3232323232323232323232"
+        tx = make_settlement_tx(
+            tx_signature=sig,
+            operator_account=REFUND_ACCOUNT_TARGET,
+            creator_refund_account=REFUND_ACCOUNT_TARGET,
+            beneficiary_owner=BENEFICIARY_TARGET,
+            creator_owner=CREATOR_TARGET,
+            operator_payout=0,
+            creator_refund=10_000_000,
+            total_escrow=10_000_000,
+        )
+        self.mock_rpc.register_transaction(sig, tx, commitment="finalized")
+
+        receipt = self.reconciler.verify_settlement_transaction(sig)
+        self.assertEqual(receipt.operator_payout, 0)
+        self.assertEqual(receipt.creator_refund, 10_000_000)
+
+        movement, _ = self.reconciler.reconcile_settlement(self.ledger, tx_signature=sig)
+        self.assertEqual(movement.amount_base_units, 0)
+        rec_bal, _ = get_single_balance(self.ledger, AGENT_TARGET, MINT_TARGET)
+        self.assertEqual(rec_bal, 0)
+
+    def test_negative_missing_token_account_owner_fails_closed(self) -> None:
+        """If token account owner cannot be determined from parsed metadata or RPC,
+
+        it must fail closed with AccountMismatchError.
+        """
+        sig = "5MissingOwnerSig333333333333333333333333333333"
+        tx = make_settlement_tx(tx_signature=sig)
+        for b in tx["meta"]["postTokenBalances"] + tx["meta"]["preTokenBalances"]:
+            b["owner"] = None
+        self.mock_rpc.register_transaction(sig, tx, commitment="finalized")
+        self.mock_rpc.accounts.pop(PAYOUT_ACCOUNT_TARGET, None)
+
+        with self.assertRaises(AccountMismatchError) as ctx:
+            self.reconciler.verify_settlement_transaction(sig)
+        self.assertIn("owner is missing", str(ctx.exception))
+
+    def test_negative_third_party_token_account_owner_fails_closed(self) -> None:
+        """If operator token account is owned by an unauthorized third party,
+
+        it must fail closed with AccountMismatchError.
+        """
+        sig = "5ThirdPartyOwnerSig34343434343434343434343434"
+        third_party = b58encode(b"\x88" * 32)
+        tx = make_settlement_tx(
+            tx_signature=sig,
+            beneficiary_owner=third_party,
+        )
+        self.mock_rpc.register_transaction(sig, tx, commitment="finalized")
+        self.mock_rpc.register_account(
+            PAYOUT_ACCOUNT_TARGET,
+            encode_token_account(mint=MINT_TARGET, owner=third_party, amount=10_000_000),
+            owner=DEFAULT_TOKEN_PROGRAM,
+        )
+
+        with self.assertRaises(AccountMismatchError) as ctx:
+            self.reconciler.verify_settlement_transaction(sig)
+        self.assertIn("does not match settlement beneficiary", str(ctx.exception))
+
+    def test_negative_token_account_mint_mismatch_fails_closed(self) -> None:
+        """If operator token account mint mismatches WorkOrder mint,
+
+        it must fail closed with AccountMismatchError.
+        """
+        sig = "5MintMismatchSig3535353535353535353535353535"
+        wrong_mint = "So11111111111111111111111111111111111111112"
+        # tx instruction mint is MINT_TARGET (matches WorkOrder), but token balance and RPC have wrong_mint
+        tx = make_settlement_tx(
+            tx_signature=sig,
+            mint=MINT_TARGET,
+        )
+        for b in tx["meta"]["postTokenBalances"] + tx["meta"]["preTokenBalances"]:
+            if b.get("accountIndex") == 5:
+                b["mint"] = wrong_mint
+        self.mock_rpc.register_transaction(sig, tx, commitment="finalized")
+        self.mock_rpc.register_account(
+            PAYOUT_ACCOUNT_TARGET,
+            encode_token_account(mint=wrong_mint, owner=BENEFICIARY_TARGET, amount=10_000_000),
+            owner=DEFAULT_TOKEN_PROGRAM,
+        )
+
+        with self.assertRaises(AccountMismatchError) as ctx:
+            self.reconciler.verify_settlement_transaction(sig)
+        self.assertIn("does not match expected mint", str(ctx.exception))
+
+    def test_evidence_source_mock_rpc_defaults_to_synthetic(self) -> None:
+        """MockRpcClient automatically defaults evidence_source to SYNTHETIC_TEST."""
+        sig = "5SyntheticEvidenceSourceSig36363636363636363636"
+        tx = make_settlement_tx(tx_signature=sig)
+        self.mock_rpc.register_transaction(sig, tx, commitment="finalized")
+
+        receipt = self.reconciler.verify_settlement_transaction(sig)
+        self.assertEqual(receipt.evidence_source, EvidenceSourceKind.SYNTHETIC_TEST.value)
+
+        mov, _ = self.reconciler.reconcile_settlement(self.ledger, tx_signature=sig)
+        self.assertEqual(mov.metadata["evidence_source"], EvidenceSourceKind.SYNTHETIC_TEST.value)
 
 
 if __name__ == "__main__":
