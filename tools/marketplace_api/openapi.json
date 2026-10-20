@@ -234,6 +234,302 @@
         }
       }
     },
+    "/v1/agents/{agent_id}/economic-movements": {
+      "get": {
+        "summary": "List agent economic movements",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/Nature"
+          },
+          {
+            "$ref": "#/components/parameters/MovementStatus"
+          },
+          {
+            "$ref": "#/components/parameters/Mint"
+          },
+          {
+            "$ref": "#/components/parameters/Network"
+          },
+          {
+            "$ref": "#/components/parameters/FromTs"
+          },
+          {
+            "$ref": "#/components/parameters/ToTs"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomicMovementPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cursor no longer matches results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/balances": {
+      "get": {
+        "summary": "Get economic balances for agent",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/Mint"
+          },
+          {
+            "$ref": "#/components/parameters/Network"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/economic-movements/{movement_id}": {
+      "get": {
+        "summary": "Get economic movement detail",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MovementId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomicMovementResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/economic-movements": {
+      "post": {
+        "summary": "Record an economic movement",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomicMovementResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/economic-movements/{movement_id}/revert": {
+      "post": {
+        "summary": "Revert an economic movement and create compensating entry",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MovementId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevertResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/work-orders": {
       "get": {
         "summary": "List WorkOrders",
@@ -769,6 +1065,283 @@
             }
           }
         }
+      },
+      "EconomicMovement": {
+        "type": "object",
+        "required": [
+          "movement_id",
+          "idempotency_key",
+          "agent_id",
+          "agent_account",
+          "owner_pubkey",
+          "network",
+          "genesis_hash",
+          "program_id",
+          "token_mint",
+          "amount_base_units",
+          "amount_str",
+          "nature",
+          "status",
+          "provenance_source",
+          "registered_at",
+          "observed_at"
+        ],
+        "properties": {
+          "movement_id": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "owner_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "work_order_account": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_order_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "amount_base_units": {
+            "type": "integer"
+          },
+          "amount_str": {
+            "type": "string"
+          },
+          "nature": {
+            "type": "string",
+            "enum": [
+              "INCOME",
+              "EXPENSE",
+              "RESERVE",
+              "ADJUSTMENT"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PROVISIONAL",
+              "RECONCILED",
+              "REVERTED"
+            ]
+          },
+          "provenance_source": {
+            "type": "string",
+            "enum": [
+              "ONCHAIN_VERIFIED",
+              "EXTERNAL_VERIFIED",
+              "SIMULATED",
+              "MANUAL_ENTRY",
+              "SETTLEMENT_EVENT"
+            ]
+          },
+          "evidence_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attestation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tx_signature": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "external_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registered_at": {
+            "type": "integer"
+          },
+          "observed_at": {
+            "type": "integer"
+          },
+          "reversal_of_movement_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "BalanceReport": {
+        "type": "object",
+        "required": [
+          "agent_account",
+          "network",
+          "token_mint",
+          "reconciled_balance",
+          "provisional_balance",
+          "reserved_balance",
+          "reconciled_balance_str",
+          "provisional_balance_str",
+          "reserved_balance_str",
+          "total_effective_balance",
+          "total_effective_balance_str",
+          "movement_count"
+        ],
+        "properties": {
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "network": {
+            "type": "string"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "reconciled_balance": {
+            "type": "integer"
+          },
+          "provisional_balance": {
+            "type": "integer"
+          },
+          "reserved_balance": {
+            "type": "integer"
+          },
+          "reconciled_balance_str": {
+            "type": "string"
+          },
+          "provisional_balance_str": {
+            "type": "string"
+          },
+          "reserved_balance_str": {
+            "type": "string"
+          },
+          "total_effective_balance": {
+            "type": "integer"
+          },
+          "total_effective_balance_str": {
+            "type": "string"
+          },
+          "movement_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "EconomicMovementPage": {
+        "type": "object",
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EconomicMovement"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "BalanceListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BalanceReport"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "EconomicMovementResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EconomicMovement"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "RevertResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "reverted",
+              "compensating"
+            ],
+            "properties": {
+              "reverted": {
+                "$ref": "#/components/schemas/EconomicMovement"
+              },
+              "compensating": {
+                "$ref": "#/components/schemas/EconomicMovement"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
       }
     },
     "parameters": {
@@ -882,6 +1455,79 @@
           "pattern": "^(0|[1-9][0-9]*)$",
           "description": "Unsigned u64 encoded as decimal string",
           "maxLength": 20
+        }
+      },
+      "MovementId": {
+        "name": "movement_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Nature": {
+        "name": "nature",
+        "in": "query",
+        "required": false,
+        "description": "Economic movement nature filter",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "INCOME",
+            "EXPENSE",
+            "RESERVE",
+            "ADJUSTMENT"
+          ]
+        }
+      },
+      "MovementStatus": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Economic movement validation status",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "PROVISIONAL",
+            "RECONCILED",
+            "REVERTED"
+          ]
+        }
+      },
+      "Mint": {
+        "name": "mint",
+        "in": "query",
+        "required": false,
+        "description": "Token mint SPL public key",
+        "schema": {
+          "$ref": "#/components/schemas/Pubkey"
+        }
+      },
+      "Network": {
+        "name": "network",
+        "in": "query",
+        "required": false,
+        "description": "Network identifier e.g. solana:localnet",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "FromTs": {
+        "name": "from_ts",
+        "in": "query",
+        "required": false,
+        "description": "Starting observation timestamp (unix seconds)",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "ToTs": {
+        "name": "to_ts",
+        "in": "query",
+        "required": false,
+        "description": "Ending observation timestamp (unix seconds)",
+        "schema": {
+          "type": "integer"
         }
       }
     }

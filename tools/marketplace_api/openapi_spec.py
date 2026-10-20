@@ -247,6 +247,146 @@ def build():
                 },
             },
         },
+        "EconomicMovement": {
+            "type": "object",
+            "required": [
+                "movement_id",
+                "idempotency_key",
+                "agent_id",
+                "agent_account",
+                "owner_pubkey",
+                "network",
+                "genesis_hash",
+                "program_id",
+                "token_mint",
+                "amount_base_units",
+                "amount_str",
+                "nature",
+                "status",
+                "provenance_source",
+                "registered_at",
+                "observed_at",
+            ],
+            "properties": {
+                "movement_id": {"type": "string"},
+                "journal_entry_id": {"type": ["string", "null"]},
+                "idempotency_key": {"type": "string"},
+                "agent_id": {"type": "string"},
+                "agent_account": ref("Pubkey"),
+                "owner_pubkey": ref("Pubkey"),
+                "work_order_account": {"type": ["string", "null"]},
+                "work_order_id": {"type": ["string", "null"]},
+                "network": {"type": "string"},
+                "genesis_hash": {"type": "string"},
+                "program_id": ref("Pubkey"),
+                "token_mint": ref("Pubkey"),
+                "amount_base_units": {"type": "integer"},
+                "amount_str": {"type": "string"},
+                "nature": {
+                    "type": "string",
+                    "enum": ["INCOME", "EXPENSE", "RESERVE", "ADJUSTMENT"],
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["PROVISIONAL", "RECONCILED", "REVERTED"],
+                },
+                "provenance_source": {
+                    "type": "string",
+                    "enum": [
+                        "ONCHAIN_VERIFIED",
+                        "EXTERNAL_VERIFIED",
+                        "SIMULATED",
+                        "MANUAL_ENTRY",
+                        "SETTLEMENT_EVENT",
+                    ],
+                },
+                "evidence_hash": {"type": ["string", "null"]},
+                "attestation_id": {"type": ["string", "null"]},
+                "tx_signature": {"type": ["string", "null"]},
+                "external_ref": {"type": ["string", "null"]},
+                "registered_at": {"type": "integer"},
+                "observed_at": {"type": "integer"},
+                "reversal_of_movement_id": {"type": ["string", "null"]},
+                "metadata": {"type": "object"},
+            },
+        },
+        "BalanceReport": {
+            "type": "object",
+            "required": [
+                "agent_account",
+                "network",
+                "token_mint",
+                "reconciled_balance",
+                "provisional_balance",
+                "reserved_balance",
+                "reconciled_balance_str",
+                "provisional_balance_str",
+                "reserved_balance_str",
+                "total_effective_balance",
+                "total_effective_balance_str",
+                "movement_count",
+            ],
+            "properties": {
+                "agent_account": ref("Pubkey"),
+                "network": {"type": "string"},
+                "token_mint": ref("Pubkey"),
+                "reconciled_balance": {"type": "integer"},
+                "provisional_balance": {"type": "integer"},
+                "reserved_balance": {"type": "integer"},
+                "reconciled_balance_str": {"type": "string"},
+                "provisional_balance_str": {"type": "string"},
+                "reserved_balance_str": {"type": "string"},
+                "total_effective_balance": {"type": "integer"},
+                "total_effective_balance_str": {"type": "string"},
+                "movement_count": {"type": "integer"},
+            },
+        },
+        "EconomicMovementPage": {
+            "type": "object",
+            "required": ["data", "page", "meta"],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": ref("EconomicMovement"),
+                },
+                "page": ref("Page"),
+                "meta": ref("Meta"),
+            },
+        },
+        "BalanceListResponse": {
+            "type": "object",
+            "required": ["data", "meta"],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": ref("BalanceReport"),
+                },
+                "meta": ref("Meta"),
+            },
+        },
+        "EconomicMovementResponse": {
+            "type": "object",
+            "required": ["data", "meta"],
+            "properties": {
+                "data": ref("EconomicMovement"),
+                "meta": ref("Meta"),
+            },
+        },
+        "RevertResponse": {
+            "type": "object",
+            "required": ["data", "meta"],
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "required": ["reverted", "compensating"],
+                    "properties": {
+                        "reverted": ref("EconomicMovement"),
+                        "compensating": ref("EconomicMovement"),
+                    },
+                },
+                "meta": ref("Meta"),
+            },
+        },
     }
 
     def param(name, schema, description):
@@ -329,6 +469,48 @@ def build():
             uint64,
             "Select orders requiring all specified bits",
         ),
+        "MovementId": {
+            "name": "movement_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        "Nature": param(
+            "nature",
+            {
+                "type": "string",
+                "enum": ["INCOME", "EXPENSE", "RESERVE", "ADJUSTMENT"],
+            },
+            "Economic movement nature filter",
+        ),
+        "MovementStatus": param(
+            "status",
+            {
+                "type": "string",
+                "enum": ["PROVISIONAL", "RECONCILED", "REVERTED"],
+            },
+            "Economic movement validation status",
+        ),
+        "Mint": param(
+            "mint",
+            ref("Pubkey"),
+            "Token mint SPL public key",
+        ),
+        "Network": param(
+            "network",
+            {"type": "string"},
+            "Network identifier e.g. solana:localnet",
+        ),
+        "FromTs": param(
+            "from_ts",
+            {"type": "integer"},
+            "Starting observation timestamp (unix seconds)",
+        ),
+        "ToTs": param(
+            "to_ts",
+            {"type": "integer"},
+            "Ending observation timestamp (unix seconds)",
+        ),
     }
 
     agent_page = operation(
@@ -347,6 +529,17 @@ def build():
         (
             "OrderStatus", "Discoverable",
             "RequiredCapabilitiesAll",
+            "Limit", "Cursor",
+        ),
+        paged=True,
+    )
+
+    movements_page = operation(
+        "List agent economic movements",
+        ref("EconomicMovementPage"),
+        (
+            "AgentId", "Nature", "MovementStatus",
+            "Mint", "Network", "FromTs", "ToTs",
             "Limit", "Cursor",
         ),
         paged=True,
@@ -386,6 +579,36 @@ def build():
                     "Get agent",
                     ref("AgentResponse"),
                     ("AgentId",),
+                )
+            },
+            "/v1/agents/{agent_id}/economic-movements": {
+                "get": movements_page,
+            },
+            "/v1/agents/{agent_id}/balances": {
+                "get": operation(
+                    "Get economic balances for agent",
+                    ref("BalanceListResponse"),
+                    ("AgentId", "Mint", "Network"),
+                )
+            },
+            "/v1/economic-movements/{movement_id}": {
+                "get": operation(
+                    "Get economic movement detail",
+                    ref("EconomicMovementResponse"),
+                    ("MovementId",),
+                )
+            },
+            "/v1/economic-movements": {
+                "post": operation(
+                    "Record an economic movement",
+                    ref("EconomicMovementResponse"),
+                )
+            },
+            "/v1/economic-movements/{movement_id}/revert": {
+                "post": operation(
+                    "Revert an economic movement and create compensating entry",
+                    ref("RevertResponse"),
+                    ("MovementId",),
                 )
             },
             "/v1/work-orders": {
