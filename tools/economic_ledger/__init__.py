@@ -20,6 +20,23 @@ from .models import (
     validate_base_units,
 )
 from .schema import run_migrations
+from .spl_reconciler import (
+    AccountMismatchError,
+    AmountMismatchError,
+    CommitmentUnsatisfiedError,
+    InstructionMismatchError,
+    MockRpcClient,
+    RpcError,
+    SettlementReceipt,
+    SettlementVerificationError,
+    SolanaRpcClient,
+    SolanaRpcClientProtocol,
+    SplSettlementReconciler,
+    TransactionFailedError,
+    TransactionNotFoundError,
+    build_financial_effect_id,
+    compute_canonical_evidence_hash,
+)
 
 __all__ = [
     "DEFAULT_TRUSTED_RECONCILER_AUTHORITIES",
@@ -40,4 +57,19 @@ __all__ = [
     "ed25519",
     "ReconciliationVerifier",
     "IsolatedTestReconcilerVerifier",
+    "SplSettlementReconciler",
+    "SettlementReceipt",
+    "SolanaRpcClient",
+    "MockRpcClient",
+    "SolanaRpcClientProtocol",
+    "SettlementVerificationError",
+    "RpcError",
+    "TransactionNotFoundError",
+    "TransactionFailedError",
+    "InstructionMismatchError",
+    "AccountMismatchError",
+    "AmountMismatchError",
+    "CommitmentUnsatisfiedError",
+    "build_financial_effect_id",
+    "compute_canonical_evidence_hash",
 ]
