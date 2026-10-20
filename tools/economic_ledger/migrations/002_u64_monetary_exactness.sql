@@ -2,8 +2,6 @@
 -- Version: 002
 -- Name: u64_monetary_exactness
 
-PRAGMA foreign_keys = OFF;
-
 -- 1. Upgrade ledger_entries
 CREATE TABLE new_ledger_entries (
     entry_id TEXT PRIMARY KEY,
@@ -76,5 +74,3 @@ CREATE INDEX IF NOT EXISTS idx_movements_nature ON economic_movements(nature);
 CREATE INDEX IF NOT EXISTS idx_movements_status ON economic_movements(status);
 CREATE INDEX IF NOT EXISTS idx_movements_wo ON economic_movements(work_order_account);
 CREATE INDEX IF NOT EXISTS idx_movements_reversal ON economic_movements(reversal_of_movement_id);
-
-PRAGMA foreign_keys = ON;

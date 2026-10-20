@@ -11,7 +11,7 @@ import agent_discovery as discovery
 import server
 from tools.economic_ledger import ed25519
 from tools.economic_ledger.auth import create_auth_headers
-from tools.economic_ledger.ledger import EconomicLedger
+from tools.economic_ledger.ledger import EconomicLedger, IsolatedTestReconcilerVerifier
 from tools.economic_ledger.models import MovementNature, MovementStatus, ProvenanceSource
 
 DRONE = "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB"
@@ -32,7 +32,7 @@ CONFIG = "3qnN5ZjRL516znKdWHeEvSGLWL6sf4EoCPcG8e28je62"
 
 class MockEconomicProvider:
     def __init__(self):
-        self.ledger = EconomicLedger(":memory:")
+        self.ledger = EconomicLedger(":memory:", reconciliation_verifier=IsolatedTestReconcilerVerifier())
         self.data = {
             "program_id": server.PROGRAM_ID,
             "protocol_config": CONFIG,

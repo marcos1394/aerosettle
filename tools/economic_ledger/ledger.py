@@ -8,7 +8,7 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from .models import (
     BalanceReport,
@@ -31,6 +31,82 @@ DEFAULT_TRUSTED_RECONCILER_AUTHORITIES: frozenset[str] = frozenset({
     "conatus:protocol:reconciler:v1",
     "conatus:internal:settlement-validator:v1",
 })
+
+
+@runtime_checkable
+class ReconciliationVerifier(Protocol):
+    """Protocol for authenticating and verifying on-chain evidence prior to reconciliation."""
+
+    def verify_reconciliation(
+        self,
+        *,
+        movement_id: str,
+        evidence_hash: str,
+        authorized_by: str,
+        slot: int,
+        tx_signature: str,
+        movement: Optional[EconomicMovement] = None,
+    ) -> bool:
+        ...
+
+
+class IsolatedTestReconcilerVerifier:
+    """Isolated test reconciler verifier for automated testing environments.
+
+    In production, reconciliation promotion is disabled pending authentic CON-23 RPC/SPL verification.
+    This test verifier allows whitelisting valid test transactions/signatures and explicitly
+    rejects fictitious, unverified, or dummy signatures.
+    """
+
+    def __init__(
+        self,
+        allowed_signatures: Optional[set[str] | list[str]] = None,
+        *,
+        reject_fictitious: bool = True,
+    ) -> None:
+        self.allowed_signatures = set(allowed_signatures) if allowed_signatures is not None else None
+        self.reject_fictitious = reject_fictitious
+        self.verified_calls: list[dict[str, Any]] = []
+
+    def allow_signature(self, signature: str) -> None:
+        if self.allowed_signatures is None:
+            self.allowed_signatures = set()
+        self.allowed_signatures.add(signature)
+
+    def verify_reconciliation(
+        self,
+        *,
+        movement_id: str,
+        evidence_hash: str,
+        authorized_by: str,
+        slot: int,
+        tx_signature: str,
+        movement: Optional[EconomicMovement] = None,
+    ) -> bool:
+        sig_lower = tx_signature.lower()
+        if self.reject_fictitious:
+            if (
+                sig_lower.startswith("fake")
+                or sig_lower.startswith("fictitious")
+                or "fake" in sig_lower
+                or "fictitious" in sig_lower
+                or "ficticia" in sig_lower
+                or "dummy" in sig_lower
+                or "mock" in sig_lower
+            ):
+                return False
+
+        if self.allowed_signatures is not None and tx_signature not in self.allowed_signatures:
+            return False
+
+        self.verified_calls.append({
+            "movement_id": movement_id,
+            "evidence_hash": evidence_hash,
+            "authorized_by": authorized_by,
+            "slot": slot,
+            "tx_signature": tx_signature,
+        })
+        return True
 
 
 class ExactSum:
@@ -64,41 +140,87 @@ def _check_idempotency_match(
     work_order_id: Optional[str],
     tx_signature: Optional[str],
     evidence_hash: Optional[str],
+    external_ref: Optional[str] = None,
+    reversal_of_movement_id: Optional[str] = None,
 ) -> None:
-    """Verifies that a reused idempotency key exactly matches all immutable event fields.
+    """Verifies that a reused idempotency key exactly matches the immutable initial event footprint.
 
-    Crucially, lifecycle state ('status') is NOT compared, allowing legitimate retries
-    to return existing movements even after subsequent state transitions (e.g. to RECONCILED).
+    Decouples the initial event footprint from reconciliation enrichment fields:
+    - Initial event parameters are preserved in metadata["initial_event"].
+    - Subsequent lifecycle transitions (e.g. to RECONCILED) or evidence enrichment
+      (reconciliation evidence_hash, slot, or tx_signature) do not cause false idempotency conflicts.
+    - Divergent initial requests continue to raise IdempotencyConflictError (409).
     """
+    init_evt = existing.metadata.get("initial_event") if existing.metadata else None
+    if isinstance(init_evt, dict):
+        base_agent_id = init_evt.get("agent_id")
+        base_agent_account = init_evt.get("agent_account")
+        base_owner_pubkey = init_evt.get("owner_pubkey")
+        base_network = init_evt.get("network")
+        base_genesis_hash = init_evt.get("genesis_hash")
+        base_program_id = init_evt.get("program_id")
+        base_token_mint = init_evt.get("token_mint")
+        base_amount = int(init_evt.get("amount_base_units", 0))
+        base_nature = init_evt.get("nature")
+        base_source = init_evt.get("provenance_source")
+        base_wo_account = init_evt.get("work_order_account")
+        base_wo_id = init_evt.get("work_order_id")
+        base_tx_sig = init_evt.get("tx_signature")
+        base_ev_hash = init_evt.get("evidence_hash")
+        base_ext_ref = init_evt.get("external_ref")
+        base_reversal = init_evt.get("reversal_of_movement_id")
+    else:
+        # Fallback for legacy records without initial_event metadata
+        base_agent_id = existing.agent_id
+        base_agent_account = existing.agent_account
+        base_owner_pubkey = existing.owner_pubkey
+        base_network = existing.network
+        base_genesis_hash = existing.genesis_hash
+        base_program_id = existing.program_id
+        base_token_mint = existing.token_mint
+        base_amount = existing.amount_base_units
+        base_nature = existing.nature.value
+        base_source = existing.provenance_source.value
+        base_wo_account = existing.work_order_account
+        base_wo_id = existing.work_order_id
+        base_tx_sig = existing.tx_signature
+        base_ev_hash = existing.evidence_hash
+        base_ext_ref = existing.external_ref
+        base_reversal = existing.reversal_of_movement_id
+
     mismatches: list[str] = []
-    if existing.agent_id != agent_id:
-        mismatches.append(f"agent_id ({existing.agent_id} != {agent_id})")
-    if existing.agent_account != agent_account:
-        mismatches.append(f"agent_account ({existing.agent_account} != {agent_account})")
-    if existing.owner_pubkey != owner_pubkey:
-        mismatches.append(f"owner_pubkey ({existing.owner_pubkey} != {owner_pubkey})")
-    if existing.network != network:
-        mismatches.append(f"network ({existing.network} != {network})")
-    if existing.genesis_hash != genesis_hash:
-        mismatches.append(f"genesis_hash ({existing.genesis_hash} != {genesis_hash})")
-    if existing.program_id != program_id:
-        mismatches.append(f"program_id ({existing.program_id} != {program_id})")
-    if existing.token_mint != token_mint:
-        mismatches.append(f"token_mint ({existing.token_mint} != {token_mint})")
-    if existing.amount_base_units != amount_base_units:
-        mismatches.append(f"amount_base_units ({existing.amount_base_units} != {amount_base_units})")
-    if existing.nature != nature:
-        mismatches.append(f"nature ({existing.nature.value} != {nature.value})")
-    if existing.provenance_source != provenance_source:
-        mismatches.append(f"provenance_source ({existing.provenance_source.value} != {provenance_source.value})")
-    if (existing.work_order_account or None) != (work_order_account or None):
-        mismatches.append(f"work_order_account ({existing.work_order_account} != {work_order_account})")
-    if (existing.work_order_id or None) != (work_order_id or None):
-        mismatches.append(f"work_order_id ({existing.work_order_id} != {work_order_id})")
-    if (existing.tx_signature or None) != (tx_signature or None):
-        mismatches.append(f"tx_signature ({existing.tx_signature} != {tx_signature})")
-    if (existing.evidence_hash or None) != (evidence_hash or None):
-        mismatches.append(f"evidence_hash ({existing.evidence_hash} != {evidence_hash})")
+    if base_agent_id != agent_id:
+        mismatches.append(f"agent_id ({base_agent_id} != {agent_id})")
+    if base_agent_account != agent_account:
+        mismatches.append(f"agent_account ({base_agent_account} != {agent_account})")
+    if base_owner_pubkey != owner_pubkey:
+        mismatches.append(f"owner_pubkey ({base_owner_pubkey} != {owner_pubkey})")
+    if base_network != network:
+        mismatches.append(f"network ({base_network} != {network})")
+    if base_genesis_hash != genesis_hash:
+        mismatches.append(f"genesis_hash ({base_genesis_hash} != {genesis_hash})")
+    if base_program_id != program_id:
+        mismatches.append(f"program_id ({base_program_id} != {program_id})")
+    if base_token_mint != token_mint:
+        mismatches.append(f"token_mint ({base_token_mint} != {token_mint})")
+    if base_amount != amount_base_units:
+        mismatches.append(f"amount_base_units ({base_amount} != {amount_base_units})")
+    if base_nature != nature.value:
+        mismatches.append(f"nature ({base_nature} != {nature.value})")
+    if base_source != provenance_source.value:
+        mismatches.append(f"provenance_source ({base_source} != {provenance_source.value})")
+    if (base_wo_account or None) != (work_order_account or None):
+        mismatches.append(f"work_order_account ({base_wo_account} != {work_order_account})")
+    if (base_wo_id or None) != (work_order_id or None):
+        mismatches.append(f"work_order_id ({base_wo_id} != {work_order_id})")
+    if (base_tx_sig or None) != (tx_signature or None):
+        mismatches.append(f"tx_signature ({base_tx_sig} != {tx_signature})")
+    if (base_ev_hash or None) != (evidence_hash or None):
+        mismatches.append(f"evidence_hash ({base_ev_hash} != {evidence_hash})")
+    if (base_ext_ref or None) != (external_ref or None):
+        mismatches.append(f"external_ref ({base_ext_ref} != {external_ref})")
+    if (base_reversal or None) != (reversal_of_movement_id or None):
+        mismatches.append(f"reversal_of_movement_id ({base_reversal} != {reversal_of_movement_id})")
 
     if mismatches:
         raise IdempotencyConflictError(
@@ -115,6 +237,7 @@ class EconomicLedger:
         db_path: str | Path = DEFAULT_DB_PATH,
         *,
         trusted_reconciler_authorities: Optional[set[str] | frozenset[str]] = None,
+        reconciliation_verifier: Optional[ReconciliationVerifier] = None,
     ):
         if str(db_path) != ":memory:":
             self.db_path = Path(db_path)
@@ -145,6 +268,7 @@ class EconomicLedger:
             if trusted_reconciler_authorities is not None
             else set(DEFAULT_TRUSTED_RECONCILER_AUTHORITIES)
         )
+        self._reconciliation_verifier = reconciliation_verifier
 
         # Run versioned schema migrations
         run_migrations(self._conn)
@@ -246,6 +370,8 @@ class EconomicLedger:
                 work_order_id=work_order_id,
                 tx_signature=tx_signature,
                 evidence_hash=evidence_hash,
+                external_ref=external_ref,
+                reversal_of_movement_id=reversal_of_movement_id,
             )
             return existing
 
@@ -253,7 +379,26 @@ class EconomicLedger:
         obs_time = observed_at if observed_at is not None else now
         movement_id = str(uuid.uuid4())
         journal_entry_id = f"je_{movement_id}"
-        meta = metadata or {}
+        meta = dict(metadata) if metadata else {}
+        # Preserve immutable footprint of the initial event
+        meta["initial_event"] = {
+            "agent_id": agent_id,
+            "agent_account": agent_account,
+            "owner_pubkey": owner_pubkey,
+            "network": network,
+            "genesis_hash": genesis_hash,
+            "program_id": program_id,
+            "token_mint": token_mint,
+            "amount_base_units": amount_int,
+            "nature": nature_enum.value,
+            "provenance_source": source_enum.value,
+            "work_order_account": work_order_account or None,
+            "work_order_id": work_order_id or None,
+            "tx_signature": tx_signature or None,
+            "evidence_hash": evidence_hash or None,
+            "external_ref": external_ref or None,
+            "reversal_of_movement_id": reversal_of_movement_id or None,
+        }
 
         # Prepare double-entry legs
         legs: list[LedgerLeg] = []
@@ -316,6 +461,8 @@ class EconomicLedger:
                         work_order_id=work_order_id,
                         tx_signature=tx_signature,
                         evidence_hash=evidence_hash,
+                        external_ref=external_ref,
+                        reversal_of_movement_id=reversal_of_movement_id,
                     )
                     return locked_existing
 
@@ -432,6 +579,8 @@ class EconomicLedger:
                     work_order_id=work_order_id,
                     tx_signature=tx_signature,
                     evidence_hash=evidence_hash,
+                    external_ref=external_ref,
+                    reversal_of_movement_id=reversal_of_movement_id,
                 )
                 return existing
             raise LedgerValidationError(f"Integrity violation: {exc}") from exc
@@ -500,6 +649,28 @@ class EconomicLedger:
         if len(sig_clean) < 8 or len(sig_clean) > 128:
             raise LedgerValidationError(
                 f"Reconciliation rejected: invalid transaction signature format '{tx_signature}'"
+            )
+
+        # Reliable reconciliation verifier check:
+        # In production, promotion to RECONCILED is disabled pending authentic CON-23 RPC/SPL verification.
+        # An isolated test verifier must be injected in automated test environments.
+        if self._reconciliation_verifier is None:
+            raise LedgerValidationError(
+                "Reconciliation promotion is disabled in production pending authentic CON-23 RPC/SPL verification. "
+                "No movement can transition to RECONCILED solely from caller parameters."
+            )
+
+        is_verified = self._reconciliation_verifier.verify_reconciliation(
+            movement_id=movement_id,
+            evidence_hash=hash_clean,
+            authorized_by=auth_clean,
+            slot=slot,
+            tx_signature=sig_clean,
+        )
+        if not is_verified:
+            raise LedgerValidationError(
+                f"Reconciliation rejected by verifier: unverified or fictitious signature '{sig_clean}' "
+                f"for movement '{movement_id}'"
             )
 
         cursor = self._conn.cursor()

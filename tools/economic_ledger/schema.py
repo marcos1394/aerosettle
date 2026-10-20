@@ -33,6 +33,13 @@ def split_sql_statements(sql_text: str) -> list[str]:
 def run_migrations(conn: sqlite3.Connection) -> list[int]:
     """Applies all pending migrations in order, recording applied versions atomically.
 
+    Guarantees:
+    1. PRAGMA foreign_keys is NEVER toggled inside an active transaction.
+    2. Before table recreation migrations, foreign keys are disabled on the connection level.
+    3. PRAGMA foreign_key_check is performed BEFORE commit to verify relational integrity.
+    4. Migration failures trigger complete atomic rollback without partial state.
+    5. PRAGMA foreign_keys is restored to ON after each migration attempt.
+
     Returns the list of newly applied migration versions.
     """
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -74,11 +81,21 @@ def run_migrations(conn: sqlite3.Connection) -> list[int]:
         statements = split_sql_statements(sql_content)
         now = int(time.time())
 
-        # Execute migration atomically with explicit BEGIN IMMEDIATE / COMMIT
+        # Toggle foreign_keys OFF outside of the transaction to allow table migrations
+        conn.execute("PRAGMA foreign_keys = OFF;")
         cursor.execute("BEGIN IMMEDIATE;")
         try:
             for stmt in statements:
                 cursor.execute(stmt)
+
+            # Check foreign key integrity BEFORE committing
+            cursor.execute("PRAGMA foreign_key_check;")
+            fk_violations = cursor.fetchall()
+            if fk_violations:
+                raise MigrationError(
+                    f"Foreign key constraint violation during migration {filename}: {fk_violations}"
+                )
+
             cursor.execute(
                 "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?);",
                 (version, filename, now),
@@ -91,5 +108,8 @@ def run_migrations(conn: sqlite3.Connection) -> list[int]:
             except Exception:
                 pass
             raise MigrationError(f"Failed to apply migration {filename}: {exc}") from exc
+        finally:
+            # Always restore foreign_keys = ON outside transaction
+            conn.execute("PRAGMA foreign_keys = ON;")
 
     return newly_applied

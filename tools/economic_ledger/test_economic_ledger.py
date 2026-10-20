@@ -11,6 +11,7 @@ from unittest.mock import patch
 from tools.economic_ledger.ledger import (
     DEFAULT_TRUSTED_RECONCILER_AUTHORITIES,
     EconomicLedger,
+    IsolatedTestReconcilerVerifier,
 )
 from tools.economic_ledger.models import (
     IdempotencyConflictError,
@@ -42,7 +43,8 @@ class EconomicLedgerTests(unittest.TestCase):
         # Create an isolated temporary database for each test
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "test_ledger.db"
-        self.ledger = EconomicLedger(self.db_path)
+        self.test_verifier = IsolatedTestReconcilerVerifier()
+        self.ledger = EconomicLedger(self.db_path, reconciliation_verifier=self.test_verifier)
 
     def tearDown(self):
         self.ledger.close()
@@ -265,6 +267,123 @@ class EconomicLedgerTests(unittest.TestCase):
         movements, _ = self.ledger.list_movements(AGENT_1)
         self.assertEqual(len(movements), 1)
 
+    def test_idempotent_retry_after_reconciliation_preserves_initial_event_without_conflict(self):
+        key = "idemp-initial-footprint-retry"
+
+        # 1. Client records movement initially with no evidence_hash and provisional signature
+        initial_sig = "sig-client-initial-submit-11111111111111111"
+        m = self.ledger.record_movement(
+            idempotency_key=key,
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            network=NET_LOCALNET,
+            genesis_hash=GENESIS_HASH,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=2_000_000,
+            nature=MovementNature.INCOME,
+            status=MovementStatus.PROVISIONAL,
+            tx_signature=initial_sig,
+            evidence_hash=None,
+        )
+        self.assertEqual(m.status, MovementStatus.PROVISIONAL)
+        self.assertIsNone(m.evidence_hash)
+
+        # 2. Reconciler promotes it to RECONCILED and attaches verified evidence hash
+        reconciled = self.ledger.reconcile_movement(
+            m.movement_id,
+            evidence_hash=VALID_HASH,
+            authorized_by=TRUSTED_RECONCILER,
+            slot=104950,
+            tx_signature=initial_sig,
+        )
+        self.assertEqual(reconciled.status, MovementStatus.RECONCILED)
+        self.assertEqual(reconciled.evidence_hash, VALID_HASH)
+
+        # 3. Client retries initial event (e.g. timeout on client side, retry queue)
+        # The retry contains the initial event parameters (evidence_hash is None).
+        # It must NOT produce an idempotency conflict despite evidence_hash being added by reconciliation.
+        retry_res = self.ledger.record_movement(
+            idempotency_key=key,
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            network=NET_LOCALNET,
+            genesis_hash=GENESIS_HASH,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=2_000_000,
+            nature=MovementNature.INCOME,
+            status=MovementStatus.PROVISIONAL,
+            tx_signature=initial_sig,
+            evidence_hash=None,
+        )
+        self.assertEqual(retry_res.movement_id, m.movement_id)
+        self.assertEqual(retry_res.status, MovementStatus.RECONCILED)
+
+        # 4. A truly conflicting request (e.g. different amount) must still fail with 409
+        with self.assertRaises(IdempotencyConflictError) as ctx:
+            self.ledger.record_movement(
+                idempotency_key=key,
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                network=NET_LOCALNET,
+                genesis_hash=GENESIS_HASH,
+                program_id=PROGRAM_ID,
+                token_mint=MINT_USDC,
+                amount_base_units=9_999_999,  # Divergent amount!
+                nature=MovementNature.INCOME,
+                status=MovementStatus.PROVISIONAL,
+                tx_signature=initial_sig,
+                evidence_hash=None,
+            )
+        self.assertIn("amount_base_units", str(ctx.exception))
+
+    def test_concurrent_writes_with_same_idempotency_key(self):
+        shared_key = "concurrent-idemp-race-test"
+        results = []
+        errors = []
+
+        def worker():
+            try:
+                with EconomicLedger(self.db_path, reconciliation_verifier=self.test_verifier) as thread_ledger:
+                    res = thread_ledger.record_movement(
+                        idempotency_key=shared_key,
+                        agent_id="11" * 32,
+                        agent_account=AGENT_1,
+                        owner_pubkey=OWNER_1,
+                        network=NET_LOCALNET,
+                        genesis_hash=GENESIS_HASH,
+                        program_id=PROGRAM_ID,
+                        token_mint=MINT_USDC,
+                        amount_base_units=500_000,
+                        nature=MovementNature.INCOME,
+                        status=MovementStatus.PROVISIONAL,
+                        tx_signature="sig-race-1111111111111111",
+                        evidence_hash=VALID_HASH,
+                    )
+                    results.append(res.movement_id)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0, f"Concurrent identical writes produced errors: {errors}")
+        self.assertEqual(len(results), 8)
+        # All 8 threads must receive the EXACT same movement_id
+        self.assertEqual(len(set(results)), 1)
+
+        # Database must contain exactly 1 movement
+        movements, _ = self.ledger.list_movements(AGENT_1)
+        matching = [m for m in movements if m.idempotency_key == shared_key]
+        self.assertEqual(len(matching), 1)
+
     # ─────────────────────────────────────────────────────────────────────────
     # 2. Reconciliation Integrity: Gates, Conservative Policy & Falsification
     # ─────────────────────────────────────────────────────────────────────────
@@ -400,6 +519,77 @@ class EconomicLedgerTests(unittest.TestCase):
         bal_after = self.ledger.get_balances(AGENT_1, token_mint=MINT_USDC)[0]
         self.assertEqual(bal_after.reconciled_balance, 500_000)
 
+    def test_reconcile_movement_disabled_in_production_and_rejects_fictitious_signature(self):
+        # Default EconomicLedger instance represents production mode (no verifier injected)
+        prod_db = Path(self.temp_dir.name) / "prod_reconcile_test.db"
+        prod_ledger = EconomicLedger(prod_db)
+        try:
+            m = prod_ledger.record_movement(
+                idempotency_key="prod-fictitious-reconcile-test",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                network=NET_LOCALNET,
+                genesis_hash=GENESIS_HASH,
+                program_id=PROGRAM_ID,
+                token_mint=MINT_USDC,
+                amount_base_units=1_000_000,
+                nature=MovementNature.INCOME,
+                tx_signature="sig-initial-valid-111111111111111111111",
+                evidence_hash=VALID_HASH,
+            )
+            self.assertEqual(m.status, MovementStatus.PROVISIONAL)
+
+            # In production, promotion using a known authority, 64-char hash, positive slot,
+            # and a fictitious signature MUST be rejected and NOT pass to RECONCILED.
+            with self.assertRaises(LedgerValidationError) as ctx:
+                prod_ledger.reconcile_movement(
+                    m.movement_id,
+                    evidence_hash=VALID_HASH,
+                    authorized_by=TRUSTED_RECONCILER,
+                    slot=100,
+                    tx_signature="fictitious_signature_12345678",
+                )
+            self.assertIn("disabled in production", str(ctx.exception).lower())
+
+            # Movement status in DB must remain PROVISIONAL
+            after_attempt = prod_ledger.get_movement(m.movement_id)
+            self.assertEqual(after_attempt.status, MovementStatus.PROVISIONAL)
+
+            # Reconciled balance remains 0
+            bal = prod_ledger.get_balances(AGENT_1, token_mint=MINT_USDC)[0]
+            self.assertEqual(bal.reconciled_balance, 0)
+        finally:
+            prod_ledger.close()
+
+    def test_isolated_verifier_rejects_fictitious_signature(self):
+        m = self.ledger.record_movement(
+            idempotency_key="isolated-verifier-fictitious-test",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            network=NET_LOCALNET,
+            genesis_hash=GENESIS_HASH,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=500_000,
+            nature=MovementNature.INCOME,
+            tx_signature="sig-initial-111111111111111111111111",
+            evidence_hash=VALID_HASH,
+        )
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.reconcile_movement(
+                m.movement_id,
+                evidence_hash=VALID_HASH,
+                authorized_by=TRUSTED_RECONCILER,
+                slot=100,
+                tx_signature="fake_test_signature_99999",
+            )
+        self.assertIn("unverified or fictitious", str(ctx.exception).lower())
+
+        stored = self.ledger.get_movement(m.movement_id)
+        self.assertEqual(stored.status, MovementStatus.PROVISIONAL)
+
     # ─────────────────────────────────────────────────────────────────────────
     # 3. Versioned Migrations & Atomic Rollback Tests
     # ─────────────────────────────────────────────────────────────────────────
@@ -493,6 +683,167 @@ class EconomicLedgerTests(unittest.TestCase):
 
         conn.close()
         temp_upgrade_dir.cleanup()
+
+    def test_migration_001_to_002_with_reversals_and_self_referencing_movements(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        db_file = Path(temp_dir.name) / "upgrade_fk_test.db"
+
+        conn = sqlite3.connect(str(db_file), isolation_level=None)
+        conn.row_factory = sqlite3.Row
+
+        # 1. Manually apply 001_initial_schema.sql
+        migrations_dir = Path(__file__).resolve().parent / "migrations"
+        m001_content = (migrations_dir / "001_initial_schema.sql").read_text(encoding="utf-8")
+        for stmt in split_sql_statements(m001_content):
+            conn.execute(stmt)
+
+        now = int(time.time())
+        conn.execute(
+            "INSERT INTO schema_migrations (version, name, applied_at) VALUES (1, '001_initial_schema.sql', ?);",
+            (now,),
+        )
+
+        # 2. Insert records with foreign key relationships under 001:
+        # Original movement
+        conn.execute(
+            """
+            INSERT INTO journal_entries (
+                journal_entry_id, idempotency_key, network, genesis_hash,
+                program_id, token_mint, description, status, created_at, observed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("je_orig", "idemp_orig", NET_LOCALNET, GENESIS_HASH, PROGRAM_ID, MINT_USDC, "Original payment", "PROVISIONAL", now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO economic_movements (
+                movement_id, journal_entry_id, idempotency_key, agent_id,
+                agent_account, owner_pubkey, network, genesis_hash, program_id,
+                token_mint, amount_base_units, amount_str, nature, status,
+                provenance_source, registered_at, observed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("mov_orig", "je_orig", "idemp_orig", "11" * 32, AGENT_1, OWNER_1, NET_LOCALNET, GENESIS_HASH, PROGRAM_ID, MINT_USDC, 2000000, "2000000", "INCOME", "PROVISIONAL", "ONCHAIN_VERIFIED", now, now),
+        )
+
+        # Reversal movement referencing mov_orig
+        conn.execute(
+            """
+            INSERT INTO journal_entries (
+                journal_entry_id, idempotency_key, network, genesis_hash,
+                program_id, token_mint, description, status, created_at, observed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("je_rev", "idemp_rev", NET_LOCALNET, GENESIS_HASH, PROGRAM_ID, MINT_USDC, "Reversal entry", "RECONCILED", now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO economic_movements (
+                movement_id, journal_entry_id, idempotency_key, agent_id,
+                agent_account, owner_pubkey, network, genesis_hash, program_id,
+                token_mint, amount_base_units, amount_str, nature, status,
+                provenance_source, registered_at, observed_at, reversal_of_movement_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("mov_rev", "je_rev", "idemp_rev", "11" * 32, AGENT_1, OWNER_1, NET_LOCALNET, GENESIS_HASH, PROGRAM_ID, MINT_USDC, 2000000, "2000000", "ADJUSTMENT", "RECONCILED", "ONCHAIN_VERIFIED", now, now, "mov_orig"),
+        )
+
+        # Chained movement referencing mov_rev
+        conn.execute(
+            """
+            INSERT INTO journal_entries (
+                journal_entry_id, idempotency_key, network, genesis_hash,
+                program_id, token_mint, description, status, created_at, observed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("je_chain", "idemp_chain", NET_LOCALNET, GENESIS_HASH, PROGRAM_ID, MINT_USDC, "Chained adjustment", "RECONCILED", now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO economic_movements (
+                movement_id, journal_entry_id, idempotency_key, agent_id,
+                agent_account, owner_pubkey, network, genesis_hash, program_id,
+                token_mint, amount_base_units, amount_str, nature, status,
+                provenance_source, registered_at, observed_at, reversal_of_movement_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("mov_chain", "je_chain", "idemp_chain", "11" * 32, AGENT_1, OWNER_1, NET_LOCALNET, GENESIS_HASH, PROGRAM_ID, MINT_USDC, 1000000, "1000000", "ADJUSTMENT", "RECONCILED", "ONCHAIN_VERIFIED", now, now, "mov_rev"),
+        )
+
+        # 3. Run migration runner to upgrade from 001 to 002
+        newly_applied = run_migrations(conn)
+        self.assertIn(2, newly_applied)
+
+        # 4. Verify all records exist and relationships are preserved
+        rows = {
+            r["movement_id"]: r
+            for r in conn.execute(
+                "SELECT movement_id, amount_base_units, reversal_of_movement_id FROM economic_movements;"
+            ).fetchall()
+        }
+        self.assertIn("mov_orig", rows)
+        self.assertIn("mov_rev", rows)
+        self.assertIn("mov_chain", rows)
+
+        self.assertEqual(rows["mov_rev"]["reversal_of_movement_id"], "mov_orig")
+        self.assertEqual(rows["mov_chain"]["reversal_of_movement_id"], "mov_rev")
+        self.assertEqual(rows["mov_orig"]["amount_base_units"], "2000000")
+
+        # 5. Verify PRAGMA foreign_keys is ON after migration by testing constraint enforcement
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute(
+                """
+                INSERT INTO economic_movements (
+                    movement_id, journal_entry_id, idempotency_key, agent_id,
+                    agent_account, owner_pubkey, network, genesis_hash, program_id,
+                    token_mint, amount_base_units, amount_str, nature, status,
+                    provenance_source, registered_at, observed_at, reversal_of_movement_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                ("mov_bad_fk", "je_orig", "idemp_bad_fk", "11" * 32, AGENT_1, OWNER_1, NET_LOCALNET, GENESIS_HASH, PROGRAM_ID, MINT_USDC, "1000", "1000", "ADJUSTMENT", "RECONCILED", "ONCHAIN_VERIFIED", now, now, "non_existent_movement_id"),
+            )
+
+        conn.close()
+        temp_dir.cleanup()
+
+    def test_migration_failure_rolls_back_on_foreign_key_violation(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        db_file = Path(temp_dir.name) / "rollback_fk_test.db"
+        conn = sqlite3.connect(str(db_file), isolation_level=None)
+        conn.row_factory = sqlite3.Row
+
+        # Apply standard migrations
+        run_migrations(conn)
+
+        # Create a mock migration that violates foreign keys
+        failing_sql = """
+        CREATE TABLE dummy_fk_test (
+            id TEXT PRIMARY KEY,
+            movement_id TEXT REFERENCES economic_movements(movement_id)
+        );
+        INSERT INTO dummy_fk_test (id, movement_id) VALUES ('1', 'non_existent_movement_12345');
+        """
+        temp_mig_dir = Path(temp_dir.name) / "fake_migrations"
+        temp_mig_dir.mkdir(parents=True, exist_ok=True)
+        (temp_mig_dir / "003_fk_violation_migration.sql").write_text(failing_sql, encoding="utf-8")
+
+        with patch("tools.economic_ledger.schema.MIGRATIONS_DIR", temp_mig_dir):
+            with self.assertRaises(MigrationError) as ctx:
+                run_migrations(conn)
+            self.assertIn("Foreign key constraint violation", str(ctx.exception))
+
+        # Check atomic rollback: dummy_fk_test must not exist
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='dummy_fk_test';"
+        )
+        self.assertIsNone(cursor.fetchone())
+
+        # Version 3 must not be applied
+        cursor = conn.execute("SELECT version FROM schema_migrations WHERE version = 3;")
+        self.assertIsNone(cursor.fetchone())
+
+        conn.close()
+        temp_dir.cleanup()
 
     def test_migration_failure_rolls_back_atomically(self):
         temp_dir = tempfile.TemporaryDirectory()
