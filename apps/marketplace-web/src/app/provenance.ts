@@ -395,18 +395,27 @@ export interface PersistentAttestationRegistry {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Sealed protocol-controlled trusted verifier authorities registry.
- * Arbitrary callers CANNOT inject untrusted verifiers into validation functions in production.
+ * Internal private master list of protocol-trusted verifier authorities (Base58 public keys).
+ * Kept strictly private to this module and deeply frozen.
  */
-export const PRODUCTION_TRUSTED_VERIFIER_AUTHORITIES: ReadonlySet<string> = Object.freeze(
-  new Set<string>([
-    'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu', // Protocol Verifier Authority (config.ts)
-  ])
-);
+const _RAW_PRODUCTION_TRUSTED_AUTHORITIES: readonly string[] = Object.freeze([
+  'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu', // Protocol Verifier Authority (config.ts)
+]);
 
-export const TRUSTED_VERIFIER_AUTHORITIES: readonly string[] = [
-  'DmWQhuVujHrJb4jFzo62UnCT3mwnx9GFtVdo8VUu82Wu',
-];
+/**
+ * Returns a defensive frozen copy of the production trusted verifier authorities list.
+ * Prevents callers from obtaining mutable references to the internal registry.
+ */
+export function getProductionTrustedVerifierAuthorities(): readonly string[] {
+  return Object.freeze([..._RAW_PRODUCTION_TRUSTED_AUTHORITIES]);
+}
+
+/**
+ * Immutable frozen list of production trusted verifier authorities.
+ */
+export const TRUSTED_VERIFIER_AUTHORITIES: readonly string[] = Object.freeze([
+  ..._RAW_PRODUCTION_TRUSTED_AUTHORITIES,
+]);
 
 export interface ValidationResult {
   isValid: boolean;
@@ -434,9 +443,16 @@ export class CryptographicAttestationVerifier implements AttestationVerifier {
     clock?: Clock;
     replayStore?: NonceReplayStore;
   }) {
-    this.trustedAuthorities = options?.trustedAuthorities
-      ? new Set(options.trustedAuthorities)
-      : PRODUCTION_TRUSTED_VERIFIER_AUTHORITIES;
+    // Defensive copy: create an independent Set instance so that the verifier
+    // never shares a mutable reference with callers, external scopes, or other instances.
+    const sourceAuthorities = options?.trustedAuthorities ?? _RAW_PRODUCTION_TRUSTED_AUTHORITIES;
+    const defensiveSet = new Set<string>();
+    for (const auth of sourceAuthorities) {
+      if (typeof auth === 'string' && auth.trim().length > 0) {
+        defensiveSet.add(auth.trim());
+      }
+    }
+    this.trustedAuthorities = defensiveSet;
     this.clock = options?.clock ?? SystemClock;
     this.replayStore = options?.replayStore ?? defaultSessionNonceStore;
   }

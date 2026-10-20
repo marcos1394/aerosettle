@@ -19,6 +19,9 @@ import {
   encodeBase58,
   createIsolatedAttestationVerifier,
   InvalidAttestationPayloadError,
+  isTrustedVerifierAuthority,
+  getProductionTrustedVerifierAuthorities,
+  TRUSTED_VERIFIER_AUTHORITIES,
   addMetrics,
   sumMetrics,
   averageMetrics,
@@ -397,6 +400,60 @@ test('Ed25519 Authentic Verification: Case 7 — Boolean flag isAttested: true a
   assert.equal(result.isValid, false);
   assert.equal(result.status, 'PENDING_ATTESTATION');
   assert.match(result.reason!, /isAttested=true is insufficient/);
+});
+
+test('Trust Registry Hardening: Attempting to tamper with authorities cannot compromise production verifier', () => {
+  const unauthorizedKey = '4Z4k5ZqC8gUa4GfN7j2fJ9mZ7xY8uK6yH8qQ9sK2gP1b';
+
+  // 1) Verify that unauthorized key is rejected by the production verifier
+  assert.equal(isTrustedVerifierAuthority(unauthorizedKey), false);
+
+  // 2) Attempt to mutate the exported TRUSTED_VERIFIER_AUTHORITIES array
+  try {
+    (TRUSTED_VERIFIER_AUTHORITIES as unknown as string[]).push(unauthorizedKey);
+  } catch {
+    // Expected in strict mode
+  }
+
+  // 3) Attempt to mutate through getProductionTrustedVerifierAuthorities copy
+  const copy = getProductionTrustedVerifierAuthorities();
+  try {
+    (copy as unknown as string[]).push(unauthorizedKey);
+  } catch {
+    // Expected in strict mode
+  }
+
+  // 4) Verify that creating an isolated verifier with the unauthorized key does NOT compromise production
+  const isolated = createIsolatedAttestationVerifier({
+    trustedAuthorities: [unauthorizedKey],
+  });
+  assert.equal(isolated.isTrusted(unauthorizedKey), true);
+  assert.equal(isTrustedVerifierAuthority(unauthorizedKey), false);
+
+  // 5) validateCryptographicAttestation MUST continue rejecting an attestation from this unauthorized key
+  const privKey = ed25519.utils.randomPrivateKey();
+  const pubKeyBytes = ed25519.getPublicKey(privKey);
+  const maliciousKey = encodeBase58(pubKeyBytes);
+
+  const payload: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'nonce-tamper-guard-test',
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  };
+  const signature = encodeBase58(ed25519.sign(serializeCanonicalAttestation(payload), privKey));
+
+  const prodResult = validateCryptographicAttestation({
+    verifierAuthority: maliciousKey,
+    attestationSignature: signature,
+    payload,
+  });
+
+  assert.equal(prodResult.isValid, false);
+  assert.equal(prodResult.status, 'PENDING_ATTESTATION');
+  assert.match(prodResult.reason!, /Untrusted or unregistered verifier authority/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
