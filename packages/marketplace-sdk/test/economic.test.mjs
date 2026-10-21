@@ -172,3 +172,153 @@ test('SDK: recordEconomicMovement posts JSON body and auth headers', async () =>
   assert.equal(parsedBody.idempotency_key, 'idemp-new-1');
   assert.equal(parsedBody.amount_base_units, 1200000);
 });
+
+test('SDK: listAgentCosts, listAgentReserves, and getAgentEconomicSummary', async () => {
+  let capturedCostUrl = '';
+  let capturedReserveUrl = '';
+  let capturedSummaryUrl = '';
+
+  const client = new MarketplaceClient({
+    baseUrl: 'http://127.0.0.1:8787',
+    fetchImpl: async (url) => {
+      const u = url.toString();
+      if (u.includes('/costs')) {
+        capturedCostUrl = u;
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                cost_id: 'cost-1',
+                idempotency_key: 'idemp-c1',
+                agent_id: '11'.repeat(32),
+                agent_account: AGENT,
+                owner_pubkey: OWNER,
+                category: 'ENERGY_FUEL',
+                cost_nature: 'REALIZED',
+                economic_period: '2026-10',
+                network: 'solana:localnet',
+                token_mint: MINT,
+                amount_base_units: 350000,
+                amount_str: '350000',
+                status: 'PROVISIONAL',
+                provenance_source: 'MANUAL_ENTRY',
+                created_at: 1000,
+                incurred_at: 1000,
+                metadata: {},
+              },
+            ],
+            count: 1,
+            total_count: 1,
+            page: { limit: 50, has_more: false, next_cursor: null },
+            meta: {
+              program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy',
+              commitment: 'confirmed',
+              chain_now_unix: 1000,
+              atomic_snapshot: false,
+              read_only: true,
+              matching_engine: 'rust-epic-3.1',
+              rpc_context_slots: {},
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (u.includes('/reserves')) {
+        capturedReserveUrl = u;
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                reserve_id: 'res-1',
+                idempotency_key: 'idemp-r1',
+                agent_id: '11'.repeat(32),
+                agent_account: AGENT,
+                owner_pubkey: OWNER,
+                reserve_type: 'MAINTENANCE',
+                network: 'solana:localnet',
+                token_mint: MINT,
+                target_amount_base_units: 5000000,
+                target_amount_str: '5000000',
+                current_reserved_base_units: 3000000,
+                current_reserved_str: '3000000',
+                status: 'ACTIVE',
+                created_at: 1000,
+                updated_at: 1000,
+                metadata: {},
+              },
+            ],
+            meta: {
+              program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy',
+              commitment: 'confirmed',
+              chain_now_unix: 1000,
+              atomic_snapshot: false,
+              read_only: true,
+              matching_engine: 'rust-epic-3.1',
+              rpc_context_slots: {},
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (u.includes('/economic-summary')) {
+        capturedSummaryUrl = u;
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                agent_account: AGENT,
+                network: 'solana:localnet',
+                token_mint: MINT,
+                total_income_reconciled: 10000000,
+                total_income_provisional: 0,
+                total_expenses_realized: 350000,
+                total_obligations_accrued: 200000,
+                total_estimated_costs: 500000,
+                total_capital_reserved: 3000000,
+                available_balance: 6650000,
+                total_effective_balance: 9650000,
+                total_income_reconciled_str: '10000000',
+                total_income_provisional_str: '0',
+                total_expenses_realized_str: '350000',
+                total_obligations_accrued_str: '200000',
+                total_estimated_costs_str: '500000',
+                total_capital_reserved_str: '3000000',
+                available_balance_str: '6650000',
+                total_effective_balance_str: '9650000',
+                costs_by_category: { ENERGY_FUEL: 350000 },
+                reserves_by_type: { MAINTENANCE: 3000000 },
+              },
+            ],
+            meta: {
+              program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy',
+              commitment: 'confirmed',
+              chain_now_unix: 1000,
+              atomic_snapshot: false,
+              read_only: true,
+              matching_engine: 'rust-epic-3.1',
+              rpc_context_slots: {},
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected url: ${u}`);
+    },
+  });
+
+  const costs = await client.listAgentCosts(AGENT, { category: 'ENERGY_FUEL' }, { ownerPubkey: OWNER });
+  assert.equal(costs.data.length, 1);
+  assert.equal(costs.data[0].category, 'ENERGY_FUEL');
+  assert.match(capturedCostUrl, /category=ENERGY_FUEL/);
+
+  const reserves = await client.listAgentReserves(AGENT, { reserve_type: 'MAINTENANCE' }, { ownerPubkey: OWNER });
+  assert.equal(reserves.data.length, 1);
+  assert.equal(reserves.data[0].current_reserved_base_units, 3000000);
+  assert.match(capturedReserveUrl, /reserve_type=MAINTENANCE/);
+
+  const summary = await client.getAgentEconomicSummary(AGENT, { mint: MINT }, { ownerPubkey: OWNER });
+  assert.equal(summary.data.length, 1);
+  assert.equal(summary.data[0].available_balance, 6650000);
+  assert.equal(summary.data[0].total_capital_reserved, 3000000);
+  assert.match(capturedSummaryUrl, /mint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/);
+});

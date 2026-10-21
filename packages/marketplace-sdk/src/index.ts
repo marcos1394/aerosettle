@@ -101,7 +101,40 @@ export type MovementNature =
   | 'INCOME'
   | 'EXPENSE'
   | 'RESERVE'
-  | 'ADJUSTMENT';
+  | 'ADJUSTMENT'
+  | 'PROVISION'
+  | 'INTERNAL_TRANSFER'
+  | 'CAPITAL_INVESTMENT';
+
+export type CostCategory =
+  | 'ENERGY_FUEL'
+  | 'MAINTENANCE'
+  | 'CONNECTIVITY_COMPUTE'
+  | 'SUBSCRIPTIONS'
+  | 'INSURANCE'
+  | 'DEPRECIATION_REPLACEMENT'
+  | 'OTHER';
+
+export type CostNature =
+  | 'REALIZED'
+  | 'ESTIMATED'
+  | 'ACCRUED_LIABILITY';
+
+export type ReserveType =
+  | 'MAINTENANCE'
+  | 'HARDWARE_REPLACEMENT'
+  | 'OPERATIONAL_CONTINUITY'
+  | 'CONTINGENCY';
+
+export type ReserveStatus =
+  | 'ACTIVE'
+  | 'DEPLETED'
+  | 'CLOSED';
+
+export type ReserveAction =
+  | 'ALLOCATE'
+  | 'CONSUME'
+  | 'RELEASE';
 
 export type MovementStatus =
   | 'PROVISIONAL'
@@ -156,6 +189,116 @@ export interface BalanceReport {
   total_effective_balance: number;
   total_effective_balance_str: string;
   movement_count: number;
+}
+
+export interface AgentCost {
+  cost_id: string;
+  idempotency_key: string;
+  agent_id: string;
+  agent_account: string;
+  owner_pubkey: string;
+  category: CostCategory;
+  cost_nature: CostNature;
+  economic_period: string;
+  network: string;
+  token_mint: string;
+  amount_base_units: number;
+  amount_str: string;
+  status: MovementStatus;
+  provenance_source: ProvenanceSource;
+  created_at: number;
+  incurred_at: number;
+  journal_entry_id?: string | null;
+  movement_id?: string | null;
+  evidence_hash?: string | null;
+  evidence_url?: string | null;
+  attestation_id?: string | null;
+  description?: string | null;
+  reversal_of_cost_id?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AgentReserve {
+  reserve_id: string;
+  idempotency_key: string;
+  agent_id: string;
+  agent_account: string;
+  owner_pubkey: string;
+  reserve_type: ReserveType;
+  network: string;
+  token_mint: string;
+  target_amount_base_units: number;
+  target_amount_str: string;
+  current_reserved_base_units: number;
+  current_reserved_str: string;
+  status: ReserveStatus;
+  created_at: number;
+  updated_at: number;
+  description?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ReserveTransaction {
+  transaction_id: string;
+  reserve_id: string;
+  idempotency_key: string;
+  action: ReserveAction;
+  amount_base_units: number;
+  amount_str: string;
+  created_at: number;
+  associated_cost_id?: string | null;
+  journal_entry_id?: string | null;
+  movement_id?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AgentEconomicSummary {
+  agent_account: string;
+  network: string;
+  token_mint: string;
+  total_income_reconciled: number;
+  total_income_provisional: number;
+  total_expenses_realized: number;
+  total_obligations_accrued: number;
+  total_estimated_costs: number;
+  total_capital_reserved: number;
+  available_balance: number;
+  total_effective_balance: number;
+  total_income_reconciled_str: string;
+  total_income_provisional_str: string;
+  total_expenses_realized_str: string;
+  total_obligations_accrued_str: string;
+  total_estimated_costs_str: string;
+  total_capital_reserved_str: string;
+  available_balance_str: string;
+  total_effective_balance_str: string;
+  costs_by_category: Record<string, number>;
+  reserves_by_type: Record<string, number>;
+}
+
+export interface CostFilters extends Paging {
+  category?: CostCategory;
+  cost_nature?: CostNature;
+  period?: string;
+  status?: MovementStatus;
+  mint?: string;
+  network?: string;
+  provenance_source?: ProvenanceSource;
+  fromTs?: number;
+  toTs?: number;
+}
+
+export interface ReserveFilters {
+  reserve_type?: ReserveType;
+  status?: ReserveStatus;
+  mint?: string;
+  network?: string;
+}
+
+export interface EconomicSummaryFilters {
+  mint?: string;
+  network?: string;
+  period?: string;
 }
 
 export interface EconomicMovementFilters extends Paging {
@@ -343,6 +486,59 @@ function balanceReport(raw: unknown): BalanceReport {
   integer(b.movement_count, 'movement_count');
 
   return b as unknown as BalanceReport;
+}
+
+function agentCost(raw: unknown): AgentCost {
+  const c = object(raw, 'agent cost');
+  nonempty(c.cost_id, 'cost_id');
+  nonempty(c.idempotency_key, 'idempotency_key');
+  nonempty(c.agent_id, 'agent_id');
+  nonempty(c.agent_account, 'agent_account');
+  nonempty(c.category, 'category');
+  nonempty(c.cost_nature, 'cost_nature');
+  nonempty(c.economic_period, 'economic_period');
+  nonempty(c.network, 'network');
+  nonempty(c.token_mint, 'token_mint');
+  integer(c.amount_base_units, 'amount_base_units');
+  nonempty(c.amount_str, 'amount_str');
+  nonempty(c.status, 'status');
+  nonempty(c.provenance_source, 'provenance_source');
+  integer(c.created_at, 'created_at');
+  integer(c.incurred_at, 'incurred_at');
+  return c as unknown as AgentCost;
+}
+
+function agentReserve(raw: unknown): AgentReserve {
+  const r = object(raw, 'agent reserve');
+  nonempty(r.reserve_id, 'reserve_id');
+  nonempty(r.idempotency_key, 'idempotency_key');
+  nonempty(r.agent_id, 'agent_id');
+  nonempty(r.agent_account, 'agent_account');
+  nonempty(r.reserve_type, 'reserve_type');
+  nonempty(r.network, 'network');
+  nonempty(r.token_mint, 'token_mint');
+  integer(r.target_amount_base_units, 'target_amount_base_units');
+  integer(r.current_reserved_base_units, 'current_reserved_base_units');
+  nonempty(r.status, 'status');
+  integer(r.created_at, 'created_at');
+  integer(r.updated_at, 'updated_at');
+  return r as unknown as AgentReserve;
+}
+
+function agentEconomicSummary(raw: unknown): AgentEconomicSummary {
+  const s = object(raw, 'economic summary');
+  nonempty(s.agent_account, 'agent_account');
+  nonempty(s.network, 'network');
+  nonempty(s.token_mint, 'token_mint');
+  integer(s.total_income_reconciled, 'total_income_reconciled');
+  integer(s.total_income_provisional, 'total_income_provisional');
+  integer(s.total_expenses_realized, 'total_expenses_realized');
+  integer(s.total_obligations_accrued, 'total_obligations_accrued');
+  integer(s.total_estimated_costs, 'total_estimated_costs');
+  integer(s.total_capital_reserved, 'total_capital_reserved');
+  integer(s.available_balance, 'available_balance');
+  integer(s.total_effective_balance, 'total_effective_balance');
+  return s as unknown as AgentEconomicSummary;
 }
 
 function meta(raw: unknown): ApiMeta {
@@ -969,6 +1165,132 @@ export class MarketplaceClient {
           compensating: economicMovement(obj.compensating),
         };
       }
+    );
+  }
+
+  async listAgentCosts(
+    account: string,
+    filters: CostFilters = {},
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Page<AgentCost>> {
+    const p = new URLSearchParams();
+    if (filters.category) p.set('category', filters.category);
+    if (filters.cost_nature) p.set('cost_nature', filters.cost_nature);
+    if (filters.period) p.set('period', filters.period);
+    if (filters.status) p.set('status', filters.status);
+    if (filters.mint) p.set('mint', filters.mint);
+    if (filters.network) p.set('network', filters.network);
+    if (filters.provenance_source) p.set('provenance_source', filters.provenance_source);
+    if (filters.fromTs !== undefined) p.set('from_ts', String(filters.fromTs));
+    if (filters.toTs !== undefined) p.set('to_ts', String(filters.toTs));
+    paging(p, filters);
+
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return page(
+      await this.get(
+        `/v1/agents/${pubkey(account)}/costs`,
+        p,
+        options.signal,
+        headers
+      ),
+      agentCost
+    );
+  }
+
+  async getCost(
+    costId: string,
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Detail<AgentCost>> {
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return detail(
+      await this.get(
+        `/v1/costs/${encodeURIComponent(costId)}`,
+        undefined,
+        options.signal,
+        headers
+      ),
+      agentCost
+    );
+  }
+
+  async listAgentReserves(
+    account: string,
+    filters: ReserveFilters = {},
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Detail<AgentReserve[]>> {
+    const p = new URLSearchParams();
+    if (filters.reserve_type) p.set('reserve_type', filters.reserve_type);
+    if (filters.status) p.set('status', filters.status);
+    if (filters.mint) p.set('mint', filters.mint);
+    if (filters.network) p.set('network', filters.network);
+
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return detail(
+      await this.get(
+        `/v1/agents/${pubkey(account)}/reserves`,
+        p,
+        options.signal,
+        headers
+      ),
+      raw => array(raw, 'agent reserves').map(agentReserve)
+    );
+  }
+
+  async getReserve(
+    reserveId: string,
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Detail<AgentReserve>> {
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return detail(
+      await this.get(
+        `/v1/reserves/${encodeURIComponent(reserveId)}`,
+        undefined,
+        options.signal,
+        headers
+      ),
+      agentReserve
+    );
+  }
+
+  async getAgentEconomicSummary(
+    account: string,
+    filters: EconomicSummaryFilters = {},
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Detail<AgentEconomicSummary[]>> {
+    const p = new URLSearchParams();
+    if (filters.mint) p.set('mint', filters.mint);
+    if (filters.network) p.set('network', filters.network);
+    if (filters.period) p.set('period', filters.period);
+
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return detail(
+      await this.get(
+        `/v1/agents/${pubkey(account)}/economic-summary`,
+        p,
+        options.signal,
+        headers
+      ),
+      raw => array(raw, 'agent economic summaries').map(agentEconomicSummary)
     );
   }
 

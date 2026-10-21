@@ -326,7 +326,7 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
     entity = pieces[1]
 
     if entity not in {
-        "agents", "work-orders", "marketplace", "economic-movements"
+        "agents", "work-orders", "marketplace", "economic-movements", "costs", "reserves"
     }:
         raise ApiError(404, "NOT_FOUND", "Unknown resource")
 
@@ -353,6 +353,16 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
         }
     elif entity == "agents" and len(pieces) == 4 and pieces[3] == "balances":
         allowed = {"mint", "network"}
+    elif entity == "agents" and len(pieces) == 4 and pieces[3] == "costs":
+        allowed = {
+            "category", "cost_nature", "period", "status",
+            "mint", "network", "provenance_source",
+            "from_ts", "to_ts", "limit", "cursor",
+        }
+    elif entity == "agents" and len(pieces) == 4 and pieces[3] == "reserves":
+        allowed = {"reserve_type", "status", "mint", "network"}
+    elif entity == "agents" and len(pieces) == 4 and pieces[3] == "economic-summary":
+        allowed = {"mint", "network", "period"}
 
     query = arguments(parts.query, allowed)
 
@@ -363,11 +373,11 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
 
     if len(pieces) == 4 and not (
         (entity == "work-orders" and pieces[3] == "matches")
-        or (entity == "agents" and pieces[3] in ("economic-movements", "balances"))
+        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary"))
     ):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
-    if len(pieces) >= 3 and entity != "economic-movements":
+    if len(pieces) >= 3 and entity not in ("economic-movements", "costs", "reserves"):
         require_pubkey(pieces[2])
 
     snapshot = provider.snapshot()
@@ -535,10 +545,118 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                 "meta": meta,
             }
 
+        if len(pieces) == 4 and pieces[3] == "costs":
+            authorize_agent_access(agent, headers, pieces[2])
+
+            from_ts = int(query["from_ts"]) if "from_ts" in query else None
+            to_ts = int(query["to_ts"]) if "to_ts" in query else None
+            limit = int(query.get("limit", 50))
+            cursor = query.get("cursor")
+
+            ledger = get_ledger(provider)
+            try:
+                costs, next_cursor = ledger.list_costs(
+                    pieces[2],
+                    category=query.get("category"),
+                    cost_nature=query.get("cost_nature"),
+                    economic_period=query.get("period"),
+                    status=query.get("status"),
+                    token_mint=query.get("mint"),
+                    network=query.get("network"),
+                    provenance_source=query.get("provenance_source"),
+                    from_ts=from_ts,
+                    to_ts=to_ts,
+                    limit=limit,
+                    cursor=cursor,
+                )
+            except LedgerValidationError as exc:
+                raise ApiError(400, "INVALID_QUERY", str(exc)) from exc
+
+            return 200, {
+                "data": [c.to_dict() for c in costs],
+                "page": {
+                    "limit": limit,
+                    "has_more": next_cursor is not None,
+                    "next_cursor": next_cursor,
+                },
+                "meta": meta,
+            }
+
+        if len(pieces) == 4 and pieces[3] == "reserves":
+            authorize_agent_access(agent, headers, pieces[2])
+
+            ledger = get_ledger(provider)
+            reserves = ledger.list_reserves(
+                pieces[2],
+                reserve_type=query.get("reserve_type"),
+                status=query.get("status"),
+                network=query.get("network"),
+                token_mint=query.get("mint"),
+            )
+            return 200, {
+                "data": [r.to_dict() for r in reserves],
+                "meta": meta,
+            }
+
+        if len(pieces) == 4 and pieces[3] == "economic-summary":
+            authorize_agent_access(agent, headers, pieces[2])
+
+            ledger = get_ledger(provider)
+            summaries = ledger.get_economic_summary(
+                pieces[2],
+                network=query.get("network"),
+                token_mint=query.get("mint"),
+                economic_period=query.get("period"),
+            )
+            return 200, {
+                "data": [s.to_dict() for s in summaries],
+                "meta": meta,
+            }
+
         return 200, {
             "data": projected_agent(agent),
             "meta": meta,
         }
+
+    if entity == "costs":
+        if len(pieces) == 3:
+            cost_id = pieces[2]
+            ledger = get_ledger(provider)
+            cost = ledger.get_cost(cost_id)
+            if cost is None:
+                raise ApiError(404, "COST_NOT_FOUND", "Cost not found")
+
+            agent = next(
+                (a for a in snapshot["agents"] if a["agent_account"] == cost.agent_account),
+                None,
+            )
+            authorize_agent_access(agent or {"owner": cost.owner_pubkey}, headers, cost.agent_account)
+
+            return 200, {
+                "data": cost.to_dict(),
+                "meta": meta,
+            }
+        raise ApiError(404, "NOT_FOUND", "Unknown route")
+
+    if entity == "reserves":
+        if len(pieces) == 3:
+            reserve_id = pieces[2]
+            ledger = get_ledger(provider)
+            reserve = ledger.get_reserve(reserve_id)
+            if reserve is None:
+                raise ApiError(404, "RESERVE_NOT_FOUND", "Reserve not found")
+
+            agent = next(
+                (a for a in snapshot["agents"] if a["agent_account"] == reserve.agent_account),
+                None,
+            )
+            authorize_agent_access(agent or {"owner": reserve.owner_pubkey}, headers, reserve.agent_account)
+
+            return 200, {
+                "data": reserve.to_dict(),
+                "meta": meta,
+            }
+        raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if entity == "economic-movements":
         if len(pieces) == 3:
