@@ -4,8 +4,13 @@ import unittest
 from pathlib import Path
 
 from tools.economic_ledger.ledger import (
+    DEVNET_GENESIS_HASH,
+    LOCALNET_GENESIS_HASH,
+    MAINNET_GENESIS_HASH,
     EconomicLedger,
+    IsolatedTestAttestationVerifier,
     IsolatedTestReconcilerVerifier,
+    validate_monetary_context,
 )
 from tools.economic_ledger.models import (
     CostCategory,
@@ -675,6 +680,501 @@ class AgentCostsAndReservesTests(unittest.TestCase):
         legs_by_type = {leg.entry_type: leg for leg in journal.legs}
         self.assertEqual(legs_by_type[EntryType.DEBIT].account_name, "ASSET:EQUIPMENT")
         self.assertEqual(legs_by_type[EntryType.CREDIT].account_name, "ASSET:TREASURY")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 12. ACID Transactions & Fault Injection
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def test_acid_record_cost_fault_injection_rolls_back_reserve_and_movement(self):
+        self._fund_agent(amount=100_000_000)
+        res = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-acid-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.MAINTENANCE,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=50_000_000,
+        )
+        self.assertEqual(res.current_reserved_base_units, 50_000_000)
+
+        # Inject fault at SQLite level using an ABORT trigger on agent_costs
+        self.ledger._conn.execute(
+            """
+            CREATE TRIGGER trigger_fail_agent_costs
+            BEFORE INSERT ON agent_costs
+            WHEN NEW.idempotency_key = 'cost-acid-fail-001'
+            BEGIN
+                SELECT RAISE(ABORT, 'Injected crash right before committing cost!');
+            END;
+            """
+        )
+
+        with self.assertRaises(Exception) as ctx:
+            self.ledger.record_cost(
+                idempotency_key="cost-acid-fail-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                category=CostCategory.MAINTENANCE,
+                cost_nature=CostNature.REALIZED,
+                economic_period="2026-10",
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=20_000_000,
+                from_reserve_id=res.reserve_id,
+            )
+        self.assertIn("Injected crash", str(ctx.exception))
+
+        # Drop the trigger
+        self.ledger._conn.execute("DROP TRIGGER trigger_fail_agent_costs;")
+
+        # Verify atomic rollback: reserve balance must remain intact at 50,000,000
+        cur_res = self.ledger.get_reserve(res.reserve_id)
+        self.assertIsNotNone(cur_res)
+        self.assertEqual(cur_res.current_reserved_base_units, 50_000_000)
+
+        # Verify no orphan cost exists
+        cur = self.ledger._conn.execute(
+            "SELECT count(*) as cnt FROM agent_costs WHERE idempotency_key = 'cost-acid-fail-001';"
+        )
+        self.assertEqual(cur.fetchone()["cnt"], 0)
+
+        # Verify no orphan reserve transaction was committed
+        cur2 = self.ledger._conn.execute(
+            "SELECT count(*) as cnt FROM reserve_transactions WHERE idempotency_key = 'consume:cost-acid-fail-001';"
+        )
+        self.assertEqual(cur2.fetchone()["cnt"], 0)
+
+        # Invariant balance check
+        self.assertTrue(self.ledger.get_ledger_totals()["is_balanced"])
+
+    def test_acid_create_or_allocate_reserve_fault_injection_rolls_back(self):
+        self._fund_agent(amount=100_000_000)
+
+        # Inject fault at SQLite level using an ABORT trigger on reserve_transactions
+        self.ledger._conn.execute(
+            """
+            CREATE TRIGGER trigger_fail_reserve_tx
+            BEFORE INSERT ON reserve_transactions
+            WHEN NEW.idempotency_key = 'res-crash-001'
+            BEGIN
+                SELECT RAISE(ABORT, 'Injected crash before committing reserve transaction!');
+            END;
+            """
+        )
+
+        with self.assertRaises(Exception) as ctx:
+            self.ledger.create_or_allocate_reserve(
+                idempotency_key="res-crash-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.HARDWARE_REPLACEMENT,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=40_000_000,
+            )
+        self.assertIn("Injected crash", str(ctx.exception))
+
+        # Drop trigger
+        self.ledger._conn.execute("DROP TRIGGER trigger_fail_reserve_tx;")
+
+        # Verify no orphan reserve row exists
+        res_list = self.ledger.list_reserves(AGENT_1, reserve_type=ReserveType.HARDWARE_REPLACEMENT)
+        self.assertEqual(len(res_list), 0)
+
+        # Verify available balance is still full 100M
+        summary = self._summary()
+        self.assertEqual(summary.available_balance, 100_000_000)
+        self.assertEqual(summary.total_capital_reserved, 0)
+        self.assertTrue(self.ledger.get_ledger_totals()["is_balanced"])
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 13. Reconciled Capital For Reserves & Segregation
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def test_reserve_cannot_be_funded_from_provisional_income(self):
+        # Record ONLY provisional income without reconciling it
+        self.ledger.record_movement(
+            idempotency_key="mov-prov-only-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            network=NET_LOCALNET,
+            genesis_hash=GENESIS_HASH,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=100_000_000,
+            nature=MovementNature.INCOME,
+            status=MovementStatus.PROVISIONAL,
+            tx_signature="5ProvOnlySig11111111111111111111111111111111",
+        )
+
+        # Attempt to allocate reserve from provisional income must be rejected
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.create_or_allocate_reserve(
+                idempotency_key="res-prov-fail-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.MAINTENANCE,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=20_000_000,
+            )
+        self.assertIn("Insufficient reconciled funds", str(ctx.exception))
+        self.assertIn("provisional", str(ctx.exception))
+
+    def test_competing_reserve_allocations_respect_exact_reconciled_balance(self):
+        self._fund_agent(amount=100_000_000)
+
+        # Allocation 1: 60 USDC -> succeeds
+        res1 = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-race-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.MAINTENANCE,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=60_000_000,
+        )
+        self.assertEqual(res1.current_reserved_base_units, 60_000_000)
+
+        # Allocation 2: 60 USDC -> must fail because only 40 USDC reconciled cash remains!
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.create_or_allocate_reserve(
+                idempotency_key="res-race-002",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.CONTINGENCY,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=60_000_000,
+            )
+        self.assertIn("Insufficient reconciled funds", str(ctx.exception))
+
+    def test_reserve_partition_segregation_by_network_and_mint(self):
+        # Fund agent only in localnet USDC
+        self._fund_agent(amount=100_000_000, mint=MINT_USDC, network=NET_LOCALNET)
+
+        # Trying to allocate EURC reserve must fail (0 EURC available)
+        with self.assertRaises(LedgerValidationError):
+            self.ledger.create_or_allocate_reserve(
+                idempotency_key="res-seg-eurc",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.MAINTENANCE,
+                network=NET_LOCALNET,
+                token_mint=MINT_EURC,
+                amount_base_units=10_000_000,
+            )
+
+        # Trying to allocate on mainnet must fail (0 mainnet funds)
+        with self.assertRaises(LedgerValidationError):
+            self.ledger.create_or_allocate_reserve(
+                idempotency_key="res-seg-mainnet",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.MAINTENANCE,
+                network=NET_MAINNET,
+                token_mint=MINT_USDC,
+                amount_base_units=10_000_000,
+            )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 14. Evidence Verification Guard (Attestation Verification)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def test_unverified_attestation_id_remains_provisional_and_manual_entry(self):
+        cost = self.ledger.record_cost(
+            idempotency_key="cost-unverif-attest-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            category=CostCategory.ENERGY_FUEL,
+            cost_nature=CostNature.ESTIMATED,
+            economic_period="2026-10",
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=5_000_000,
+            attestation_id="attest_claimed_oracle_99",
+        )
+        self.assertEqual(cost.status, MovementStatus.PROVISIONAL)
+        self.assertEqual(cost.provenance_source, ProvenanceSource.MANUAL_ENTRY)
+        self.assertEqual(cost.attestation_id, "attest_claimed_oracle_99")
+
+    def test_declaring_external_verified_without_attestation_verifier_rejected(self):
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.record_cost(
+                idempotency_key="cost-forged-ext-verif",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                category=CostCategory.ENERGY_FUEL,
+                cost_nature=CostNature.ESTIMATED,
+                economic_period="2026-10",
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=5_000_000,
+                provenance_source=ProvenanceSource.EXTERNAL_VERIFIED,
+                attestation_id="attest_invented_001",
+            )
+        self.assertIn("No trusted attestation verifier configured", str(ctx.exception))
+
+    def test_attestation_with_unauthorized_authority_rejected(self):
+        attest_verifier = IsolatedTestAttestationVerifier(
+            trusted_authorities={"conatus:trusted:oracle:v1"}
+        )
+        ledger_with_verifier = EconomicLedger(
+            self.db_path,
+            reconciliation_verifier=self.test_verifier,
+            attestation_verifier=attest_verifier,
+        )
+        try:
+            with self.assertRaises(LedgerValidationError) as ctx:
+                ledger_with_verifier.record_cost(
+                    idempotency_key="cost-unauth-auth-001",
+                    agent_id="11" * 32,
+                    agent_account=AGENT_1,
+                    owner_pubkey=OWNER_1,
+                    category=CostCategory.ENERGY_FUEL,
+                    cost_nature=CostNature.ESTIMATED,
+                    economic_period="2026-10",
+                    network=NET_LOCALNET,
+                    token_mint=MINT_USDC,
+                    amount_base_units=5_000_000,
+                    provenance_source=ProvenanceSource.EXTERNAL_VERIFIED,
+                    attestation_id="attest_valid_format_001",
+                    metadata={"authorized_by": "untrusted:rogue:signer"},
+                )
+            self.assertIn("unauthorized authority or forged attestation", str(ctx.exception))
+        finally:
+            ledger_with_verifier.close()
+
+    def test_fictitious_or_forged_attestation_id_rejected(self):
+        attest_verifier = IsolatedTestAttestationVerifier(
+            trusted_authorities={"conatus:trusted:oracle:v1"},
+            reject_fictitious=True,
+        )
+        ledger_with_verifier = EconomicLedger(
+            self.db_path,
+            reconciliation_verifier=self.test_verifier,
+            attestation_verifier=attest_verifier,
+        )
+        try:
+            with self.assertRaises(LedgerValidationError) as ctx:
+                ledger_with_verifier.record_cost(
+                    idempotency_key="cost-forged-id-001",
+                    agent_id="11" * 32,
+                    agent_account=AGENT_1,
+                    owner_pubkey=OWNER_1,
+                    category=CostCategory.CONNECTIVITY_COMPUTE,
+                    cost_nature=CostNature.ESTIMATED,
+                    economic_period="2026-10",
+                    network=NET_LOCALNET,
+                    token_mint=MINT_USDC,
+                    amount_base_units=5_000_000,
+                    provenance_source=ProvenanceSource.EXTERNAL_VERIFIED,
+                    attestation_id="forged_attestation_proof_999",
+                    metadata={"authorized_by": "conatus:trusted:oracle:v1"},
+                )
+            self.assertIn("unauthorized authority or forged attestation", str(ctx.exception))
+        finally:
+            ledger_with_verifier.close()
+
+    def test_valid_trusted_attestation_succeeds_as_external_verified(self):
+        attest_verifier = IsolatedTestAttestationVerifier(
+            trusted_authorities={"conatus:trusted:oracle:v1"},
+            allowed_attestations={"attest_genuine_clean_001"},
+        )
+        ledger_with_verifier = EconomicLedger(
+            self.db_path,
+            reconciliation_verifier=self.test_verifier,
+            attestation_verifier=attest_verifier,
+        )
+        try:
+            cost = ledger_with_verifier.record_cost(
+                idempotency_key="cost-genuine-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                category=CostCategory.ENERGY_FUEL,
+                cost_nature=CostNature.ESTIMATED,
+                economic_period="2026-10",
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=8_000_000,
+                provenance_source=ProvenanceSource.EXTERNAL_VERIFIED,
+                attestation_id="attest_genuine_clean_001",
+                metadata={"authorized_by": "conatus:trusted:oracle:v1"},
+            )
+            self.assertEqual(cost.provenance_source, ProvenanceSource.EXTERNAL_VERIFIED)
+            self.assertEqual(cost.attestation_id, "attest_genuine_clean_001")
+        finally:
+            ledger_with_verifier.close()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 15. Real Available Cash vs Investible Surplus (CAPEX, Reserves, Accruals)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def test_available_cash_vs_investible_surplus_with_capex_reserves_and_accruals(self):
+        # 1. Income: Reconciled 100,000,000 USDC
+        self._fund_agent(amount=100_000_000)
+
+        # 2. CAPEX: Fixed asset acquisition (EQUIPMENT) for 30,000,000 USDC
+        capex = self.ledger.record_capital_investment(
+            idempotency_key="capex-surplus-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=30_000_000,
+            asset_category="EQUIPMENT",
+            description="LIDAR scanner upgrade",
+        )
+        self.assertEqual(capex.nature, MovementNature.CAPITAL_INVESTMENT)
+
+        # 3. Reserve: Segregate 20,000,000 USDC into MAINTENANCE reserve
+        res = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-surplus-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.MAINTENANCE,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=20_000_000,
+        )
+        self.assertEqual(res.current_reserved_base_units, 20_000_000)
+
+        # 4. Accrued Liability: Incur unpaid maintenance obligation for 15,000,000 USDC
+        accrued = self.ledger.record_cost(
+            idempotency_key="accrued-surplus-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            category=CostCategory.MAINTENANCE,
+            cost_nature=CostNature.ACCRUED_LIABILITY,
+            economic_period="2026-10",
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=15_000_000,
+            description="Pending hangar fee",
+        )
+        self.assertEqual(accrued.cost_nature, CostNature.ACCRUED_LIABILITY)
+
+        # Verify economic summary metrics:
+        # - Available Cash: 100M - 30M (CAPEX) - 20M (Reserve) = 50M
+        # - Investible Surplus: 50M (available) - 15M (accrued liability) = 35M
+        # - CAPEX: 30M
+        # - Capital Reserved: 20M
+        # - Accrued Obligations: 15M
+        # - Realized Expenses: 0 (accrual is not realized cash outflow)
+        # - Total Effective Balance (Net Worth): 100M (Cash 50M + Equipment 30M + Reserve 20M)
+        summary = self._summary()
+        self.assertIsNotNone(summary)
+        self.assertEqual(summary.total_income_reconciled, 100_000_000)
+        self.assertEqual(summary.capex_investments, 30_000_000)
+        self.assertEqual(summary.total_capital_reserved, 20_000_000)
+        self.assertEqual(summary.total_obligations_accrued, 15_000_000)
+        self.assertEqual(summary.total_expenses_realized, 0)
+        self.assertEqual(summary.available_balance, 50_000_000)
+        self.assertEqual(summary.investible_surplus, 35_000_000)
+        self.assertEqual(summary.total_effective_balance, 100_000_000)
+
+        # 5. Now incur a realized expense paid FROM the reserve (10,000,000 USDC)
+        cost_from_res = self.ledger.record_cost(
+            idempotency_key="cost-from-res-surplus-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            category=CostCategory.MAINTENANCE,
+            cost_nature=CostNature.REALIZED,
+            economic_period="2026-10",
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=10_000_000,
+            from_reserve_id=res.reserve_id,
+        )
+
+        # Verify NO double deduction on available cash:
+        # - Available Cash remains 50,000,000 (since expense was paid from reserve, NOT treasury cash)
+        # - Total Capital Reserved decreases to 10,000,000
+        # - Realized Expenses increases to 10,000,000
+        # - Total Effective Balance decreases to 90,000,000
+        # - Investible Surplus remains 35,000,000
+        summary2 = self._summary()
+        self.assertIsNotNone(summary2)
+        self.assertEqual(summary2.available_balance, 50_000_000, "Cash must NOT be double deducted when paid from reserve!")
+        self.assertEqual(summary2.total_capital_reserved, 10_000_000)
+        self.assertEqual(summary2.total_expenses_realized, 10_000_000)
+        self.assertEqual(summary2.total_effective_balance, 90_000_000)
+        self.assertEqual(summary2.investible_surplus, 35_000_000)
+
+        # General ledger accounting invariants must hold
+        totals = self.ledger.get_ledger_totals()
+        self.assertTrue(totals["is_balanced"])
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 16. Monetary Identity & Genesis Coherence
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def test_monetary_context_coherence_and_rejections(self):
+        # 1. Mainnet with Localnet genesis must be rejected
+        with self.assertRaises(LedgerValidationError) as ctx:
+            validate_monetary_context(
+                network="solana:mainnet-beta",
+                genesis_hash=LOCALNET_GENESIS_HASH,
+                token_mint=MINT_USDC,
+            )
+        self.assertIn("cannot be used with network", str(ctx.exception))
+
+        # 2. Localnet with Mainnet genesis must be rejected
+        with self.assertRaises(LedgerValidationError) as ctx:
+            validate_monetary_context(
+                network="solana:localnet",
+                genesis_hash=MAINNET_GENESIS_HASH,
+                token_mint=MINT_USDC,
+            )
+        self.assertIn("cannot be used with localnet", str(ctx.exception))
+
+        # 3. Devnet with Localnet genesis must be rejected
+        with self.assertRaises(LedgerValidationError) as ctx:
+            validate_monetary_context(
+                network="solana:devnet",
+                genesis_hash=LOCALNET_GENESIS_HASH,
+                token_mint=MINT_USDC,
+            )
+        self.assertIn("cannot be used with devnet", str(ctx.exception))
+
+        # 4. Empty network or mint must be rejected
+        with self.assertRaises(LedgerValidationError):
+            validate_monetary_context(network="", token_mint=MINT_USDC)
+        with self.assertRaises(LedgerValidationError):
+            validate_monetary_context(network="solana:mainnet-beta", token_mint="")
+
+        # 5. Default genesis hashes match canonical network identities
+        _, mainnet_gen, _, _ = validate_monetary_context(
+            network="solana:mainnet-beta", token_mint=MINT_USDC
+        )
+        self.assertEqual(mainnet_gen, MAINNET_GENESIS_HASH)
+
+        _, devnet_gen, _, _ = validate_monetary_context(
+            network="solana:devnet", token_mint=MINT_USDC
+        )
+        self.assertEqual(devnet_gen, DEVNET_GENESIS_HASH)
+
+        _, localnet_gen, _, _ = validate_monetary_context(
+            network="solana:localnet", token_mint=MINT_USDC
+        )
+        self.assertEqual(localnet_gen, LOCALNET_GENESIS_HASH)
 
 
 if __name__ == "__main__":

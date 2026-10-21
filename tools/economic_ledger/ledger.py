@@ -37,13 +37,78 @@ from .schema import run_migrations
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / ".aerosettle-local" / "economic_ledger.db"
 
 DEFAULT_NETWORK = "localnet"
-DEFAULT_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+LOCALNET_GENESIS_HASH = "HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg"
+DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+
+DEFAULT_GENESIS_HASH = LOCALNET_GENESIS_HASH
 DEFAULT_PROGRAM_ID = "Conatus11111111111111111111111111111111111"
 
 DEFAULT_TRUSTED_RECONCILER_AUTHORITIES: frozenset[str] = frozenset({
     "conatus:protocol:reconciler:v1",
     "conatus:internal:settlement-validator:v1",
 })
+
+
+def validate_monetary_context(
+    *,
+    network: str,
+    genesis_hash: Optional[str] = None,
+    program_id: Optional[str] = None,
+    token_mint: Optional[str] = None,
+) -> tuple[str, str, str, str]:
+    """Validates that network, genesis_hash, program_id, and token_mint form a coherent monetary context."""
+    if not network or not isinstance(network, str) or not network.strip():
+        raise LedgerValidationError("network cannot be empty")
+    net_clean = network.strip()
+
+    eff_mint = (token_mint or "").strip()
+    if not eff_mint:
+        raise LedgerValidationError("token_mint cannot be empty")
+
+    eff_prog = (program_id or DEFAULT_PROGRAM_ID).strip()
+    if not eff_prog:
+        raise LedgerValidationError("program_id cannot be empty")
+
+    gen_candidate = genesis_hash.strip() if (genesis_hash and isinstance(genesis_hash, str) and genesis_hash.strip()) else None
+
+    is_mainnet = net_clean in ("solana:mainnet-beta", "mainnet-beta", "mainnet")
+    is_localnet = net_clean in ("solana:localnet", "localnet")
+    is_devnet = net_clean in ("solana:devnet", "devnet")
+
+    if gen_candidate:
+        if is_mainnet and gen_candidate == LOCALNET_GENESIS_HASH:
+            raise LedgerValidationError(
+                f"Monetary context conflict: Localnet genesis hash '{gen_candidate}' cannot be used with network '{net_clean}'"
+            )
+        if is_mainnet and gen_candidate != MAINNET_GENESIS_HASH:
+            raise LedgerValidationError(
+                f"Monetary context conflict: network '{net_clean}' requires genesis hash '{MAINNET_GENESIS_HASH}', got '{gen_candidate}'"
+            )
+        if is_localnet and gen_candidate == MAINNET_GENESIS_HASH:
+            raise LedgerValidationError(
+                f"Monetary context conflict: Mainnet genesis hash '{gen_candidate}' cannot be used with localnet '{net_clean}'"
+            )
+        if is_devnet and gen_candidate == LOCALNET_GENESIS_HASH:
+            raise LedgerValidationError(
+                f"Monetary context conflict: Localnet genesis hash '{gen_candidate}' cannot be used with devnet '{net_clean}'"
+            )
+        eff_gen = gen_candidate
+    else:
+        if is_localnet:
+            eff_gen = LOCALNET_GENESIS_HASH
+        elif is_devnet:
+            eff_gen = DEVNET_GENESIS_HASH
+        elif is_mainnet:
+            eff_gen = MAINNET_GENESIS_HASH
+        elif net_clean in ("solana:testnet", "testnet"):
+            eff_gen = "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY"
+        else:
+            raise LedgerValidationError(
+                f"genesis_hash is mandatory and cannot be defaulted for network '{net_clean}'"
+            )
+
+    return net_clean, eff_gen, eff_prog, eff_mint
 
 
 @runtime_checkable
@@ -118,6 +183,89 @@ class IsolatedTestReconcilerVerifier:
             "authorized_by": authorized_by,
             "slot": slot,
             "tx_signature": tx_signature,
+        })
+        return True
+
+
+@runtime_checkable
+class AttestationVerifier(Protocol):
+    """Protocol for authenticating and verifying cryptographic cost attestations."""
+
+    def verify_attestation(
+        self,
+        *,
+        attestation_id: str,
+        authorized_by: Optional[str] = None,
+        evidence_hash: Optional[str] = None,
+        cost_data: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        ...
+
+
+class IsolatedTestAttestationVerifier:
+    """Isolated test attestation verifier for automated testing environments.
+
+    In production, automatic assignment of EXTERNAL_VERIFIED or RECONCILED is disabled
+    pending an authentic cryptographic attestation verifier. This verifier enables testing
+    authorized vs unauthorized authorities and genuine vs forged/invented attestations.
+    """
+
+    def __init__(
+        self,
+        trusted_authorities: Optional[set[str] | list[str]] = None,
+        allowed_attestations: Optional[set[str] | list[str]] = None,
+        *,
+        reject_fictitious: bool = True,
+    ) -> None:
+        self.trusted_authorities = (
+            set(trusted_authorities)
+            if trusted_authorities is not None
+            else {"conatus:trusted:oracle:v1", "conatus:protocol:cost-verifier:v1"}
+        )
+        self.allowed_attestations = (
+            set(allowed_attestations) if allowed_attestations is not None else None
+        )
+        self.reject_fictitious = reject_fictitious
+        self.verified_calls: list[dict[str, Any]] = []
+
+    def allow_attestation(self, attestation_id: str) -> None:
+        if self.allowed_attestations is None:
+            self.allowed_attestations = set()
+        self.allowed_attestations.add(attestation_id)
+
+    def verify_attestation(
+        self,
+        *,
+        attestation_id: str,
+        authorized_by: Optional[str] = None,
+        evidence_hash: Optional[str] = None,
+        cost_data: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        if not authorized_by or authorized_by not in self.trusted_authorities:
+            return False
+
+        att_lower = attestation_id.lower()
+        if self.reject_fictitious:
+            if (
+                att_lower.startswith("fake")
+                or att_lower.startswith("invented")
+                or att_lower.startswith("forged")
+                or "fake" in att_lower
+                or "invented" in att_lower
+                or "forged" in att_lower
+                or "dummy" in att_lower
+                or "mock" in att_lower
+            ):
+                return False
+
+        if self.allowed_attestations is not None and attestation_id not in self.allowed_attestations:
+            return False
+
+        self.verified_calls.append({
+            "attestation_id": attestation_id,
+            "authorized_by": authorized_by,
+            "evidence_hash": evidence_hash,
+            "cost_data": cost_data,
         })
         return True
 
@@ -251,6 +399,7 @@ class EconomicLedger:
         *,
         trusted_reconciler_authorities: Optional[set[str] | frozenset[str]] = None,
         reconciliation_verifier: Optional[ReconciliationVerifier] = None,
+        attestation_verifier: Optional[AttestationVerifier] = None,
     ):
         if str(db_path) != ":memory:":
             self.db_path = Path(db_path)
@@ -282,6 +431,7 @@ class EconomicLedger:
             else set(DEFAULT_TRUSTED_RECONCILER_AUTHORITIES)
         )
         self._reconciliation_verifier = reconciliation_verifier
+        self._attestation_verifier = attestation_verifier
 
         # Run versioned schema migrations
         run_migrations(self._conn)
@@ -325,6 +475,7 @@ class EconomicLedger:
         reversal_of_movement_id: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
         custom_journal_legs: Optional[list[dict[str, Any]]] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
     ) -> EconomicMovement:
         """Idempotently records an economic movement with balanced double-entry accounting."""
         if not idempotency_key or not idempotency_key.strip():
@@ -334,6 +485,14 @@ class EconomicLedger:
         nature_enum = MovementNature(nature)
         status_enum = MovementStatus(status)
         source_enum = ProvenanceSource(provenance_source)
+
+        # Validate monetary context
+        net_val, gen_val, prog_val, mint_val = validate_monetary_context(
+            network=network,
+            genesis_hash=genesis_hash,
+            program_id=program_id,
+            token_mint=token_mint,
+        )
 
         # Monetary validation: allow zero base units for non-disbursement audit entries
         allow_zero = (amount_base_units == 0 or str(amount_base_units) == "0")
@@ -372,10 +531,10 @@ class EconomicLedger:
                 agent_id=agent_id,
                 agent_account=agent_account,
                 owner_pubkey=owner_pubkey,
-                network=network,
-                genesis_hash=genesis_hash,
-                program_id=program_id,
-                token_mint=token_mint,
+                network=net_val,
+                genesis_hash=gen_val,
+                program_id=prog_val,
+                token_mint=mint_val,
                 amount_base_units=amount_int,
                 nature=nature_enum,
                 provenance_source=source_enum,
@@ -398,10 +557,10 @@ class EconomicLedger:
             "agent_id": agent_id,
             "agent_account": agent_account,
             "owner_pubkey": owner_pubkey,
-            "network": network,
-            "genesis_hash": genesis_hash,
-            "program_id": program_id,
-            "token_mint": token_mint,
+            "network": net_val,
+            "genesis_hash": gen_val,
+            "program_id": prog_val,
+            "token_mint": mint_val,
             "amount_base_units": amount_int,
             "nature": nature_enum.value,
             "provenance_source": source_enum.value,
@@ -443,19 +602,21 @@ class EconomicLedger:
         # Invariant: Debits == Credits
         self._assert_balanced_legs(legs)
 
-        # Atomic Transaction
-        cursor = self._conn.cursor()
+        # Atomic Transaction Management
+        manage_tx = (cursor is None)
+        tx_cursor = cursor if cursor is not None else self._conn.cursor()
+        if manage_tx:
+            tx_cursor.execute("BEGIN IMMEDIATE;")
         try:
-            cursor.execute("BEGIN IMMEDIATE;")
-
             # Secondary concurrency check inside lock
-            cursor.execute(
+            tx_cursor.execute(
                 "SELECT movement_id FROM economic_movements WHERE idempotency_key = ?;",
                 (clean_idempotency_key,),
             )
-            row = cursor.fetchone()
+            row = tx_cursor.fetchone()
             if row:
-                cursor.execute("ROLLBACK;")
+                if manage_tx:
+                    tx_cursor.execute("ROLLBACK;")
                 locked_existing = self.get_movement(row["movement_id"])
                 if locked_existing:
                     _check_idempotency_match(
@@ -463,10 +624,10 @@ class EconomicLedger:
                         agent_id=agent_id,
                         agent_account=agent_account,
                         owner_pubkey=owner_pubkey,
-                        network=network,
-                        genesis_hash=genesis_hash,
-                        program_id=program_id,
-                        token_mint=token_mint,
+                        network=net_val,
+                        genesis_hash=gen_val,
+                        program_id=prog_val,
+                        token_mint=mint_val,
                         amount_base_units=amount_int,
                         nature=nature_enum,
                         provenance_source=source_enum,
@@ -480,7 +641,7 @@ class EconomicLedger:
                     return locked_existing
 
             # 1. Insert journal entry
-            cursor.execute(
+            tx_cursor.execute(
                 """
                 INSERT INTO journal_entries (
                     journal_entry_id, idempotency_key, network, genesis_hash,
@@ -491,10 +652,10 @@ class EconomicLedger:
                 (
                     journal_entry_id,
                     clean_idempotency_key,
-                    network,
-                    genesis_hash,
-                    program_id,
-                    token_mint,
+                    net_val,
+                    gen_val,
+                    prog_val,
+                    mint_val,
                     f"Movement {nature_enum.value} for {agent_account}",
                     tx_signature,
                     work_order_account,
@@ -506,7 +667,7 @@ class EconomicLedger:
 
             # 2. Insert ledger legs (stored as string representation of integer to prevent u64 float loss)
             for leg in legs:
-                cursor.execute(
+                tx_cursor.execute(
                     """
                     INSERT INTO ledger_entries (
                         entry_id, journal_entry_id, agent_account, account_name,
@@ -525,7 +686,7 @@ class EconomicLedger:
                 )
 
             # 3. Insert economic movement
-            cursor.execute(
+            tx_cursor.execute(
                 """
                 INSERT INTO economic_movements (
                     movement_id, journal_entry_id, idempotency_key, agent_id,
@@ -548,10 +709,10 @@ class EconomicLedger:
                     owner_pubkey,
                     work_order_account,
                     work_order_id,
-                    network,
-                    genesis_hash,
-                    program_id,
-                    token_mint,
+                    net_val,
+                    gen_val,
+                    prog_val,
+                    mint_val,
                     amount_str,
                     amount_str,
                     nature_enum.value,
@@ -568,12 +729,14 @@ class EconomicLedger:
                 ),
             )
 
-            cursor.execute("COMMIT;")
+            if manage_tx:
+                tx_cursor.execute("COMMIT;")
         except sqlite3.IntegrityError as exc:
-            try:
-                cursor.execute("ROLLBACK;")
-            except Exception:
-                pass
+            if manage_tx:
+                try:
+                    tx_cursor.execute("ROLLBACK;")
+                except Exception:
+                    pass
             existing = self.get_by_idempotency_key(clean_idempotency_key)
             if existing:
                 _check_idempotency_match(
@@ -581,10 +744,10 @@ class EconomicLedger:
                     agent_id=agent_id,
                     agent_account=agent_account,
                     owner_pubkey=owner_pubkey,
-                    network=network,
-                    genesis_hash=genesis_hash,
-                    program_id=program_id,
-                    token_mint=token_mint,
+                    network=net_val,
+                    genesis_hash=gen_val,
+                    program_id=prog_val,
+                    token_mint=mint_val,
                     amount_base_units=amount_int,
                     nature=nature_enum,
                     provenance_source=source_enum,
@@ -598,10 +761,11 @@ class EconomicLedger:
                 return existing
             raise LedgerValidationError(f"Integrity violation: {exc}") from exc
         except Exception:
-            try:
-                cursor.execute("ROLLBACK;")
-            except Exception:
-                pass
+            if manage_tx:
+                try:
+                    tx_cursor.execute("ROLLBACK;")
+                except Exception:
+                    pass
             raise
 
         created = self.get_movement(movement_id)
@@ -930,6 +1094,7 @@ class EconomicLedger:
         *,
         reason: str,
         authorized_by: str,
+        cursor: Optional[sqlite3.Cursor] = None,
     ) -> tuple[EconomicMovement, EconomicMovement]:
         """Atomically marks a movement as REVERTED and generates a balanced contrasiento (reversal entry).
 
@@ -945,14 +1110,16 @@ class EconomicLedger:
         if not authorized_by or not authorized_by.strip():
             raise LedgerValidationError("authorized_by is mandatory")
 
-        cursor = self._conn.cursor()
+        manage_tx = (cursor is None)
+        tx_cursor = cursor if cursor is not None else self._conn.cursor()
+        if manage_tx:
+            tx_cursor.execute("BEGIN IMMEDIATE;")
         try:
-            cursor.execute("BEGIN IMMEDIATE;")
-            cursor.execute(
+            tx_cursor.execute(
                 "SELECT * FROM economic_movements WHERE movement_id = ?;",
                 (movement_id,),
             )
-            row = cursor.fetchone()
+            row = tx_cursor.fetchone()
             if not row:
                 raise LedgerValidationError(f"Movement not found: {movement_id}")
 
@@ -964,7 +1131,7 @@ class EconomicLedger:
             amount_str = str(row["amount_str"])
 
             # 1. Update original movement status to REVERTED
-            cursor.execute(
+            tx_cursor.execute(
                 "UPDATE economic_movements SET status = ? WHERE movement_id = ?;",
                 (MovementStatus.REVERTED.value, movement_id),
             )
@@ -978,7 +1145,7 @@ class EconomicLedger:
             orig_journal_id = row["journal_entry_id"]
 
             if orig_journal_id:
-                cursor.execute(
+                tx_cursor.execute(
                     """
                     SELECT * FROM ledger_entries
                     WHERE journal_entry_id = ?
@@ -986,7 +1153,7 @@ class EconomicLedger:
                     """,
                     (orig_journal_id,),
                 )
-                orig_legs = cursor.fetchall()
+                orig_legs = tx_cursor.fetchall()
                 for leg in orig_legs:
                     inverted_type = (
                         EntryType.CREDIT
@@ -1034,7 +1201,7 @@ class EconomicLedger:
             self._assert_balanced_legs(reversal_legs)
 
             # 3. Insert contrasiento journal entry
-            cursor.execute(
+            tx_cursor.execute(
                 """
                 INSERT INTO journal_entries (
                     journal_entry_id, idempotency_key, network, genesis_hash,
@@ -1060,7 +1227,7 @@ class EconomicLedger:
 
             # 4. Insert inverse ledger legs
             for leg in reversal_legs:
-                cursor.execute(
+                tx_cursor.execute(
                     """
                     INSERT INTO ledger_entries (
                         entry_id, journal_entry_id, agent_account, account_name,
@@ -1088,7 +1255,7 @@ class EconomicLedger:
                 "is_contrasiento": True,
             }
 
-            cursor.execute(
+            tx_cursor.execute(
                 """
                 INSERT INTO economic_movements (
                     movement_id, journal_entry_id, idempotency_key, agent_id,
@@ -1131,12 +1298,14 @@ class EconomicLedger:
                 ),
             )
 
-            cursor.execute("COMMIT;")
+            if manage_tx:
+                tx_cursor.execute("COMMIT;")
         except Exception:
-            try:
-                cursor.execute("ROLLBACK;")
-            except Exception:
-                pass
+            if manage_tx:
+                try:
+                    tx_cursor.execute("ROLLBACK;")
+                except Exception:
+                    pass
             raise
 
         reverted_orig = self.get_movement(movement_id)
@@ -1427,6 +1596,8 @@ class EconomicLedger:
         amount_base_units: int | str,
         network: str,
         token_mint: str,
+        genesis_hash: Optional[str] = None,
+        program_id: Optional[str] = None,
         status: Optional[str | MovementStatus] = None,
         provenance_source: Optional[str | ProvenanceSource] = None,
         evidence_hash: Optional[str] = None,
@@ -1436,6 +1607,7 @@ class EconomicLedger:
         incurred_at: Optional[int] = None,
         from_reserve_id: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
     ) -> AgentCost:
         """Records an agent operational cost, distinguishing realized expenses,
 
@@ -1467,121 +1639,93 @@ class EconomicLedger:
         incurred_time = incurred_at if incurred_at is not None else now
         meta = dict(metadata or {})
 
+        # Monetary context validation
+        net_val, gen_val, prog_val, mint_val = validate_monetary_context(
+            network=network,
+            genesis_hash=genesis_hash,
+            program_id=program_id,
+            token_mint=token_mint,
+        )
+
         # 2. Provenance & Status Enforcement:
         # Crucial Requirement: Do NOT declare EXTERNAL_VERIFIED simply for receiving a URL, file, or hash.
-        # Authentic verification strictly requires an authorized attestation_id.
+        # Authentic verification strictly requires an authorized attestation_id verified by a trusted verifier.
         stat_candidate = MovementStatus(status) if status else MovementStatus.PROVISIONAL
         prov_candidate = ProvenanceSource(provenance_source) if provenance_source else ProvenanceSource.MANUAL_ENTRY
 
-        if prov_candidate == ProvenanceSource.EXTERNAL_VERIFIED and not attestation_id:
-            raise LedgerValidationError(
-                "Cannot declare EXTERNAL_VERIFIED without verified attestation_id. "
-                "Evidence hash or URL alone is insufficient."
+        if prov_candidate == ProvenanceSource.EXTERNAL_VERIFIED or stat_candidate == MovementStatus.RECONCILED:
+            if not attestation_id or not attestation_id.strip():
+                raise LedgerValidationError(
+                    "Cannot declare EXTERNAL_VERIFIED or RECONCILED without verified attestation_id. "
+                    "Evidence hash or URL alone is insufficient."
+                )
+            if self._attestation_verifier is None:
+                raise LedgerValidationError(
+                    "No trusted attestation verifier configured: cannot assign EXTERNAL_VERIFIED or RECONCILED to costs. "
+                    "Evidence hash or URL alone is insufficient."
+                )
+            auth_by = meta.get("authorized_by")
+            verified = self._attestation_verifier.verify_attestation(
+                attestation_id=attestation_id.strip(),
+                authorized_by=auth_by,
+                evidence_hash=evidence_hash,
+                cost_data={
+                    "agent_account": agent_account,
+                    "category": cat_enum.value,
+                    "cost_nature": nat_enum.value,
+                    "amount_base_units": amount_int,
+                    "network": net_val,
+                    "token_mint": mint_val,
+                },
             )
-        if stat_candidate == MovementStatus.RECONCILED and not attestation_id:
-            raise LedgerValidationError(
-                "Initial cost cannot be recorded as RECONCILED without verified attestation_id."
-            )
+            if not verified:
+                raise LedgerValidationError(
+                    f"Attestation verification failed for attestation_id '{attestation_id}': unauthorized authority or forged attestation."
+                )
 
         prov_enum = prov_candidate
         stat_enum = stat_candidate
 
-        # 3. Idempotency Check
-        existing_row = self._conn.execute(
-            "SELECT * FROM agent_costs WHERE idempotency_key = ?;",
-            (clean_idempotency_key,),
-        ).fetchone()
-
-        if existing_row:
-            # Verify immutable semantic footprint
-            if (
-                existing_row["agent_account"] != agent_account
-                or existing_row["category"] != cat_enum.value
-                or existing_row["cost_nature"] != nat_enum.value
-                or existing_row["economic_period"] != clean_period
-                or existing_row["network"] != network
-                or existing_row["token_mint"] != token_mint
-                or int(existing_row["amount_base_units"]) != amount_int
-            ):
-                raise IdempotencyConflictError(
-                    f"Idempotency key '{clean_idempotency_key}' reused with mismatched parameters"
-                )
-            return self._row_to_cost(existing_row)
-
-        cost_id = f"cost_{uuid.uuid4().hex[:16]}"
-        journal_entry_id: Optional[str] = None
-        movement_id: Optional[str] = None
-
-        # 4. Double-Entry and Movement Processing depending on cost_nature
-        if nat_enum == CostNature.ESTIMATED:
-            # Pure estimation: does NOT affect double-entry ledger or treasury balances
-            pass
-        elif nat_enum == CostNature.ACCRUED_LIABILITY:
-            # Accrued liability (provisión): records expense and liability without moving cash
-            legs = [
-                {
-                    "account_name": f"EXPENSE:{cat_enum.value}",
-                    "entry_type": EntryType.DEBIT.value,
-                    "amount_base_units": amount_int,
-                },
-                {
-                    "account_name": "LIABILITY:ACCRUED_EXPENSES",
-                    "entry_type": EntryType.CREDIT.value,
-                    "amount_base_units": amount_int,
-                },
-            ]
-            mov = self.record_movement(
-                idempotency_key=f"mov:{clean_idempotency_key}",
-                agent_id=agent_id,
-                agent_account=agent_account,
-                owner_pubkey=owner_pubkey,
-                network=network,
-                genesis_hash=DEFAULT_GENESIS_HASH,
-                program_id=DEFAULT_PROGRAM_ID,
-                token_mint=token_mint,
-                amount_base_units=amount_int,
-                nature=MovementNature.PROVISION,
-                status=stat_enum,
-                provenance_source=prov_enum,
-                evidence_hash=evidence_hash,
-                attestation_id=attestation_id,
-                observed_at=incurred_time,
-                metadata={"cost_id": cost_id, "category": cat_enum.value},
-                custom_journal_legs=legs,
+        manage_tx = (cursor is None)
+        tx_cursor = cursor if cursor is not None else self._conn.cursor()
+        if manage_tx:
+            tx_cursor.execute("BEGIN IMMEDIATE;")
+        try:
+            # 3. Idempotency Check
+            tx_cursor.execute(
+                "SELECT * FROM agent_costs WHERE idempotency_key = ?;",
+                (clean_idempotency_key,),
             )
-            movement_id = mov.movement_id
-            journal_entry_id = mov.journal_entry_id
-        elif nat_enum == CostNature.REALIZED:
-            if from_reserve_id:
-                # Realized expense covered by an existing capital reserve
-                res_row = self._conn.execute(
-                    "SELECT * FROM agent_reserves WHERE reserve_id = ?;",
-                    (from_reserve_id,),
-                ).fetchone()
-                if not res_row:
-                    raise LedgerValidationError(f"Reserve '{from_reserve_id}' not found")
-                if res_row["agent_account"] != agent_account:
-                    raise LedgerValidationError("Reserve belongs to a different agent")
-                if res_row["network"] != network or res_row["token_mint"] != token_mint:
-                    raise LedgerValidationError("Reserve network/mint mismatch")
+            existing_row = tx_cursor.fetchone()
 
-                cur_reserved = int(res_row["current_reserved_base_units"])
-                if amount_int > cur_reserved:
-                    raise LedgerValidationError(
-                        f"Insufficient funds in reserve '{from_reserve_id}': available {cur_reserved}, requested {amount_int}"
+            if existing_row:
+                # Verify immutable semantic footprint
+                if (
+                    existing_row["agent_account"] != agent_account
+                    or existing_row["category"] != cat_enum.value
+                    or existing_row["cost_nature"] != nat_enum.value
+                    or existing_row["economic_period"] != clean_period
+                    or existing_row["network"] != net_val
+                    or existing_row["token_mint"] != mint_val
+                    or int(existing_row["amount_base_units"]) != amount_int
+                ):
+                    raise IdempotencyConflictError(
+                        f"Idempotency key '{clean_idempotency_key}' reused with mismatched parameters"
                     )
+                if manage_tx:
+                    tx_cursor.execute("COMMIT;")
+                return self._row_to_cost(existing_row)
 
-                new_reserved = cur_reserved - amount_int
-                new_status = ReserveStatus.DEPLETED.value if new_reserved == 0 else ReserveStatus.ACTIVE.value
-                self._conn.execute(
-                    "UPDATE agent_reserves SET current_reserved_base_units = ?, status = ?, updated_at = ? WHERE reserve_id = ?;",
-                    (str(new_reserved), new_status, now, from_reserve_id),
-                )
+            cost_id = f"cost_{uuid.uuid4().hex[:16]}"
+            journal_entry_id: Optional[str] = None
+            movement_id: Optional[str] = None
 
-                meta["from_reserve_id"] = from_reserve_id
-                meta["consumed_from_reserve_type"] = res_row["reserve_type"]
-
-                # Legs debit expense and credit the reserved asset account (NOT treasury cash)
+            # 4. Double-Entry and Movement Processing depending on cost_nature
+            if nat_enum == CostNature.ESTIMATED:
+                # Pure estimation: does NOT affect double-entry ledger or treasury balances
+                pass
+            elif nat_enum == CostNature.ACCRUED_LIABILITY:
+                # Accrued liability (provisión): records expense and liability without moving cash
                 legs = [
                     {
                         "account_name": f"EXPENSE:{cat_enum.value}",
@@ -1589,7 +1733,7 @@ class EconomicLedger:
                         "amount_base_units": amount_int,
                     },
                     {
-                        "account_name": f"ASSET:RESERVED:{res_row['reserve_type']}",
+                        "account_name": "LIABILITY:ACCRUED_EXPENSES",
                         "entry_type": EntryType.CREDIT.value,
                         "amount_base_units": amount_int,
                     },
@@ -1599,47 +1743,12 @@ class EconomicLedger:
                     agent_id=agent_id,
                     agent_account=agent_account,
                     owner_pubkey=owner_pubkey,
-                    network=network,
-                    genesis_hash=DEFAULT_GENESIS_HASH,
-                    program_id=DEFAULT_PROGRAM_ID,
-                    token_mint=token_mint,
+                    network=net_val,
+                    genesis_hash=gen_val,
+                    program_id=prog_val,
+                    token_mint=mint_val,
                     amount_base_units=amount_int,
-                    nature=MovementNature.EXPENSE,
-                    status=stat_enum,
-                    provenance_source=prov_enum,
-                    evidence_hash=evidence_hash,
-                    attestation_id=attestation_id,
-                    observed_at=incurred_time,
-                    metadata={"cost_id": cost_id, "from_reserve_id": from_reserve_id},
-                    custom_journal_legs=legs,
-                )
-                movement_id = mov.movement_id
-                journal_entry_id = mov.journal_entry_id
-            else:
-                # Direct realized operational expense paid from treasury
-                legs = [
-                    {
-                        "account_name": f"EXPENSE:{cat_enum.value}",
-                        "entry_type": EntryType.DEBIT.value,
-                        "amount_base_units": amount_int,
-                    },
-                    {
-                        "account_name": "ASSET:TREASURY",
-                        "entry_type": EntryType.CREDIT.value,
-                        "amount_base_units": amount_int,
-                    },
-                ]
-                mov = self.record_movement(
-                    idempotency_key=f"mov:{clean_idempotency_key}",
-                    agent_id=agent_id,
-                    agent_account=agent_account,
-                    owner_pubkey=owner_pubkey,
-                    network=network,
-                    genesis_hash=DEFAULT_GENESIS_HASH,
-                    program_id=DEFAULT_PROGRAM_ID,
-                    token_mint=token_mint,
-                    amount_base_units=amount_int,
-                    nature=MovementNature.EXPENSE,
+                    nature=MovementNature.PROVISION,
                     status=stat_enum,
                     provenance_source=prov_enum,
                     evidence_hash=evidence_hash,
@@ -1647,74 +1756,187 @@ class EconomicLedger:
                     observed_at=incurred_time,
                     metadata={"cost_id": cost_id, "category": cat_enum.value},
                     custom_journal_legs=legs,
+                    cursor=tx_cursor,
                 )
                 movement_id = mov.movement_id
                 journal_entry_id = mov.journal_entry_id
+            elif nat_enum == CostNature.REALIZED:
+                if from_reserve_id:
+                    # Realized expense covered by an existing capital reserve
+                    tx_cursor.execute(
+                        "SELECT * FROM agent_reserves WHERE reserve_id = ?;",
+                        (from_reserve_id,),
+                    )
+                    res_row = tx_cursor.fetchone()
+                    if not res_row:
+                        raise LedgerValidationError(f"Reserve '{from_reserve_id}' not found")
+                    if res_row["agent_account"] != agent_account:
+                        raise LedgerValidationError("Reserve belongs to a different agent")
+                    if res_row["network"] != net_val or res_row["token_mint"] != mint_val:
+                        raise LedgerValidationError("Reserve network/mint mismatch")
 
-        # 5. Insert into agent_costs
-        self._conn.execute(
-            """
-            INSERT INTO agent_costs (
-                cost_id, idempotency_key, agent_id, agent_account, owner_pubkey,
-                category, cost_nature, economic_period, network, token_mint,
-                amount_base_units, amount_str, status, provenance_source,
-                evidence_hash, evidence_url, attestation_id, description,
-                journal_entry_id, movement_id, reversal_of_cost_id,
-                created_at, incurred_at, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """,
-            (
-                cost_id,
-                clean_idempotency_key,
-                agent_id,
-                agent_account,
-                owner_pubkey,
-                cat_enum.value,
-                nat_enum.value,
-                clean_period,
-                network,
-                token_mint,
-                amount_str,
-                amount_str,
-                stat_enum.value,
-                prov_enum.value,
-                evidence_hash,
-                evidence_url,
-                attestation_id,
-                description,
-                journal_entry_id,
-                movement_id,
-                None,
-                now,
-                incurred_time,
-                json.dumps(meta),
-            ),
-        )
+                    cur_reserved = int(res_row["current_reserved_base_units"])
+                    if amount_int > cur_reserved:
+                        raise LedgerValidationError(
+                            f"Insufficient funds in reserve '{from_reserve_id}': available {cur_reserved}, requested {amount_int}"
+                        )
 
-        # 6. If drawn from reserve, record audit trail in reserve_transactions (after cost_id exists)
-        if nat_enum == CostNature.REALIZED and from_reserve_id:
-            rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
-            self._conn.execute(
+                    new_reserved = cur_reserved - amount_int
+                    new_status = ReserveStatus.DEPLETED.value if new_reserved == 0 else ReserveStatus.ACTIVE.value
+                    tx_cursor.execute(
+                        "UPDATE agent_reserves SET current_reserved_base_units = ?, status = ?, updated_at = ? WHERE reserve_id = ?;",
+                        (str(new_reserved), new_status, now, from_reserve_id),
+                    )
+
+                    meta["from_reserve_id"] = from_reserve_id
+                    meta["consumed_from_reserve_type"] = res_row["reserve_type"]
+
+                    # Legs debit expense and credit the reserved asset account (NOT treasury cash)
+                    legs = [
+                        {
+                            "account_name": f"EXPENSE:{cat_enum.value}",
+                            "entry_type": EntryType.DEBIT.value,
+                            "amount_base_units": amount_int,
+                        },
+                        {
+                            "account_name": f"ASSET:RESERVED:{res_row['reserve_type']}",
+                            "entry_type": EntryType.CREDIT.value,
+                            "amount_base_units": amount_int,
+                        },
+                    ]
+                    mov = self.record_movement(
+                        idempotency_key=f"mov:{clean_idempotency_key}",
+                        agent_id=agent_id,
+                        agent_account=agent_account,
+                        owner_pubkey=owner_pubkey,
+                        network=net_val,
+                        genesis_hash=gen_val,
+                        program_id=prog_val,
+                        token_mint=mint_val,
+                        amount_base_units=amount_int,
+                        nature=MovementNature.EXPENSE,
+                        status=stat_enum,
+                        provenance_source=prov_enum,
+                        evidence_hash=evidence_hash,
+                        attestation_id=attestation_id,
+                        observed_at=incurred_time,
+                        metadata={"cost_id": cost_id, "from_reserve_id": from_reserve_id},
+                        custom_journal_legs=legs,
+                        cursor=tx_cursor,
+                    )
+                    movement_id = mov.movement_id
+                    journal_entry_id = mov.journal_entry_id
+                else:
+                    # Direct realized operational expense paid from treasury
+                    legs = [
+                        {
+                            "account_name": f"EXPENSE:{cat_enum.value}",
+                            "entry_type": EntryType.DEBIT.value,
+                            "amount_base_units": amount_int,
+                        },
+                        {
+                            "account_name": "ASSET:TREASURY",
+                            "entry_type": EntryType.CREDIT.value,
+                            "amount_base_units": amount_int,
+                        },
+                    ]
+                    mov = self.record_movement(
+                        idempotency_key=f"mov:{clean_idempotency_key}",
+                        agent_id=agent_id,
+                        agent_account=agent_account,
+                        owner_pubkey=owner_pubkey,
+                        network=net_val,
+                        genesis_hash=gen_val,
+                        program_id=prog_val,
+                        token_mint=mint_val,
+                        amount_base_units=amount_int,
+                        nature=MovementNature.EXPENSE,
+                        status=stat_enum,
+                        provenance_source=prov_enum,
+                        evidence_hash=evidence_hash,
+                        attestation_id=attestation_id,
+                        observed_at=incurred_time,
+                        metadata={"cost_id": cost_id, "category": cat_enum.value},
+                        custom_journal_legs=legs,
+                        cursor=tx_cursor,
+                    )
+                    movement_id = mov.movement_id
+                    journal_entry_id = mov.journal_entry_id
+
+            # 5. Insert into agent_costs
+            tx_cursor.execute(
                 """
-                INSERT INTO reserve_transactions (
-                    transaction_id, reserve_id, idempotency_key, action,
-                    amount_base_units, associated_cost_id, journal_entry_id,
-                    movement_id, created_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                INSERT INTO agent_costs (
+                    cost_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                    category, cost_nature, economic_period, network, token_mint,
+                    amount_base_units, amount_str, status, provenance_source,
+                    evidence_hash, evidence_url, attestation_id, description,
+                    journal_entry_id, movement_id, reversal_of_cost_id,
+                    created_at, incurred_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
-                    rtx_id,
-                    from_reserve_id,
-                    f"consume:{clean_idempotency_key}",
-                    ReserveAction.CONSUME.value,
-                    amount_str,
                     cost_id,
+                    clean_idempotency_key,
+                    agent_id,
+                    agent_account,
+                    owner_pubkey,
+                    cat_enum.value,
+                    nat_enum.value,
+                    clean_period,
+                    net_val,
+                    mint_val,
+                    amount_str,
+                    amount_str,
+                    stat_enum.value,
+                    prov_enum.value,
+                    evidence_hash,
+                    evidence_url,
+                    attestation_id,
+                    description,
                     journal_entry_id,
                     movement_id,
+                    None,
                     now,
-                    json.dumps({"cost_id": cost_id, "category": cat_enum.value}),
+                    incurred_time,
+                    json.dumps(meta),
                 ),
             )
+
+            # 6. If drawn from reserve, record audit trail in reserve_transactions (after cost_id exists)
+            if nat_enum == CostNature.REALIZED and from_reserve_id:
+                rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
+                tx_cursor.execute(
+                    """
+                    INSERT INTO reserve_transactions (
+                        transaction_id, reserve_id, idempotency_key, action,
+                        amount_base_units, associated_cost_id, journal_entry_id,
+                        movement_id, created_at, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        rtx_id,
+                        from_reserve_id,
+                        f"consume:{clean_idempotency_key}",
+                        ReserveAction.CONSUME.value,
+                        amount_str,
+                        cost_id,
+                        journal_entry_id,
+                        movement_id,
+                        now,
+                        json.dumps({"cost_id": cost_id, "category": cat_enum.value}),
+                    ),
+                )
+
+            if manage_tx:
+                tx_cursor.execute("COMMIT;")
+        except Exception:
+            if manage_tx:
+                try:
+                    tx_cursor.execute("ROLLBACK;")
+                except Exception:
+                    pass
+            raise
 
         return self.get_cost(cost_id)  # type: ignore
 
@@ -1813,134 +2035,156 @@ class EconomicLedger:
         reason: str,
         authorized_by: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
     ) -> tuple[AgentCost, AgentCost]:
         """Reverts an operational cost, emitting compensating accounting entries and restoring reserves."""
         effective_key = idempotency_key or f"revert_cost:{cost_id}"
         clean_idempotency_key = effective_key.strip()
         auth_clean = (authorized_by or "conatus:protocol:cost_reverser:v1").strip()
 
-        cost_row = self._conn.execute(
-            "SELECT * FROM agent_costs WHERE cost_id = ?;",
-            (cost_id,),
-        ).fetchone()
-        if not cost_row:
-            raise LedgerValidationError(f"Cost '{cost_id}' not found")
-
-        orig_cost = self._row_to_cost(cost_row)
-        if orig_cost.status == MovementStatus.REVERTED:
-            comp_row = self._conn.execute(
-                "SELECT * FROM agent_costs WHERE reversal_of_cost_id = ?;",
+        manage_tx = (cursor is None)
+        tx_cursor = cursor if cursor is not None else self._conn.cursor()
+        if manage_tx:
+            tx_cursor.execute("BEGIN IMMEDIATE;")
+        try:
+            tx_cursor.execute(
+                "SELECT * FROM agent_costs WHERE cost_id = ?;",
                 (cost_id,),
-            ).fetchone()
-            if comp_row:
-                return orig_cost, self._row_to_cost(comp_row)
-            raise LedgerValidationError(f"Cost '{cost_id}' already reverted")
-
-        now = int(time.time())
-        comp_cost_id = f"comp_{uuid.uuid4().hex[:16]}"
-        comp_movement_id: Optional[str] = None
-        comp_journal_id: Optional[str] = None
-
-        # Revert movement if exists
-        if orig_cost.movement_id:
-            rev_mov, comp_mov = self.revert_movement(
-                orig_cost.movement_id,
-                reason=reason,
-                authorized_by=auth_clean,
             )
-            comp_movement_id = comp_mov.movement_id
-            comp_journal_id = comp_mov.journal_entry_id
+            cost_row = tx_cursor.fetchone()
+            if not cost_row:
+                raise LedgerValidationError(f"Cost '{cost_id}' not found")
 
-        # If it was drawn from a reserve, restore the reserve balance
-        from_res_id = orig_cost.metadata.get("from_reserve_id")
-        if from_res_id:
-            res_row = self._conn.execute(
-                "SELECT * FROM agent_reserves WHERE reserve_id = ?;",
-                (from_res_id,),
-            ).fetchone()
-            if res_row:
-                restored = int(res_row["current_reserved_base_units"]) + orig_cost.amount_base_units
-                self._conn.execute(
-                    """
-                    UPDATE agent_reserves
-                    SET current_reserved_base_units = ?, status = 'ACTIVE', updated_at = ?
-                    WHERE reserve_id = ?;
-                    """,
-                    (str(restored), now, from_res_id),
+            orig_cost = self._row_to_cost(cost_row)
+            if orig_cost.status == MovementStatus.REVERTED:
+                tx_cursor.execute(
+                    "SELECT * FROM agent_costs WHERE reversal_of_cost_id = ?;",
+                    (cost_id,),
                 )
-                rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
-                self._conn.execute(
-                    """
-                    INSERT INTO reserve_transactions (
-                        transaction_id, reserve_id, idempotency_key, action,
-                        amount_base_units, associated_cost_id, journal_entry_id,
-                        movement_id, created_at, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                    """,
-                    (
-                        rtx_id,
-                        from_res_id,
-                        f"restore:{clean_idempotency_key}",
-                        ReserveAction.ALLOCATE.value,
-                        orig_cost.amount_str,
-                        cost_id,
-                        comp_journal_id,
-                        comp_movement_id,
-                        now,
-                        json.dumps({"reason": f"revert_cost:{reason}"}),
-                    ),
+                comp_row = tx_cursor.fetchone()
+                if comp_row:
+                    if manage_tx:
+                        tx_cursor.execute("COMMIT;")
+                    return orig_cost, self._row_to_cost(comp_row)
+                raise LedgerValidationError(f"Cost '{cost_id}' already reverted")
+
+            now = int(time.time())
+            comp_cost_id = f"comp_{uuid.uuid4().hex[:16]}"
+            comp_movement_id: Optional[str] = None
+            comp_journal_id: Optional[str] = None
+
+            # Revert movement if exists
+            if orig_cost.movement_id:
+                rev_mov, comp_mov = self.revert_movement(
+                    orig_cost.movement_id,
+                    reason=reason,
+                    authorized_by=auth_clean,
+                    cursor=tx_cursor,
                 )
+                comp_movement_id = comp_mov.movement_id
+                comp_journal_id = comp_mov.journal_entry_id
 
-        # Mark original cost as REVERTED
-        self._conn.execute(
-            "UPDATE agent_costs SET status = 'REVERTED' WHERE cost_id = ?;",
-            (cost_id,),
-        )
+            # If it was drawn from a reserve, restore the reserve balance
+            from_res_id = orig_cost.metadata.get("from_reserve_id")
+            if from_res_id:
+                tx_cursor.execute(
+                    "SELECT * FROM agent_reserves WHERE reserve_id = ?;",
+                    (from_res_id,),
+                )
+                res_row = tx_cursor.fetchone()
+                if res_row:
+                    restored = int(res_row["current_reserved_base_units"]) + orig_cost.amount_base_units
+                    tx_cursor.execute(
+                        """
+                        UPDATE agent_reserves
+                        SET current_reserved_base_units = ?, status = 'ACTIVE', updated_at = ?
+                        WHERE reserve_id = ?;
+                        """,
+                        (str(restored), now, from_res_id),
+                    )
+                    rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
+                    tx_cursor.execute(
+                        """
+                        INSERT INTO reserve_transactions (
+                            transaction_id, reserve_id, idempotency_key, action,
+                            amount_base_units, associated_cost_id, journal_entry_id,
+                            movement_id, created_at, metadata_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        """,
+                        (
+                            rtx_id,
+                            from_res_id,
+                            f"restore:{clean_idempotency_key}",
+                            ReserveAction.ALLOCATE.value,
+                            orig_cost.amount_str,
+                            cost_id,
+                            comp_journal_id,
+                            comp_movement_id,
+                            now,
+                            json.dumps({"reason": f"revert_cost:{reason}"}),
+                        ),
+                    )
 
-        # Insert compensating cost record
-        comp_meta = {
-            "reversal_of_cost_id": cost_id,
-            "reason": reason,
-            "authorized_by": auth_clean,
-        }
-        self._conn.execute(
-            """
-            INSERT INTO agent_costs (
-                cost_id, idempotency_key, agent_id, agent_account, owner_pubkey,
-                category, cost_nature, economic_period, network, token_mint,
-                amount_base_units, amount_str, status, provenance_source,
-                evidence_hash, evidence_url, attestation_id, description,
-                journal_entry_id, movement_id, reversal_of_cost_id,
-                created_at, incurred_at, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """,
-            (
-                comp_cost_id,
-                clean_idempotency_key,
-                orig_cost.agent_id,
-                orig_cost.agent_account,
-                orig_cost.owner_pubkey,
-                orig_cost.category.value,
-                orig_cost.cost_nature.value,
-                orig_cost.economic_period,
-                orig_cost.network,
-                orig_cost.token_mint,
-                orig_cost.amount_str,
-                orig_cost.amount_str,
-                MovementStatus.REVERTED.value,
-                ProvenanceSource.MANUAL_ENTRY.value,
-                None,
-                None,
-                None,
-                f"Compensating reversal of cost {cost_id}: {reason}",
-                comp_journal_id,
-                comp_movement_id,
-                cost_id,
-                now,
-                now,
-                json.dumps(comp_meta),
-            ),
-        )
+            # Mark original cost as REVERTED
+            tx_cursor.execute(
+                "UPDATE agent_costs SET status = 'REVERTED' WHERE cost_id = ?;",
+                (cost_id,),
+            )
+
+            # Insert compensating cost record
+            comp_meta = {
+                "reversal_of_cost_id": cost_id,
+                "reason": reason,
+                "authorized_by": auth_clean,
+            }
+            tx_cursor.execute(
+                """
+                INSERT INTO agent_costs (
+                    cost_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                    category, cost_nature, economic_period, network, token_mint,
+                    amount_base_units, amount_str, status, provenance_source,
+                    evidence_hash, evidence_url, attestation_id, description,
+                    journal_entry_id, movement_id, reversal_of_cost_id,
+                    created_at, incurred_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    comp_cost_id,
+                    clean_idempotency_key,
+                    orig_cost.agent_id,
+                    orig_cost.agent_account,
+                    orig_cost.owner_pubkey,
+                    orig_cost.category.value,
+                    orig_cost.cost_nature.value,
+                    orig_cost.economic_period,
+                    orig_cost.network,
+                    orig_cost.token_mint,
+                    orig_cost.amount_str,
+                    orig_cost.amount_str,
+                    MovementStatus.REVERTED.value,
+                    ProvenanceSource.MANUAL_ENTRY.value,
+                    None,
+                    None,
+                    None,
+                    f"Compensating reversal of cost {cost_id}: {reason}",
+                    comp_journal_id,
+                    comp_movement_id,
+                    cost_id,
+                    now,
+                    now,
+                    json.dumps(comp_meta),
+                ),
+            )
+
+            if manage_tx:
+                tx_cursor.execute("COMMIT;")
+        except Exception:
+            if manage_tx:
+                try:
+                    tx_cursor.execute("ROLLBACK;")
+                except Exception:
+                    pass
+            raise
 
         return self.get_cost(cost_id), self.get_cost(comp_cost_id)  # type: ignore
 
@@ -1959,13 +2203,17 @@ class EconomicLedger:
         amount_base_units: int | str,
         network: str,
         token_mint: str,
+        genesis_hash: Optional[str] = None,
+        program_id: Optional[str] = None,
         target_amount_base_units: Optional[int | str] = None,
         description: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
     ) -> AgentReserve:
         """Allocates unencumbered treasury capital into an agent reserve fund.
 
         A reserve is capital segregation, NOT an expense, and does not reduce agent net worth.
+        NOTE: Off-chain accounting reserves do not directly freeze SPL tokens on Solana.
         """
         if not idempotency_key or not idempotency_key.strip():
             raise LedgerValidationError("idempotency_key cannot be empty")
@@ -1980,134 +2228,184 @@ class EconomicLedger:
         amount_str = str(amount_int)
         now = int(time.time())
 
-        # Check idempotency on reserve transaction
-        existing_tx = self._conn.execute(
-            "SELECT * FROM reserve_transactions WHERE idempotency_key = ?;",
-            (clean_idempotency_key,),
-        ).fetchone()
-        if existing_tx:
-            res = self.get_reserve(existing_tx["reserve_id"])
-            if res:
-                return res
+        # Monetary context validation
+        net_val, gen_val, prog_val, mint_val = validate_monetary_context(
+            network=network,
+            genesis_hash=genesis_hash,
+            program_id=program_id,
+            token_mint=token_mint,
+        )
 
-        # Validate agent available balance
-        bals = self.get_balances(agent_account, network=network, token_mint=token_mint)
-        if not bals:
-            raise LedgerValidationError(
-                f"No balance found for agent '{agent_account}' on network '{network}' and mint '{token_mint}'"
+        manage_tx = (cursor is None)
+        tx_cursor = cursor if cursor is not None else self._conn.cursor()
+        if manage_tx:
+            tx_cursor.execute("BEGIN IMMEDIATE;")
+        try:
+            # Check idempotency on reserve transaction
+            tx_cursor.execute(
+                "SELECT * FROM reserve_transactions WHERE idempotency_key = ?;",
+                (clean_idempotency_key,),
             )
-        bal = bals[0]
-        avail = bal.total_effective_balance - bal.reserved_balance
-        if amount_int > avail:
-            raise LedgerValidationError(
-                f"Insufficient available balance ({avail}) to allocate reserve of {amount_int}"
-            )
+            existing_tx = tx_cursor.fetchone()
+            if existing_tx:
+                res = self.get_reserve(existing_tx["reserve_id"])
+                if res:
+                    if manage_tx:
+                        tx_cursor.execute("COMMIT;")
+                    return res
 
-        # Check if an existing reserve exists for (agent_account, reserve_type, network, token_mint)
-        existing_res = self._conn.execute(
-            """
-            SELECT * FROM agent_reserves
-            WHERE agent_account = ? AND reserve_type = ? AND network = ? AND token_mint = ?;
-            """,
-            (agent_account, type_enum.value, network, token_mint),
-        ).fetchone()
-
-        if existing_res:
-            reserve_id = existing_res["reserve_id"]
-            cur_reserved = int(existing_res["current_reserved_base_units"]) + amount_int
-            target_int = int(existing_res["target_amount_base_units"]) if target_amount_base_units is None else validate_base_units(target_amount_base_units, allow_zero=True)
-            self._conn.execute(
+            # Reconciled Capital Availability Check strictly from ASSET:TREASURY in the partition (net_val, gen_val, mint_val)
+            tx_cursor.execute(
                 """
-                UPDATE agent_reserves
-                SET current_reserved_base_units = ?, target_amount_base_units = ?, status = 'ACTIVE', updated_at = ?
-                WHERE reserve_id = ?;
+                SELECT
+                    le.entry_type,
+                    le.amount_base_units,
+                    je.status
+                FROM ledger_entries le
+                JOIN journal_entries je ON le.journal_entry_id = je.journal_entry_id
+                WHERE le.agent_account = ?
+                  AND le.account_name = 'ASSET:TREASURY'
+                  AND je.network = ?
+                  AND je.genesis_hash = ?
+                  AND je.token_mint = ?;
                 """,
-                (str(cur_reserved), str(target_int), now, reserve_id),
+                (agent_account, net_val, gen_val, mint_val),
             )
-        else:
-            reserve_id = f"res_{uuid.uuid4().hex[:16]}"
-            target_int = amount_int if target_amount_base_units is None else validate_base_units(target_amount_base_units, allow_zero=True)
-            self._conn.execute(
+            rows = tx_cursor.fetchall()
+            rec_debits = 0
+            all_credits = 0
+            for r in rows:
+                amt = int(r["amount_base_units"])
+                if r["entry_type"] == EntryType.DEBIT.value:
+                    if r["status"] == MovementStatus.RECONCILED.value:
+                        rec_debits += amt
+                elif r["entry_type"] == EntryType.CREDIT.value:
+                    all_credits += amt
+
+            reconciled_available = rec_debits - all_credits
+            if reconciled_available <= 0 or amount_int > reconciled_available:
+                raise LedgerValidationError(
+                    f"Insufficient reconciled funds in ASSET:TREASURY: available {max(0, reconciled_available)}, requested {amount_int}. "
+                    f"Reserves cannot be funded from provisional or simulated income."
+                )
+
+            # Check if an existing reserve exists for (agent_account, reserve_type, network, token_mint)
+            tx_cursor.execute(
                 """
-                INSERT INTO agent_reserves (
-                    reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
-                    reserve_type, network, token_mint, target_amount_base_units,
-                    current_reserved_base_units, status, created_at, updated_at,
-                    description, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                SELECT * FROM agent_reserves
+                WHERE agent_account = ? AND reserve_type = ? AND network = ? AND token_mint = ?;
+                """,
+                (agent_account, type_enum.value, net_val, mint_val),
+            )
+            existing_res = tx_cursor.fetchone()
+
+            if existing_res:
+                reserve_id = existing_res["reserve_id"]
+                cur_reserved = int(existing_res["current_reserved_base_units"]) + amount_int
+                target_int = int(existing_res["target_amount_base_units"]) if target_amount_base_units is None else validate_base_units(target_amount_base_units, allow_zero=True)
+                tx_cursor.execute(
+                    """
+                    UPDATE agent_reserves
+                    SET current_reserved_base_units = ?, target_amount_base_units = ?, status = 'ACTIVE', updated_at = ?
+                    WHERE reserve_id = ?;
+                    """,
+                    (str(cur_reserved), str(target_int), now, reserve_id),
+                )
+            else:
+                reserve_id = f"res_{uuid.uuid4().hex[:16]}"
+                target_int = amount_int if target_amount_base_units is None else validate_base_units(target_amount_base_units, allow_zero=True)
+                tx_cursor.execute(
+                    """
+                    INSERT INTO agent_reserves (
+                        reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                        reserve_type, network, token_mint, target_amount_base_units,
+                        current_reserved_base_units, status, created_at, updated_at,
+                        description, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        reserve_id,
+                        clean_idempotency_key,
+                        agent_id,
+                        agent_account,
+                        owner_pubkey,
+                        type_enum.value,
+                        net_val,
+                        mint_val,
+                        str(target_int),
+                        amount_str,
+                        ReserveStatus.ACTIVE.value,
+                        now,
+                        now,
+                        description,
+                        json.dumps(metadata or {}),
+                    ),
+                )
+
+            # Double-entry: Debit ASSET:RESERVED:<TYPE>, Credit ASSET:TREASURY
+            legs = [
+                {
+                    "account_name": f"ASSET:RESERVED:{type_enum.value}",
+                    "entry_type": EntryType.DEBIT.value,
+                    "amount_base_units": amount_int,
+                },
+                {
+                    "account_name": "ASSET:TREASURY",
+                    "entry_type": EntryType.CREDIT.value,
+                    "amount_base_units": amount_int,
+                },
+            ]
+            mov = self.record_movement(
+                idempotency_key=f"mov_res:{clean_idempotency_key}",
+                agent_id=agent_id,
+                agent_account=agent_account,
+                owner_pubkey=owner_pubkey,
+                network=net_val,
+                genesis_hash=gen_val,
+                program_id=prog_val,
+                token_mint=mint_val,
+                amount_base_units=amount_int,
+                nature=MovementNature.RESERVE,
+                status=MovementStatus.PROVISIONAL,
+                provenance_source=ProvenanceSource.MANUAL_ENTRY,
+                observed_at=now,
+                metadata={"reserve_id": reserve_id, "reserve_type": type_enum.value},
+                custom_journal_legs=legs,
+                cursor=tx_cursor,
+            )
+
+            rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
+            tx_cursor.execute(
+                """
+                INSERT INTO reserve_transactions (
+                    transaction_id, reserve_id, idempotency_key, action,
+                    amount_base_units, associated_cost_id, journal_entry_id,
+                    movement_id, created_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
+                    rtx_id,
                     reserve_id,
                     clean_idempotency_key,
-                    agent_id,
-                    agent_account,
-                    owner_pubkey,
-                    type_enum.value,
-                    network,
-                    token_mint,
-                    str(target_int),
+                    ReserveAction.ALLOCATE.value,
                     amount_str,
-                    ReserveStatus.ACTIVE.value,
+                    None,
+                    mov.journal_entry_id,
+                    mov.movement_id,
                     now,
-                    now,
-                    description,
                     json.dumps(metadata or {}),
                 ),
             )
 
-        # Double-entry: Debit ASSET:RESERVED:<TYPE>, Credit ASSET:TREASURY
-        legs = [
-            {
-                "account_name": f"ASSET:RESERVED:{type_enum.value}",
-                "entry_type": EntryType.DEBIT.value,
-                "amount_base_units": amount_int,
-            },
-            {
-                "account_name": "ASSET:TREASURY",
-                "entry_type": EntryType.CREDIT.value,
-                "amount_base_units": amount_int,
-            },
-        ]
-        mov = self.record_movement(
-            idempotency_key=f"mov_res:{clean_idempotency_key}",
-            agent_id=agent_id,
-            agent_account=agent_account,
-            owner_pubkey=owner_pubkey,
-            network=network,
-            genesis_hash=DEFAULT_GENESIS_HASH,
-            program_id=DEFAULT_PROGRAM_ID,
-            token_mint=token_mint,
-            amount_base_units=amount_int,
-            nature=MovementNature.RESERVE,
-            status=MovementStatus.PROVISIONAL,
-            provenance_source=ProvenanceSource.MANUAL_ENTRY,
-            observed_at=now,
-            metadata={"reserve_id": reserve_id, "reserve_type": type_enum.value},
-            custom_journal_legs=legs,
-        )
-
-        rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
-        self._conn.execute(
-            """
-            INSERT INTO reserve_transactions (
-                transaction_id, reserve_id, idempotency_key, action,
-                amount_base_units, associated_cost_id, journal_entry_id,
-                movement_id, created_at, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """,
-            (
-                rtx_id,
-                reserve_id,
-                clean_idempotency_key,
-                ReserveAction.ALLOCATE.value,
-                amount_str,
-                None,
-                mov.journal_entry_id,
-                mov.movement_id,
-                now,
-                json.dumps(metadata or {}),
-            ),
-        )
+            if manage_tx:
+                tx_cursor.execute("COMMIT;")
+        except Exception:
+            if manage_tx:
+                try:
+                    tx_cursor.execute("ROLLBACK;")
+                except Exception:
+                    pass
+            raise
 
         return self.get_reserve(reserve_id)  # type: ignore
 
@@ -2119,103 +2417,130 @@ class EconomicLedger:
         amount_base_units: int | str,
         reason: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
     ) -> AgentReserve:
         """Releases segregated reserve funds back to available unencumbered treasury."""
         if not idempotency_key or not idempotency_key.strip():
             raise LedgerValidationError("idempotency_key cannot be empty")
         clean_idempotency_key = idempotency_key.strip()
 
-        res_row = self._conn.execute(
-            "SELECT * FROM agent_reserves WHERE reserve_id = ?;",
-            (reserve_id,),
-        ).fetchone()
-        if not res_row:
-            raise LedgerValidationError(f"Reserve '{reserve_id}' not found")
+        manage_tx = (cursor is None)
+        tx_cursor = cursor if cursor is not None else self._conn.cursor()
+        if manage_tx:
+            tx_cursor.execute("BEGIN IMMEDIATE;")
+        try:
+            tx_cursor.execute(
+                "SELECT * FROM agent_reserves WHERE reserve_id = ?;",
+                (reserve_id,),
+            )
+            res_row = tx_cursor.fetchone()
+            if not res_row:
+                raise LedgerValidationError(f"Reserve '{reserve_id}' not found")
 
-        amount_int = validate_base_units(amount_base_units, allow_zero=False)
-        amount_str = str(amount_int)
-        cur_reserved = int(res_row["current_reserved_base_units"])
-        if amount_int > cur_reserved:
-            raise LedgerValidationError(
-                f"Release amount ({amount_int}) exceeds current reserve balance ({cur_reserved})"
+            amount_int = validate_base_units(amount_base_units, allow_zero=False)
+            amount_str = str(amount_int)
+            cur_reserved = int(res_row["current_reserved_base_units"])
+            if amount_int > cur_reserved:
+                raise LedgerValidationError(
+                    f"Release amount ({amount_int}) exceeds current reserve balance ({cur_reserved})"
+                )
+
+            now = int(time.time())
+
+            # Check idempotency
+            tx_cursor.execute(
+                "SELECT * FROM reserve_transactions WHERE idempotency_key = ?;",
+                (clean_idempotency_key,),
+            )
+            existing_tx = tx_cursor.fetchone()
+            if existing_tx:
+                res = self.get_reserve(reserve_id)
+                if res:
+                    if manage_tx:
+                        tx_cursor.execute("COMMIT;")
+                    return res
+
+            new_reserved = cur_reserved - amount_int
+            new_status = ReserveStatus.CLOSED.value if new_reserved == 0 else ReserveStatus.ACTIVE.value
+            tx_cursor.execute(
+                """
+                UPDATE agent_reserves
+                SET current_reserved_base_units = ?, status = ?, updated_at = ?
+                WHERE reserve_id = ?;
+                """,
+                (str(new_reserved), new_status, now, reserve_id),
             )
 
-        now = int(time.time())
+            # Releasing a reserve returns funds to ASSET:TREASURY as RECONCILED
+            net_val, gen_val, prog_val, mint_val = validate_monetary_context(
+                network=res_row["network"],
+                token_mint=res_row["token_mint"],
+            )
 
-        # Check idempotency
-        existing_tx = self._conn.execute(
-            "SELECT * FROM reserve_transactions WHERE idempotency_key = ?;",
-            (clean_idempotency_key,),
-        ).fetchone()
-        if existing_tx:
-            res = self.get_reserve(reserve_id)
-            if res:
-                return res
+            # Double-entry: Debit ASSET:TREASURY, Credit ASSET:RESERVED:<TYPE>
+            legs = [
+                {
+                    "account_name": "ASSET:TREASURY",
+                    "entry_type": EntryType.DEBIT.value,
+                    "amount_base_units": amount_int,
+                },
+                {
+                    "account_name": f"ASSET:RESERVED:{res_row['reserve_type']}",
+                    "entry_type": EntryType.CREDIT.value,
+                    "amount_base_units": amount_int,
+                },
+            ]
+            mov = self.record_movement(
+                idempotency_key=f"mov_rel:{clean_idempotency_key}",
+                agent_id=res_row["agent_id"],
+                agent_account=res_row["agent_account"],
+                owner_pubkey=res_row["owner_pubkey"],
+                network=net_val,
+                genesis_hash=gen_val,
+                program_id=prog_val,
+                token_mint=mint_val,
+                amount_base_units=amount_int,
+                nature=MovementNature.ADJUSTMENT,
+                status=MovementStatus.RECONCILED,
+                provenance_source=ProvenanceSource.MANUAL_ENTRY,
+                observed_at=now,
+                metadata={"reserve_id": reserve_id, "action": "release", "reason": reason},
+                custom_journal_legs=legs,
+                cursor=tx_cursor,
+            )
 
-        new_reserved = cur_reserved - amount_int
-        new_status = ReserveStatus.CLOSED.value if new_reserved == 0 else ReserveStatus.ACTIVE.value
-        self._conn.execute(
-            """
-            UPDATE agent_reserves
-            SET current_reserved_base_units = ?, status = ?, updated_at = ?
-            WHERE reserve_id = ?;
-            """,
-            (str(new_reserved), new_status, now, reserve_id),
-        )
+            rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
+            tx_cursor.execute(
+                """
+                INSERT INTO reserve_transactions (
+                    transaction_id, reserve_id, idempotency_key, action,
+                    amount_base_units, associated_cost_id, journal_entry_id,
+                    movement_id, created_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    rtx_id,
+                    reserve_id,
+                    clean_idempotency_key,
+                    ReserveAction.RELEASE.value,
+                    amount_str,
+                    None,
+                    mov.journal_entry_id,
+                    mov.movement_id,
+                    now,
+                    json.dumps({"reason": reason}),
+                ),
+            )
 
-        # Double-entry: Debit ASSET:TREASURY, Credit ASSET:RESERVED:<TYPE>
-        legs = [
-            {
-                "account_name": "ASSET:TREASURY",
-                "entry_type": EntryType.DEBIT.value,
-                "amount_base_units": amount_int,
-            },
-            {
-                "account_name": f"ASSET:RESERVED:{res_row['reserve_type']}",
-                "entry_type": EntryType.CREDIT.value,
-                "amount_base_units": amount_int,
-            },
-        ]
-        mov = self.record_movement(
-            idempotency_key=f"mov_rel:{clean_idempotency_key}",
-            agent_id=res_row["agent_id"],
-            agent_account=res_row["agent_account"],
-            owner_pubkey=res_row["owner_pubkey"],
-            network=res_row["network"],
-            genesis_hash=DEFAULT_GENESIS_HASH,
-            program_id=DEFAULT_PROGRAM_ID,
-            token_mint=res_row["token_mint"],
-            amount_base_units=amount_int,
-            nature=MovementNature.ADJUSTMENT,
-            status=MovementStatus.PROVISIONAL,
-            provenance_source=ProvenanceSource.MANUAL_ENTRY,
-            observed_at=now,
-            metadata={"reserve_id": reserve_id, "action": "release", "reason": reason},
-            custom_journal_legs=legs,
-        )
-
-        rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
-        self._conn.execute(
-            """
-            INSERT INTO reserve_transactions (
-                transaction_id, reserve_id, idempotency_key, action,
-                amount_base_units, associated_cost_id, journal_entry_id,
-                movement_id, created_at, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """,
-            (
-                rtx_id,
-                reserve_id,
-                clean_idempotency_key,
-                ReserveAction.RELEASE.value,
-                amount_str,
-                None,
-                mov.journal_entry_id,
-                mov.movement_id,
-                now,
-                json.dumps({"reason": reason}),
-            ),
-        )
+            if manage_tx:
+                tx_cursor.execute("COMMIT;")
+        except Exception:
+            if manage_tx:
+                try:
+                    tx_cursor.execute("ROLLBACK;")
+                except Exception:
+                    pass
+            raise
 
         return self.get_reserve(reserve_id)  # type: ignore
 
@@ -2277,10 +2602,17 @@ class EconomicLedger:
         program_id: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
     ) -> EconomicMovement:
         """Records an internal transfer between accounts of an agent without altering net worth or expenses."""
         amount_int = validate_base_units(amount_base_units, allow_zero=False)
         now = int(time.time())
+        net_val, gen_val, prog_val, mint_val = validate_monetary_context(
+            network=network,
+            genesis_hash=genesis_hash,
+            program_id=program_id,
+            token_mint=token_mint,
+        )
         legs = [
             {
                 "account_name": destination_account_name,
@@ -2303,10 +2635,10 @@ class EconomicLedger:
             agent_id=agent_id,
             agent_account=agent_account,
             owner_pubkey=owner_pubkey,
-            network=network,
-            genesis_hash=genesis_hash or DEFAULT_GENESIS_HASH,
-            program_id=program_id or DEFAULT_PROGRAM_ID,
-            token_mint=token_mint,
+            network=net_val,
+            genesis_hash=gen_val,
+            program_id=prog_val,
+            token_mint=mint_val,
             amount_base_units=amount_int,
             nature=MovementNature.INTERNAL_TRANSFER,
             status=MovementStatus.PROVISIONAL,
@@ -2314,6 +2646,7 @@ class EconomicLedger:
             observed_at=now,
             metadata=meta,
             custom_journal_legs=legs,
+            cursor=cursor,
         )
 
     def record_capital_investment(
@@ -2332,11 +2665,18 @@ class EconomicLedger:
         program_id: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
     ) -> EconomicMovement:
         """Records a capital expenditure (CAPEX) into hardware or fixed operational assets."""
         effective_asset_name = asset_name or asset_category or "EQUIPMENT"
         amount_int = validate_base_units(amount_base_units, allow_zero=False)
         now = int(time.time())
+        net_val, gen_val, prog_val, mint_val = validate_monetary_context(
+            network=network,
+            genesis_hash=genesis_hash,
+            program_id=program_id,
+            token_mint=token_mint,
+        )
         legs = [
             {
                 "account_name": f"ASSET:{effective_asset_name}",
@@ -2358,10 +2698,10 @@ class EconomicLedger:
             agent_id=agent_id,
             agent_account=agent_account,
             owner_pubkey=owner_pubkey,
-            network=network,
-            genesis_hash=genesis_hash or DEFAULT_GENESIS_HASH,
-            program_id=program_id or DEFAULT_PROGRAM_ID,
-            token_mint=token_mint,
+            network=net_val,
+            genesis_hash=gen_val,
+            program_id=prog_val,
+            token_mint=mint_val,
             amount_base_units=amount_int,
             nature=MovementNature.CAPITAL_INVESTMENT,
             status=MovementStatus.PROVISIONAL,
@@ -2369,6 +2709,7 @@ class EconomicLedger:
             observed_at=now,
             metadata=meta,
             custom_journal_legs=legs,
+            cursor=cursor,
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -2472,8 +2813,57 @@ class EconomicLedger:
                 if r_type in by_reserve:
                     by_reserve[r_type] += amt
 
-            # 4. Computed balances
-            avail = inc_reconciled - realized_exp - total_reserved
+            # 4. CAPEX Fixed Assets from General Ledger
+            capex_rows = self._conn.execute(
+                """
+                SELECT le.entry_type, le.amount_base_units
+                FROM ledger_entries le
+                JOIN journal_entries je ON le.journal_entry_id = je.journal_entry_id
+                WHERE le.agent_account = ?
+                  AND je.network = ?
+                  AND je.token_mint = ?
+                  AND le.account_name LIKE 'ASSET:%'
+                  AND le.account_name != 'ASSET:TREASURY'
+                  AND NOT le.account_name LIKE 'ASSET:RESERVED:%';
+                """,
+                (agent_account, net, mint),
+            ).fetchall()
+            capex_total = 0
+            for c_row in capex_rows:
+                c_amt = int(c_row["amount_base_units"])
+                if c_row["entry_type"] == EntryType.DEBIT.value:
+                    capex_total += c_amt
+                elif c_row["entry_type"] == EntryType.CREDIT.value:
+                    capex_total -= c_amt
+            capex_investments = max(0, capex_total)
+
+            # 5. General Ledger Treasury Balance (ASSET:TREASURY)
+            # Calculated directly from the General Ledger, avoiding double deductions of reserves or expenses.
+            # Considers CAPEX, internal transfers, and reversions.
+            treasury_rows = self._conn.execute(
+                """
+                SELECT le.entry_type, le.amount_base_units, je.status
+                FROM ledger_entries le
+                JOIN journal_entries je ON le.journal_entry_id = je.journal_entry_id
+                WHERE le.agent_account = ?
+                  AND le.account_name = 'ASSET:TREASURY'
+                  AND je.network = ?
+                  AND je.token_mint = ?;
+                """,
+                (agent_account, net, mint),
+            ).fetchall()
+            treasury_rec_debits = 0
+            treasury_all_credits = 0
+            for t_row in treasury_rows:
+                t_amt = int(t_row["amount_base_units"])
+                if t_row["entry_type"] == EntryType.DEBIT.value:
+                    if t_row["status"] == MovementStatus.RECONCILED.value:
+                        treasury_rec_debits += t_amt
+                elif t_row["entry_type"] == EntryType.CREDIT.value:
+                    treasury_all_credits += t_amt
+
+            avail = max(0, treasury_rec_debits - treasury_all_credits)
+            surplus = max(0, avail - accrued_obs)
             tot_effective = inc_reconciled + inc_provisional - realized_exp
 
             summaries.append(
@@ -2489,6 +2879,8 @@ class EconomicLedger:
                     total_capital_reserved=total_reserved,
                     available_balance=avail,
                     total_effective_balance=tot_effective,
+                    investible_surplus=surplus,
+                    capex_investments=capex_investments,
                     total_income_reconciled_str=str(inc_reconciled),
                     total_income_provisional_str=str(inc_provisional),
                     total_expenses_realized_str=str(realized_exp),
@@ -2497,10 +2889,14 @@ class EconomicLedger:
                     total_capital_reserved_str=str(total_reserved),
                     available_balance_str=str(avail),
                     total_effective_balance_str=str(tot_effective),
+                    investible_surplus_str=str(surplus),
+                    capex_investments_str=str(capex_investments),
                     costs_by_category=by_category,
                     reserves_by_type=by_reserve,
                 )
             )
+
+        return summaries
 
         return summaries
 

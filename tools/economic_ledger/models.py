@@ -313,6 +313,13 @@ class AgentCost:
 
 @dataclass(frozen=True)
 class AgentReserve:
+    """Agent economic capital reserve representation.
+
+    An agent economic capital reserve is an off-chain accounting segregation of unencumbered
+    reconciled treasury capital.
+    NOTE: This off-chain accounting reservation does NOT directly freeze or lock Solana SPL tokens
+    on-chain by itself; on-chain token movements require separate Solana smart contract interaction.
+    """
     reserve_id: str
     idempotency_key: str
     agent_id: str
@@ -403,6 +410,10 @@ class AgentEconomicSummary:
     total_effective_balance_str: str
     costs_by_category: dict[str, int]
     reserves_by_type: dict[str, int]
+    investible_surplus: int = 0
+    investible_surplus_str: str = "0"
+    capex_investments: int = 0
+    capex_investments_str: str = "0"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -417,6 +428,8 @@ class AgentEconomicSummary:
             "total_capital_reserved": self.total_capital_reserved,
             "available_balance": self.available_balance,
             "total_effective_balance": self.total_effective_balance,
+            "investible_surplus": self.investible_surplus,
+            "capex_investments": self.capex_investments,
             "total_income_reconciled_str": self.total_income_reconciled_str,
             "total_income_provisional_str": self.total_income_provisional_str,
             "total_expenses_realized_str": self.total_expenses_realized_str,
@@ -425,6 +438,8 @@ class AgentEconomicSummary:
             "total_capital_reserved_str": self.total_capital_reserved_str,
             "available_balance_str": self.available_balance_str,
             "total_effective_balance_str": self.total_effective_balance_str,
+            "investible_surplus_str": self.investible_surplus_str,
+            "capex_investments_str": self.capex_investments_str,
             "costs_by_category": self.costs_by_category,
             "reserves_by_type": self.reserves_by_type,
         }
