@@ -10,12 +10,42 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools" / "discovery"))
 
 import agent_discovery as discovery
 import rust_matching
 import cursor_pagination
 import openapi_spec
+
+from tools.economic_ledger.auth import AuthError, verify_request_auth
+from tools.economic_ledger.ledger import EconomicLedger
+from tools.economic_ledger.models import (
+    LedgerValidationError,
+    MovementNature,
+    MovementStatus,
+    ProvenanceSource,
+)
+
+_DEFAULT_LEDGER: EconomicLedger | None = None
+
+
+def get_ledger(provider=None) -> EconomicLedger:
+    global _DEFAULT_LEDGER
+    if provider is not None and hasattr(provider, "ledger") and provider.ledger is not None:
+        return provider.ledger
+    if _DEFAULT_LEDGER is None:
+        _DEFAULT_LEDGER = EconomicLedger()
+    return _DEFAULT_LEDGER
+
+
+def authorize_agent_access(agent: dict, headers: dict | None, agent_account: str | None = None) -> str:
+    """Enforce authentic Ed25519 cryptographic authorization for agent economic access."""
+    acc = agent_account or agent.get("agent_account", "")
+    try:
+        return verify_request_auth(headers, agent, acc)
+    except AuthError as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
 
 PROGRAM_ID = "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
 GENESIS = "HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg"
@@ -260,7 +290,7 @@ def arguments(
     }
 
 
-def route(url: str, provider) -> tuple[int, dict]:
+def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
     if len(url) > 2048:
         raise ApiError(
             414, "URI_TOO_LONG", "Request URI too long"
@@ -296,7 +326,7 @@ def route(url: str, provider) -> tuple[int, dict]:
     entity = pieces[1]
 
     if entity not in {
-        "agents", "work-orders", "marketplace"
+        "agents", "work-orders", "marketplace", "economic-movements"
     }:
         raise ApiError(404, "NOT_FOUND", "Unknown resource")
 
@@ -316,6 +346,13 @@ def route(url: str, provider) -> tuple[int, dict]:
             "capabilities_all",
             "limit", "cursor",
         }
+    elif entity == "agents" and len(pieces) == 4 and pieces[3] == "economic-movements":
+        allowed = {
+            "nature", "status", "mint", "network",
+            "from_ts", "to_ts", "limit", "cursor",
+        }
+    elif entity == "agents" and len(pieces) == 4 and pieces[3] == "balances":
+        allowed = {"mint", "network"}
 
     query = arguments(parts.query, allowed)
 
@@ -325,12 +362,12 @@ def route(url: str, provider) -> tuple[int, dict]:
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if len(pieces) == 4 and not (
-        entity == "work-orders"
-        and pieces[3] == "matches"
+        (entity == "work-orders" and pieces[3] == "matches")
+        or (entity == "agents" and pieces[3] in ("economic-movements", "balances"))
     ):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
-    if len(pieces) >= 3:
+    if len(pieces) >= 3 and entity != "economic-movements":
         require_pubkey(pieces[2])
 
     snapshot = provider.snapshot()
@@ -450,10 +487,78 @@ def route(url: str, provider) -> tuple[int, dict]:
                 "Agent not registered in current snapshot",
             )
 
+        if len(pieces) == 4 and pieces[3] == "economic-movements":
+            authorize_agent_access(agent, headers, pieces[2])
+
+            from_ts = int(query["from_ts"]) if "from_ts" in query else None
+            to_ts = int(query["to_ts"]) if "to_ts" in query else None
+            limit = int(query.get("limit", 50))
+            cursor = query.get("cursor")
+
+            ledger = get_ledger(provider)
+            try:
+                movements, next_cursor = ledger.list_movements(
+                    pieces[2],
+                    nature=query.get("nature"),
+                    status=query.get("status"),
+                    token_mint=query.get("mint"),
+                    network=query.get("network"),
+                    from_ts=from_ts,
+                    to_ts=to_ts,
+                    limit=limit,
+                    cursor=cursor,
+                )
+            except LedgerValidationError as exc:
+                raise ApiError(400, "INVALID_QUERY", str(exc)) from exc
+
+            return 200, {
+                "data": [m.to_dict() for m in movements],
+                "page": {
+                    "limit": limit,
+                    "has_more": next_cursor is not None,
+                    "next_cursor": next_cursor,
+                },
+                "meta": meta,
+            }
+
+        if len(pieces) == 4 and pieces[3] == "balances":
+            authorize_agent_access(agent, headers, pieces[2])
+
+            ledger = get_ledger(provider)
+            balances = ledger.get_balances(
+                pieces[2],
+                network=query.get("network"),
+                token_mint=query.get("mint"),
+            )
+            return 200, {
+                "data": [b.to_dict() for b in balances],
+                "meta": meta,
+            }
+
         return 200, {
             "data": projected_agent(agent),
             "meta": meta,
         }
+
+    if entity == "economic-movements":
+        if len(pieces) == 3:
+            movement_id = pieces[2]
+            ledger = get_ledger(provider)
+            movement = ledger.get_movement(movement_id)
+            if movement is None:
+                raise ApiError(404, "MOVEMENT_NOT_FOUND", "Economic movement not found")
+
+            agent = next(
+                (a for a in snapshot["agents"] if a["agent_account"] == movement.agent_account),
+                None,
+            )
+            authorize_agent_access(agent or {"owner": movement.owner_pubkey}, headers, movement.agent_account)
+
+            return 200, {
+                "data": movement.to_dict(),
+                "meta": meta,
+            }
+        raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if len(pieces) == 2:
         status = query.get("status")
@@ -578,6 +683,7 @@ class LiveProvider:
                 503, "RUST_MATCHER_MISSING",
                 "Build the Rust matching bridge before starting API",
             )
+        self.ledger = EconomicLedger()
 
     def match(self, order, snapshot):
         return self.matcher(order, snapshot)
@@ -646,7 +752,7 @@ def handler_for(provider):
         def do_GET(self):
             try:
                 status, body = route(
-                    self.path, provider
+                    self.path, provider, headers=self.headers
                 )
                 self.respond(status, body)
 
@@ -686,19 +792,23 @@ def handler_for(provider):
                     },
                 )
 
+        def do_POST(self):
+            # External write endpoints disabled: ingestion must occur through trusted internal services
+            self.unsupported()
+
         def unsupported(self):
             self.respond(
                 405,
                 {
                     "error": {
                         "code": "METHOD_NOT_ALLOWED",
-                        "message": "Read-only: GET only",
+                        "message": "Read-only: GET only. Ingestion of economic movements must be performed via trusted internal services.",
                     }
                 },
                 {"Allow": "GET"},
             )
 
-        do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = unsupported
+        do_PUT = do_PATCH = do_DELETE = do_OPTIONS = unsupported
 
         def log_message(self, fmt, *args):
             print(

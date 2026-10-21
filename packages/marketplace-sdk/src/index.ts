@@ -97,6 +97,94 @@ export type OrderStatus =
   | 'Verified'
   | 'Settled';
 
+export type MovementNature =
+  | 'INCOME'
+  | 'EXPENSE'
+  | 'RESERVE'
+  | 'ADJUSTMENT';
+
+export type MovementStatus =
+  | 'PROVISIONAL'
+  | 'RECONCILED'
+  | 'REVERTED';
+
+export type ProvenanceSource =
+  | 'ONCHAIN_VERIFIED'
+  | 'EXTERNAL_VERIFIED'
+  | 'SIMULATED'
+  | 'MANUAL_ENTRY'
+  | 'SETTLEMENT_EVENT';
+
+export interface EconomicMovement {
+  movement_id: string;
+  journal_entry_id?: string | null;
+  idempotency_key: string;
+  agent_id: string;
+  agent_account: string;
+  owner_pubkey: string;
+  work_order_account?: string | null;
+  work_order_id?: string | null;
+  network: string;
+  genesis_hash: string;
+  program_id: string;
+  token_mint: string;
+  amount_base_units: number;
+  amount_str: string;
+  nature: MovementNature;
+  status: MovementStatus;
+  provenance_source: ProvenanceSource;
+  evidence_hash?: string | null;
+  attestation_id?: string | null;
+  tx_signature?: string | null;
+  external_ref?: string | null;
+  registered_at: number;
+  observed_at: number;
+  reversal_of_movement_id?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface BalanceReport {
+  agent_account: string;
+  network: string;
+  token_mint: string;
+  reconciled_balance: number;
+  provisional_balance: number;
+  reserved_balance: number;
+  reconciled_balance_str: string;
+  provisional_balance_str: string;
+  reserved_balance_str: string;
+  total_effective_balance: number;
+  total_effective_balance_str: string;
+  movement_count: number;
+}
+
+export interface EconomicMovementFilters extends Paging {
+  nature?: MovementNature;
+  status?: MovementStatus;
+  mint?: string;
+  network?: string;
+  fromTs?: number;
+  toTs?: number;
+}
+
+export interface RecordMovementInput {
+  idempotency_key: string;
+  agent_account: string;
+  token_mint: string;
+  amount_base_units: number | string;
+  nature: MovementNature;
+  status?: MovementStatus;
+  provenance_source?: ProvenanceSource;
+  work_order_account?: string;
+  work_order_id?: string;
+  evidence_hash?: string;
+  attestation_id?: string;
+  tx_signature?: string;
+  external_ref?: string;
+  observed_at?: number;
+  metadata?: Record<string, unknown>;
+}
+
 export type U64Input = string | bigint;
 
 export interface Paging {
@@ -214,6 +302,47 @@ function order(raw: unknown): WorkOrder {
   boolean(o.discoverable, 'discoverable');
 
   return o as unknown as WorkOrder;
+}
+
+function economicMovement(raw: unknown): EconomicMovement {
+  const m = object(raw, 'economic movement');
+
+  nonempty(m.movement_id, 'movement_id');
+  nonempty(m.idempotency_key, 'idempotency_key');
+  nonempty(m.agent_id, 'agent_id');
+  nonempty(m.agent_account, 'agent_account');
+  nonempty(m.network, 'network');
+  nonempty(m.genesis_hash, 'genesis_hash');
+  nonempty(m.program_id, 'program_id');
+  nonempty(m.token_mint, 'token_mint');
+  integer(m.amount_base_units, 'amount_base_units');
+  nonempty(m.amount_str, 'amount_str');
+  nonempty(m.nature, 'nature');
+  nonempty(m.status, 'status');
+  nonempty(m.provenance_source, 'provenance_source');
+  integer(m.registered_at, 'registered_at');
+  integer(m.observed_at, 'observed_at');
+
+  return m as unknown as EconomicMovement;
+}
+
+function balanceReport(raw: unknown): BalanceReport {
+  const b = object(raw, 'balance report');
+
+  nonempty(b.agent_account, 'agent_account');
+  nonempty(b.network, 'network');
+  nonempty(b.token_mint, 'token_mint');
+  integer(b.reconciled_balance, 'reconciled_balance');
+  integer(b.provisional_balance, 'provisional_balance');
+  integer(b.reserved_balance, 'reserved_balance');
+  nonempty(b.reconciled_balance_str, 'reconciled_balance_str');
+  nonempty(b.provisional_balance_str, 'provisional_balance_str');
+  nonempty(b.reserved_balance_str, 'reserved_balance_str');
+  integer(b.total_effective_balance, 'total_effective_balance');
+  nonempty(b.total_effective_balance_str, 'total_effective_balance_str');
+  integer(b.movement_count, 'movement_count');
+
+  return b as unknown as BalanceReport;
 }
 
 function meta(raw: unknown): ApiMeta {
@@ -394,10 +523,13 @@ export class MarketplaceClient {
     }
   }
 
-  private async get(
+  private async exec(
+    method: 'GET' | 'POST',
     path: string,
     params?: URLSearchParams,
-    signal?: AbortSignal
+    bodyData?: unknown,
+    signal?: AbortSignal,
+    extraHeaders?: Record<string, string>
   ): Promise<unknown> {
     const url = new URL(path, this.baseUrl);
 
@@ -425,9 +557,18 @@ export class MarketplaceClient {
       this.timeoutMs
     );
 
+    const headers: Record<string, string> = { ...extraHeaders };
+    let body: string | undefined;
+    if (bodyData !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(bodyData);
+    }
+
     try {
       const response = await this.fetcher(url, {
-        method: 'GET',
+        method,
+        headers,
+        body,
         signal: controller.signal,
         redirect: 'error',
       });
@@ -440,16 +581,16 @@ export class MarketplaceClient {
         fail('Response body too large');
       }
 
-      const body = await response.text();
+      const rawText = await response.text();
 
-      if (body.length > 2_000_000) {
+      if (rawText.length > 2_000_000) {
         fail('Response body too large');
       }
 
       let data: unknown;
 
       try {
-        data = JSON.parse(body) as unknown;
+        data = JSON.parse(rawText) as unknown;
       } catch {
         return fail('Response was not valid JSON');
       }
@@ -476,6 +617,24 @@ export class MarketplaceClient {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
     }
+  }
+
+  private async get(
+    path: string,
+    params?: URLSearchParams,
+    signal?: AbortSignal,
+    headers?: Record<string, string>
+  ): Promise<unknown> {
+    return this.exec('GET', path, params, undefined, signal, headers);
+  }
+
+  private async post(
+    path: string,
+    bodyData: unknown,
+    signal?: AbortSignal,
+    headers?: Record<string, string>
+  ): Promise<unknown> {
+    return this.exec('POST', path, undefined, bodyData, signal, headers);
   }
 
   async health(signal?: AbortSignal): Promise<Health> {
@@ -686,6 +845,128 @@ export class MarketplaceClient {
             'work_orders'
           ).map(order),
           eligible_agents_by_order: eligible,
+        };
+      }
+    );
+  }
+
+  async listEconomicMovements(
+    account: string,
+    filters: EconomicMovementFilters = {},
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Page<EconomicMovement>> {
+    const p = new URLSearchParams();
+    if (filters.nature) p.set('nature', filters.nature);
+    if (filters.status) p.set('status', filters.status);
+    if (filters.mint) p.set('mint', filters.mint);
+    if (filters.network) p.set('network', filters.network);
+    if (filters.fromTs !== undefined) p.set('from_ts', String(filters.fromTs));
+    if (filters.toTs !== undefined) p.set('to_ts', String(filters.toTs));
+    paging(p, filters);
+
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return page(
+      await this.get(
+        `/v1/agents/${pubkey(account)}/economic-movements`,
+        p,
+        options.signal,
+        headers
+      ),
+      economicMovement
+    );
+  }
+
+  async getAgentBalances(
+    account: string,
+    filters: { mint?: string; network?: string } = {},
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Detail<BalanceReport[]>> {
+    const p = new URLSearchParams();
+    if (filters.mint) p.set('mint', filters.mint);
+    if (filters.network) p.set('network', filters.network);
+
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return detail(
+      await this.get(
+        `/v1/agents/${pubkey(account)}/balances`,
+        p,
+        options.signal,
+        headers
+      ),
+      raw => array(raw, 'balance reports').map(balanceReport)
+    );
+  }
+
+  async getEconomicMovement(
+    movementId: string,
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Detail<EconomicMovement>> {
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return detail(
+      await this.get(
+        `/v1/economic-movements/${encodeURIComponent(movementId)}`,
+        undefined,
+        options.signal,
+        headers
+      ),
+      economicMovement
+    );
+  }
+
+  async recordEconomicMovement(
+    movement: RecordMovementInput,
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Detail<EconomicMovement>> {
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return detail(
+      await this.post(
+        '/v1/economic-movements',
+        movement,
+        options.signal,
+        headers
+      ),
+      economicMovement
+    );
+  }
+
+  async revertEconomicMovement(
+    movementId: string,
+    reason: string,
+    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+  ): Promise<Detail<{ reverted: EconomicMovement; compensating: EconomicMovement }>> {
+    const headers: Record<string, string> = {};
+    if (options.ownerPubkey) {
+      headers['X-Owner-Pubkey'] = options.ownerPubkey;
+    }
+
+    return detail(
+      await this.post(
+        `/v1/economic-movements/${encodeURIComponent(movementId)}/revert`,
+        { reason },
+        options.signal,
+        headers
+      ),
+      raw => {
+        const obj = object(raw, 'revert response');
+        return {
+          reverted: economicMovement(obj.reverted),
+          compensating: economicMovement(obj.compensating),
         };
       }
     );
