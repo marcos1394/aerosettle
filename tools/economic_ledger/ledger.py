@@ -660,12 +660,34 @@ class EconomicLedger:
                 "No movement can transition to RECONCILED solely from caller parameters."
             )
 
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT * FROM economic_movements WHERE movement_id = ?;",
+            (movement_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise LedgerValidationError(f"Movement not found: {movement_id}")
+
+        current_status = row["status"]
+        if current_status == MovementStatus.RECONCILED.value:
+            return self._row_to_movement(row)
+        if current_status == MovementStatus.REVERTED.value:
+            raise LedgerValidationError(f"Cannot reconcile a REVERTED movement: {movement_id}")
+        if current_status != MovementStatus.PROVISIONAL.value:
+            raise LedgerValidationError(
+                f"Only PROVISIONAL movements can be reconciled, got {current_status}"
+            )
+
+        movement_obj = self._row_to_movement(row)
+
         is_verified = self._reconciliation_verifier.verify_reconciliation(
             movement_id=movement_id,
             evidence_hash=hash_clean,
             authorized_by=auth_clean,
             slot=slot,
             tx_signature=sig_clean,
+            movement=movement_obj,
         )
         if not is_verified:
             raise LedgerValidationError(
@@ -673,7 +695,6 @@ class EconomicLedger:
                 f"for movement '{movement_id}'"
             )
 
-        cursor = self._conn.cursor()
         try:
             cursor.execute("BEGIN IMMEDIATE;")
             cursor.execute(
