@@ -547,7 +547,8 @@ async function main() {
   );
 
   const valid = await connection.isBlockhashValid(
-    latest.blockhash, 'confirmed'
+    latest.blockhash,
+    { commitment: 'confirmed' }
   );
 
   assert(

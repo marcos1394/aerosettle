@@ -24,6 +24,13 @@ const PROGRAM = 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy';
 const AMOUNT = 10_000_000n;
 const DECIMALS = 6;
 
+const ORDER_TAG =
+  process.env.AEROSETTLE_ORDER_TAG || 'claim-v2';
+
+if (!/^[a-zA-Z0-9_-]{1,40}$/.test(ORDER_TAG)) {
+  throw Error('AEROSETTLE_ORDER_TAG inválido');
+}
+
 const mode = process.argv[2] || '--inspect';
 
 if (![
@@ -478,6 +485,15 @@ async function snapshot() {
 }
 
 async function main() {
+  const activeGenesis = await connection.getGenesisHash();
+
+  if (
+    activeGenesis !==
+    'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg'
+  ) {
+    throw Error('Genesis Hash incorrecto');
+  }
+
   const programInfo = await connection.getAccountInfo(
     programId, 'confirmed'
   );
@@ -522,7 +538,7 @@ async function main() {
   const verifier = readKey(verifierFile);
 
   const orderId = hash(
-    `aerosettle:inspection:order:claim-v2:${genesis}:` +
+    `aerosettle:inspection:order:${ORDER_TAG}:${genesis}:` +
     wallet.publicKey.toBase58()
   );
 
@@ -546,6 +562,22 @@ async function main() {
       programId
     );
 
+  const knownPreviousOrders = new Set([
+    'DcD34tC5THj7WkV9fzCYcpRSgUdt6wwybUFcG1YvSviy',
+    'EnkZQWDqF5HeFeusZ7xnj7tngVN9xASofmKvXtDLeqbx',
+  ]);
+
+  if (
+    ORDER_TAG !== 'claim-v2' &&
+    knownPreviousOrders.has(orderPda.toBase58())
+  ) {
+    throw Error(
+      'AEROSETTLE IDENTITY COLLISION: ' +
+      'la misión nueva apunta a una WorkOrder anterior'
+    );
+  }
+
+  console.log('Order tag:', ORDER_TAG);
   console.log('Mode:', mode);
   console.log('RPC:', RPC);
   console.log('Program:', PROGRAM);
@@ -714,8 +746,8 @@ async function main() {
         payment_model: 'Fixed',
         verifier: verifier.publicKey,
       },
-      execution_deadline: now + 3600n,
-      verification_deadline: now + 7200n,
+      execution_deadline: now + 14_400n,
+      verification_deadline: now + 28_800n,
     };
 
     const data = Buffer.concat([

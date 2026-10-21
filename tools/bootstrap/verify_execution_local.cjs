@@ -33,9 +33,9 @@ if (!/^[A-Za-z0-9_-]{1,40}$/.test(TAG)) {
 }
 
 if (![
-  '--inspect', '--negative', '--send', '--verify'
+  '--inspect', '--negative', '--simulate', '--send', '--verify'
 ].includes(MODE)) {
-  throw Error('Uso: --inspect | --negative | --send | --verify');
+  throw Error('Uso: --inspect | --negative | --simulate | --send | --verify');
 }
 
 const idl = JSON.parse(
@@ -812,6 +812,14 @@ async function main() {
   console.log(
     '✅ Simulación positiva aprobada'
   );
+
+  if (MODE === '--simulate') {
+    console.log(
+      '✅ Simulaciones negativas y positiva aprobadas'
+    );
+    console.log('Transactions sent: 0');
+    return;
+  }
 
   const signature =
     await sendAndConfirmTransaction(

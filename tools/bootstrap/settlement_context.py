@@ -3,9 +3,16 @@
 
 from pathlib import Path
 import json
+import os
+import re
 import runpy
 
-TAG = "claim-v2"
+TAG = os.environ.get(
+    "AEROSETTLE_ORDER_TAG", "claim-v2"
+)
+
+if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", TAG):
+    raise SystemExit("Invalid WorkOrder tag")
 
 verification_file = Path(
     "tools/bootstrap/verification_context.py"

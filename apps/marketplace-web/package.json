@@ -1,25 +1,29 @@
 {
-  "name": "@aerosettle/marketplace-web",
+  "name": "@conatus/marketplace-web",
   "version": "0.4.2",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test src/app/*.test.ts",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
     "@aerosettle/marketplace-sdk": "file:../../packages/marketplace-sdk",
     "@aerosettle/transaction-sdk": "file:../../packages/transaction-sdk",
+    "@noble/curves": "1.9.7",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.29",
     "@solana/wallet-adapter-react": "0.15.40",
     "@solana/wallet-adapter-react-ui": "0.9.39",
     "@solana/web3.js": "1.99.0",
+    "bs58": "4.0.1",
     "buffer": "6.0.3",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-router": "7.18.4"
   },
   "devDependencies": {
     "@types/node": "22.15.30",

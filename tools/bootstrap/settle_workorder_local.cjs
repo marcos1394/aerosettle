@@ -18,7 +18,12 @@ const {
 } = require('@solana/spl-token');
 
 const RPC = 'http://127.0.0.1:8899';
-const TAG = 'claim-v2';
+const TAG =
+  process.env.AEROSETTLE_ORDER_TAG || 'claim-v2';
+
+if (!/^[A-Za-z0-9_-]{1,40}$/.test(TAG)) {
+  throw Error('Invalid WorkOrder tag');
+}
 
 const PROGRAM =
   'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy';
@@ -385,6 +390,19 @@ async function main() {
   }
 
   const ctx = readContext();
+
+  const expectedWorkOrder =
+    process.env.AEROSETTLE_EXPECTED_WORK_ORDER;
+
+  if (
+    expectedWorkOrder &&
+    ctx.work_order !== expectedWorkOrder
+  ) {
+    throw Error(
+      'Settlement target does not match expected WorkOrder'
+    );
+  }
+
 
   const creator = new PublicKey(ctx.creator);
   const beneficiary = new PublicKey(
