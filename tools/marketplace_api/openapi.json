@@ -1556,6 +1556,12 @@
           "network": {
             "type": "string"
           },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
           "token_mint": {
             "$ref": "#/components/schemas/Pubkey"
           },
@@ -1732,6 +1738,12 @@
           "network": {
             "type": "string"
           },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
           "token_mint": {
             "$ref": "#/components/schemas/Pubkey"
           },
@@ -1896,6 +1908,12 @@
           "network": {
             "type": "string"
           },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
           "token_mint": {
             "$ref": "#/components/schemas/Pubkey"
           },
@@ -2000,6 +2018,12 @@
           },
           "network": {
             "type": "string"
+          },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
           },
           "token_mint": {
             "$ref": "#/components/schemas/Pubkey"

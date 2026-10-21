@@ -352,17 +352,17 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
             "from_ts", "to_ts", "limit", "cursor",
         }
     elif entity == "agents" and len(pieces) == 4 and pieces[3] == "balances":
-        allowed = {"mint", "network"}
+        allowed = {"mint", "network", "genesis", "genesis_hash", "program_id"}
     elif entity == "agents" and len(pieces) == 4 and pieces[3] == "costs":
         allowed = {
             "category", "cost_nature", "period", "status",
-            "mint", "network", "provenance_source",
+            "mint", "network", "genesis", "genesis_hash", "program_id", "provenance_source",
             "from_ts", "to_ts", "limit", "cursor",
         }
     elif entity == "agents" and len(pieces) == 4 and pieces[3] == "reserves":
-        allowed = {"reserve_type", "status", "mint", "network"}
+        allowed = {"reserve_type", "status", "mint", "network", "genesis", "genesis_hash", "program_id"}
     elif entity == "agents" and len(pieces) == 4 and pieces[3] == "economic-summary":
-        allowed = {"mint", "network", "period"}
+        allowed = {"mint", "network", "period", "genesis", "genesis_hash", "program_id"}
 
     query = arguments(parts.query, allowed)
 
@@ -538,6 +538,8 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
             balances = ledger.get_balances(
                 pieces[2],
                 network=query.get("network"),
+                genesis_hash=query.get("genesis") or query.get("genesis_hash"),
+                program_id=query.get("program_id"),
                 token_mint=query.get("mint"),
             )
             return 200, {
@@ -563,6 +565,8 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                     status=query.get("status"),
                     token_mint=query.get("mint"),
                     network=query.get("network"),
+                    genesis_hash=query.get("genesis") or query.get("genesis_hash"),
+                    program_id=query.get("program_id"),
                     provenance_source=query.get("provenance_source"),
                     from_ts=from_ts,
                     to_ts=to_ts,
@@ -591,6 +595,8 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                 reserve_type=query.get("reserve_type"),
                 status=query.get("status"),
                 network=query.get("network"),
+                genesis_hash=query.get("genesis") or query.get("genesis_hash"),
+                program_id=query.get("program_id"),
                 token_mint=query.get("mint"),
             )
             return 200, {
@@ -605,6 +611,8 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
             summaries = ledger.get_economic_summary(
                 pieces[2],
                 network=query.get("network"),
+                genesis_hash=query.get("genesis") or query.get("genesis_hash"),
+                program_id=query.get("program_id"),
                 token_mint=query.get("mint"),
                 economic_period=query.get("period"),
             )

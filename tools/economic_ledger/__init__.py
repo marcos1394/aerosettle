@@ -7,6 +7,8 @@ from .ledger import (
     ReconciliationVerifier,
 )
 from .models import (
+    DEFAULT_GENESIS_HASH,
+    DEFAULT_PROGRAM_ID,
     AgentCost,
     AgentEconomicSummary,
     AgentReserve,
@@ -68,6 +70,8 @@ from .spl_reconciler import (
 
 __all__ = [
     "DEFAULT_TRUSTED_RECONCILER_AUTHORITIES",
+    "DEFAULT_GENESIS_HASH",
+    "DEFAULT_PROGRAM_ID",
     "EconomicLedger",
     "EconomicMovement",
     "JournalEntry",

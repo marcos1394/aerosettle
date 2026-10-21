@@ -179,6 +179,8 @@ export interface EconomicMovement {
 export interface BalanceReport {
   agent_account: string;
   network: string;
+  genesis_hash?: string;
+  program_id?: string;
   token_mint: string;
   reconciled_balance: number;
   provisional_balance: number;
@@ -201,6 +203,8 @@ export interface AgentCost {
   cost_nature: CostNature;
   economic_period: string;
   network: string;
+  genesis_hash?: string;
+  program_id?: string;
   token_mint: string;
   amount_base_units: number;
   amount_str: string;
@@ -226,6 +230,8 @@ export interface AgentReserve {
   owner_pubkey: string;
   reserve_type: ReserveType;
   network: string;
+  genesis_hash?: string;
+  program_id?: string;
   token_mint: string;
   target_amount_base_units: number;
   target_amount_str: string;
@@ -255,6 +261,8 @@ export interface ReserveTransaction {
 export interface AgentEconomicSummary {
   agent_account: string;
   network: string;
+  genesis_hash?: string;
+  program_id?: string;
   token_mint: string;
   total_income_reconciled: number;
   total_income_provisional: number;
@@ -283,6 +291,8 @@ export interface CostFilters extends Paging {
   status?: MovementStatus;
   mint?: string;
   network?: string;
+  genesis?: string;
+  program_id?: string;
   provenance_source?: ProvenanceSource;
   fromTs?: number;
   toTs?: number;
@@ -293,11 +303,15 @@ export interface ReserveFilters {
   status?: ReserveStatus;
   mint?: string;
   network?: string;
+  genesis?: string;
+  program_id?: string;
 }
 
 export interface EconomicSummaryFilters {
   mint?: string;
   network?: string;
+  genesis?: string;
+  program_id?: string;
   period?: string;
 }
 
@@ -1078,12 +1092,14 @@ export class MarketplaceClient {
 
   async getAgentBalances(
     account: string,
-    filters: { mint?: string; network?: string } = {},
+    filters: { mint?: string; network?: string; genesis?: string; program_id?: string } = {},
     options: { ownerPubkey?: string; signal?: AbortSignal } = {}
   ): Promise<Detail<BalanceReport[]>> {
     const p = new URLSearchParams();
     if (filters.mint) p.set('mint', filters.mint);
     if (filters.network) p.set('network', filters.network);
+    if (filters.genesis) p.set('genesis', filters.genesis);
+    if (filters.program_id) p.set('program_id', filters.program_id);
 
     const headers: Record<string, string> = {};
     if (options.ownerPubkey) {
@@ -1180,6 +1196,8 @@ export class MarketplaceClient {
     if (filters.status) p.set('status', filters.status);
     if (filters.mint) p.set('mint', filters.mint);
     if (filters.network) p.set('network', filters.network);
+    if (filters.genesis) p.set('genesis', filters.genesis);
+    if (filters.program_id) p.set('program_id', filters.program_id);
     if (filters.provenance_source) p.set('provenance_source', filters.provenance_source);
     if (filters.fromTs !== undefined) p.set('from_ts', String(filters.fromTs));
     if (filters.toTs !== undefined) p.set('to_ts', String(filters.toTs));
@@ -1231,6 +1249,8 @@ export class MarketplaceClient {
     if (filters.status) p.set('status', filters.status);
     if (filters.mint) p.set('mint', filters.mint);
     if (filters.network) p.set('network', filters.network);
+    if (filters.genesis) p.set('genesis', filters.genesis);
+    if (filters.program_id) p.set('program_id', filters.program_id);
 
     const headers: Record<string, string> = {};
     if (options.ownerPubkey) {
@@ -1276,6 +1296,8 @@ export class MarketplaceClient {
     const p = new URLSearchParams();
     if (filters.mint) p.set('mint', filters.mint);
     if (filters.network) p.set('network', filters.network);
+    if (filters.genesis) p.set('genesis', filters.genesis);
+    if (filters.program_id) p.set('program_id', filters.program_id);
     if (filters.period) p.set('period', filters.period);
 
     const headers: Record<string, string> = {};

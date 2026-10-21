@@ -223,6 +223,10 @@ class EconomicMovement:
         }
 
 
+DEFAULT_GENESIS_HASH = "HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg"
+DEFAULT_PROGRAM_ID = "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
+
+
 @dataclass(frozen=True)
 class BalanceReport:
     agent_account: str
@@ -237,11 +241,15 @@ class BalanceReport:
     total_effective_balance: int
     total_effective_balance_str: str
     movement_count: int
+    genesis_hash: str = DEFAULT_GENESIS_HASH
+    program_id: str = DEFAULT_PROGRAM_ID
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "agent_account": self.agent_account,
             "network": self.network,
+            "genesis_hash": self.genesis_hash,
+            "program_id": self.program_id,
             "token_mint": self.token_mint,
             "reconciled_balance": self.reconciled_balance,
             "provisional_balance": self.provisional_balance,
@@ -281,6 +289,8 @@ class AgentCost:
     description: Optional[str] = None
     reversal_of_cost_id: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    genesis_hash: str = DEFAULT_GENESIS_HASH
+    program_id: str = DEFAULT_PROGRAM_ID
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -293,6 +303,8 @@ class AgentCost:
             "cost_nature": self.cost_nature.value if isinstance(self.cost_nature, CostNature) else self.cost_nature,
             "economic_period": self.economic_period,
             "network": self.network,
+            "genesis_hash": self.genesis_hash,
+            "program_id": self.program_id,
             "token_mint": self.token_mint,
             "amount_base_units": self.amount_base_units,
             "amount_str": self.amount_str,
@@ -335,6 +347,8 @@ class AgentReserve:
     updated_at: int
     description: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    genesis_hash: str = DEFAULT_GENESIS_HASH
+    program_id: str = DEFAULT_PROGRAM_ID
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -345,6 +359,8 @@ class AgentReserve:
             "owner_pubkey": self.owner_pubkey,
             "reserve_type": self.reserve_type.value if isinstance(self.reserve_type, ReserveType) else self.reserve_type,
             "network": self.network,
+            "genesis_hash": self.genesis_hash,
+            "program_id": self.program_id,
             "token_mint": self.token_mint,
             "target_amount_base_units": self.target_amount_base_units,
             "target_amount_str": str(self.target_amount_base_units),
@@ -414,11 +430,15 @@ class AgentEconomicSummary:
     investible_surplus_str: str = "0"
     capex_investments: int = 0
     capex_investments_str: str = "0"
+    genesis_hash: str = DEFAULT_GENESIS_HASH
+    program_id: str = DEFAULT_PROGRAM_ID
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "agent_account": self.agent_account,
             "network": self.network,
+            "genesis_hash": self.genesis_hash,
+            "program_id": self.program_id,
             "token_mint": self.token_mint,
             "total_income_reconciled": self.total_income_reconciled,
             "total_income_provisional": self.total_income_provisional,

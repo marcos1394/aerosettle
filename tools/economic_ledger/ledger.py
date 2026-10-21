@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 import sqlite3
@@ -42,7 +43,7 @@ DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
 MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
 
 DEFAULT_GENESIS_HASH = LOCALNET_GENESIS_HASH
-DEFAULT_PROGRAM_ID = "Conatus11111111111111111111111111111111111"
+DEFAULT_PROGRAM_ID = "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
 
 DEFAULT_TRUSTED_RECONCILER_AUTHORITIES: frozenset[str] = frozenset({
     "conatus:protocol:reconciler:v1",
@@ -458,8 +459,8 @@ class EconomicLedger:
         agent_account: str,
         owner_pubkey: str,
         network: str,
-        genesis_hash: str,
-        program_id: str,
+        genesis_hash: Optional[str] = None,
+        program_id: Optional[str] = None,
         token_mint: str,
         amount_base_units: int | str,
         nature: MovementNature | str,
@@ -499,16 +500,39 @@ class EconomicLedger:
         amount_int = validate_base_units(amount_base_units, allow_zero=allow_zero)
         amount_str = str(amount_int)
 
-        # Conservative Reconciliation Gate for CON-22:
-        # All initial economic movements must start as PROVISIONAL.
-        # Direct assignment of RECONCILED is restricted exclusively to system contrasientos (reversals).
-        if reversal_of_movement_id is None and status_enum == MovementStatus.RECONCILED:
-            raise LedgerValidationError(
-                "Initial economic movements must be recorded as PROVISIONAL; "
-                "transition to RECONCILED requires verified evidence via reconcile_movement()."
-            )
+        # Conservative Reconciliation Gate for CON-22 & CON-24:
+        # 1. Income (or movements crediting REVENUE) must always start as PROVISIONAL;
+        #    transition to RECONCILED requires verified evidence via reconcile_movement().
+        # 2. MANUAL_ENTRY cannot directly set RECONCILED or REVERTED under any circumstances.
+        # 3. Direct assignment of RECONCILED is permitted ONLY for:
+        #    a) System contrasientos (reversals), OR
+        #    b) Internal asset-to-asset transfers/adjustments of previously verified funds
+        #       (nature in (ADJUSTMENT, INTERNAL_TRANSFER), source in (ONCHAIN_VERIFIED, EXTERNAL_VERIFIED),
+        #        with verifiable external_ref or evidence_hash, and NO legs touching REVENUE).
+        if status_enum == MovementStatus.RECONCILED:
+            if reversal_of_movement_id is not None:
+                pass  # System reversal
+            elif (
+                nature_enum in (MovementNature.ADJUSTMENT, MovementNature.INTERNAL_TRANSFER)
+                and source_enum in (ProvenanceSource.ONCHAIN_VERIFIED, ProvenanceSource.EXTERNAL_VERIFIED)
+                and (external_ref or evidence_hash or attestation_id or tx_signature)
+            ):
+                legs_to_check = custom_journal_legs or []
+                for leg in legs_to_check:
+                    acc = leg.get("account_name", "")
+                    etype = leg.get("entry_type", "")
+                    if acc.startswith("REVENUE:") or (etype == EntryType.CREDIT.value and "REVENUE" in acc):
+                        raise LedgerValidationError(
+                            "Cannot record direct RECONCILED status on movements that credit REVENUE accounts. "
+                            "Income must be initiated as PROVISIONAL and reconciled via reconcile_movement()."
+                        )
+            else:
+                raise LedgerValidationError(
+                    "Initial economic movements must be recorded as PROVISIONAL; "
+                    "transition to RECONCILED requires verified evidence via reconcile_movement()."
+                )
 
-        # Reconciliation Guard: MANUAL_ENTRY cannot directly set RECONCILED or REVERTED
+        # Reconciliation Guard: MANUAL_ENTRY cannot directly set RECONCILED or REVERTED under any circumstances
         if source_enum == ProvenanceSource.MANUAL_ENTRY and status_enum != MovementStatus.PROVISIONAL:
             raise LedgerValidationError(
                 "MANUAL_ENTRY movements cannot be recorded directly as RECONCILED; "
@@ -517,10 +541,10 @@ class EconomicLedger:
 
         # On-chain Guard: ONCHAIN_VERIFIED must be backed by evidence
         if source_enum == ProvenanceSource.ONCHAIN_VERIFIED and not (
-            tx_signature or attestation_id or evidence_hash or work_order_account
+            tx_signature or attestation_id or evidence_hash or work_order_account or external_ref
         ):
             raise LedgerValidationError(
-                "ONCHAIN_VERIFIED requires verifiable on-chain evidence (tx_signature, attestation_id, or evidence_hash)"
+                "ONCHAIN_VERIFIED requires verifiable on-chain evidence (tx_signature, attestation_id, evidence_hash, or external_ref)"
             )
 
         # Check existing by idempotency_key first (Fast Read with Complete Semantic Matching)
@@ -968,8 +992,8 @@ class EconomicLedger:
         owner_pubkey: str,
         agent_id: str,
         network: str,
-        genesis_hash: str,
-        program_id: str,
+        genesis_hash: Optional[str] = None,
+        program_id: Optional[str] = None,
         token_mint: str,
         tx_signature: Optional[str] = None,
         observed_at: Optional[int] = None,
@@ -1453,9 +1477,11 @@ class EconomicLedger:
         agent_account: str,
         *,
         network: Optional[str] = None,
+        genesis_hash: Optional[str] = None,
+        program_id: Optional[str] = None,
         token_mint: Optional[str] = None,
     ) -> list[BalanceReport]:
-        """Calculates exact balances strictly partitioned by (network, token_mint).
+        """Calculates exact balances strictly partitioned by (network, genesis_hash, program_id, token_mint).
 
         Monetary exactness guarantee:
         All summations are performed using Python arbitrary-precision integers (int),
@@ -1467,6 +1493,12 @@ class EconomicLedger:
         if network:
             conditions.append("network = ?")
             params.append(network)
+        if genesis_hash:
+            conditions.append("genesis_hash = ?")
+            params.append(genesis_hash)
+        if program_id:
+            conditions.append("program_id = ?")
+            params.append(program_id)
         if token_mint:
             conditions.append("token_mint = ?")
             params.append(token_mint)
@@ -1476,6 +1508,8 @@ class EconomicLedger:
         sql = f"""
             SELECT
                 network,
+                genesis_hash,
+                program_id,
                 token_mint,
                 nature,
                 status,
@@ -1483,14 +1517,14 @@ class EconomicLedger:
                 reversal_of_movement_id
             FROM economic_movements
             WHERE {where_clause}
-            ORDER BY network, token_mint;
+            ORDER BY network, genesis_hash, program_id, token_mint;
         """
 
         rows = self._conn.execute(sql, params).fetchall()
 
-        partitions: dict[tuple[str, str], dict[str, Any]] = {}
+        partitions: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         for r in rows:
-            key = (r["network"], r["token_mint"])
+            key = (r["network"], r["genesis_hash"], r["program_id"], r["token_mint"])
             if key not in partitions:
                 partitions[key] = {
                     "movement_count": 0,
@@ -1522,20 +1556,49 @@ class EconomicLedger:
             if st != MovementStatus.REVERTED.value and nat == MovementNature.RESERVE.value:
                 p["reserved"] += amt
 
-        # If agent_reserves entries exist, reflect exact active reserved balance
-        for (net, mint), data in partitions.items():
-            try:
-                res_rows = self._conn.execute(
-                    "SELECT current_reserved_base_units FROM agent_reserves WHERE agent_account = ? AND network = ? AND token_mint = ? AND status = 'ACTIVE';",
-                    (agent_account, net, mint),
-                ).fetchall()
-                if res_rows:
-                    data["reserved"] = sum(int(r["current_reserved_base_units"]) for r in res_rows)
-            except sqlite3.OperationalError:
-                pass
+        # Discover active reserves from agent_reserves to reflect segregated capital
+        try:
+            res_conditions = ["agent_account = ?", "status = 'ACTIVE'"]
+            res_params: list[Any] = [agent_account]
+            if network:
+                res_conditions.append("network = ?")
+                res_params.append(network)
+            if genesis_hash:
+                res_conditions.append("genesis_hash = ?")
+                res_params.append(genesis_hash)
+            if program_id:
+                res_conditions.append("program_id = ?")
+                res_params.append(program_id)
+            if token_mint:
+                res_conditions.append("token_mint = ?")
+                res_params.append(token_mint)
+
+            res_sql = f"SELECT network, genesis_hash, program_id, token_mint, current_reserved_base_units FROM agent_reserves WHERE {' AND '.join(res_conditions)};"
+            res_rows = self._conn.execute(res_sql, res_params).fetchall()
+            active_reserves_by_key: dict[tuple[str, str, str, str], int] = {}
+            for rr in res_rows:
+                r_net = rr["network"]
+                r_gen = rr["genesis_hash"] if "genesis_hash" in rr.keys() else DEFAULT_GENESIS_HASH
+                r_prog = rr["program_id"] if "program_id" in rr.keys() else DEFAULT_PROGRAM_ID
+                r_mint = rr["token_mint"]
+                key = (r_net, r_gen, r_prog, r_mint)
+                active_reserves_by_key[key] = active_reserves_by_key.get(key, 0) + int(rr["current_reserved_base_units"])
+
+            for key, active_amt in active_reserves_by_key.items():
+                if key not in partitions:
+                    partitions[key] = {
+                        "movement_count": 0,
+                        "reconciled": 0,
+                        "provisional": 0,
+                        "reserved": active_amt,
+                    }
+                else:
+                    partitions[key]["reserved"] = active_amt
+        except sqlite3.OperationalError:
+            pass
 
         reports = []
-        for (net, mint), data in sorted(partitions.items()):
+        for (net, gen, prog, mint), data in sorted(partitions.items()):
             rec = data["reconciled"]
             prov = data["provisional"]
             res = data["reserved"]
@@ -1555,6 +1618,8 @@ class EconomicLedger:
                     total_effective_balance=tot,
                     total_effective_balance_str=str(tot),
                     movement_count=data["movement_count"],
+                    genesis_hash=gen,
+                    program_id=prog,
                 )
             )
 
@@ -1706,6 +1771,8 @@ class EconomicLedger:
                     or existing_row["cost_nature"] != nat_enum.value
                     or existing_row["economic_period"] != clean_period
                     or existing_row["network"] != net_val
+                    or ("genesis_hash" in existing_row.keys() and existing_row["genesis_hash"] != gen_val)
+                    or ("program_id" in existing_row.keys() and existing_row["program_id"] != prog_val)
                     or existing_row["token_mint"] != mint_val
                     or int(existing_row["amount_base_units"]) != amount_int
                 ):
@@ -1774,6 +1841,10 @@ class EconomicLedger:
                         raise LedgerValidationError("Reserve belongs to a different agent")
                     if res_row["network"] != net_val or res_row["token_mint"] != mint_val:
                         raise LedgerValidationError("Reserve network/mint mismatch")
+                    res_gen = res_row["genesis_hash"] if "genesis_hash" in res_row.keys() else gen_val
+                    res_prog = res_row["program_id"] if "program_id" in res_row.keys() else prog_val
+                    if res_gen != gen_val or res_prog != prog_val:
+                        raise LedgerValidationError("Reserve genesis_hash/program_id mismatch")
 
                     cur_reserved = int(res_row["current_reserved_base_units"])
                     if amount_int > cur_reserved:
@@ -1868,12 +1939,12 @@ class EconomicLedger:
                 """
                 INSERT INTO agent_costs (
                     cost_id, idempotency_key, agent_id, agent_account, owner_pubkey,
-                    category, cost_nature, economic_period, network, token_mint,
+                    category, cost_nature, economic_period, network, genesis_hash, program_id, token_mint,
                     amount_base_units, amount_str, status, provenance_source,
                     evidence_hash, evidence_url, attestation_id, description,
                     journal_entry_id, movement_id, reversal_of_cost_id,
                     created_at, incurred_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     cost_id,
@@ -1885,6 +1956,8 @@ class EconomicLedger:
                     nat_enum.value,
                     clean_period,
                     net_val,
+                    gen_val,
+                    prog_val,
                     mint_val,
                     amount_str,
                     amount_str,
@@ -1956,6 +2029,8 @@ class EconomicLedger:
         economic_period: Optional[str] = None,
         status: Optional[str | MovementStatus] = None,
         network: Optional[str] = None,
+        genesis_hash: Optional[str] = None,
+        program_id: Optional[str] = None,
         token_mint: Optional[str] = None,
         provenance_source: Optional[str | ProvenanceSource] = None,
         from_ts: Optional[int] = None,
@@ -1984,6 +2059,12 @@ class EconomicLedger:
         if network is not None:
             conditions.append("network = ?")
             params.append(network)
+        if genesis_hash is not None:
+            conditions.append("genesis_hash = ?")
+            params.append(genesis_hash)
+        if program_id is not None:
+            conditions.append("program_id = ?")
+            params.append(program_id)
         if token_mint is not None:
             conditions.append("token_mint = ?")
             params.append(token_mint)
@@ -2141,12 +2222,12 @@ class EconomicLedger:
                 """
                 INSERT INTO agent_costs (
                     cost_id, idempotency_key, agent_id, agent_account, owner_pubkey,
-                    category, cost_nature, economic_period, network, token_mint,
+                    category, cost_nature, economic_period, network, genesis_hash, program_id, token_mint,
                     amount_base_units, amount_str, status, provenance_source,
                     evidence_hash, evidence_url, attestation_id, description,
                     journal_entry_id, movement_id, reversal_of_cost_id,
                     created_at, incurred_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     comp_cost_id,
@@ -2158,6 +2239,8 @@ class EconomicLedger:
                     orig_cost.cost_nature.value,
                     orig_cost.economic_period,
                     orig_cost.network,
+                    orig_cost.genesis_hash,
+                    orig_cost.program_id,
                     orig_cost.token_mint,
                     orig_cost.amount_str,
                     orig_cost.amount_str,
@@ -2254,7 +2337,7 @@ class EconomicLedger:
                         tx_cursor.execute("COMMIT;")
                     return res
 
-            # Reconciled Capital Availability Check strictly from ASSET:TREASURY in the partition (net_val, gen_val, mint_val)
+            # Reconciled Capital Availability Check strictly from ASSET:TREASURY in the partition (net_val, gen_val, prog_val, mint_val)
             tx_cursor.execute(
                 """
                 SELECT
@@ -2267,9 +2350,10 @@ class EconomicLedger:
                   AND le.account_name = 'ASSET:TREASURY'
                   AND je.network = ?
                   AND je.genesis_hash = ?
+                  AND je.program_id = ?
                   AND je.token_mint = ?;
                 """,
-                (agent_account, net_val, gen_val, mint_val),
+                (agent_account, net_val, gen_val, prog_val, mint_val),
             )
             rows = tx_cursor.fetchall()
             rec_debits = 0
@@ -2289,13 +2373,13 @@ class EconomicLedger:
                     f"Reserves cannot be funded from provisional or simulated income."
                 )
 
-            # Check if an existing reserve exists for (agent_account, reserve_type, network, token_mint)
+            # Check if an existing reserve exists for (agent_account, reserve_type, network, genesis_hash, program_id, token_mint)
             tx_cursor.execute(
                 """
                 SELECT * FROM agent_reserves
-                WHERE agent_account = ? AND reserve_type = ? AND network = ? AND token_mint = ?;
+                WHERE agent_account = ? AND reserve_type = ? AND network = ? AND genesis_hash = ? AND program_id = ? AND token_mint = ?;
                 """,
-                (agent_account, type_enum.value, net_val, mint_val),
+                (agent_account, type_enum.value, net_val, gen_val, prog_val, mint_val),
             )
             existing_res = tx_cursor.fetchone()
 
@@ -2318,10 +2402,10 @@ class EconomicLedger:
                     """
                     INSERT INTO agent_reserves (
                         reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
-                        reserve_type, network, token_mint, target_amount_base_units,
+                        reserve_type, network, genesis_hash, program_id, token_mint, target_amount_base_units,
                         current_reserved_base_units, status, created_at, updated_at,
                         description, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         reserve_id,
@@ -2331,6 +2415,8 @@ class EconomicLedger:
                         owner_pubkey,
                         type_enum.value,
                         net_val,
+                        gen_val,
+                        prog_val,
                         mint_val,
                         str(target_int),
                         amount_str,
@@ -2472,8 +2558,12 @@ class EconomicLedger:
             )
 
             # Releasing a reserve returns funds to ASSET:TREASURY as RECONCILED
+            res_gen = res_row["genesis_hash"] if "genesis_hash" in res_row.keys() else None
+            res_prog = res_row["program_id"] if "program_id" in res_row.keys() else None
             net_val, gen_val, prog_val, mint_val = validate_monetary_context(
                 network=res_row["network"],
+                genesis_hash=res_gen,
+                program_id=res_prog,
                 token_mint=res_row["token_mint"],
             )
 
@@ -2490,6 +2580,9 @@ class EconomicLedger:
                     "amount_base_units": amount_int,
                 },
             ]
+            ev_hash = hashlib.sha256(
+                f"reserve_release:{reserve_id}:{clean_idempotency_key}:{amount_int}".encode("utf-8")
+            ).hexdigest()
             mov = self.record_movement(
                 idempotency_key=f"mov_rel:{clean_idempotency_key}",
                 agent_id=res_row["agent_id"],
@@ -2502,9 +2595,11 @@ class EconomicLedger:
                 amount_base_units=amount_int,
                 nature=MovementNature.ADJUSTMENT,
                 status=MovementStatus.RECONCILED,
-                provenance_source=ProvenanceSource.MANUAL_ENTRY,
+                provenance_source=ProvenanceSource.ONCHAIN_VERIFIED,
+                external_ref=f"reserve:{reserve_id}",
+                evidence_hash=ev_hash,
                 observed_at=now,
-                metadata={"reserve_id": reserve_id, "action": "release", "reason": reason},
+                metadata={"reserve_id": reserve_id, "action": "release", "reason": reason, "release_evidence": ev_hash},
                 custom_journal_legs=legs,
                 cursor=tx_cursor,
             )
@@ -2558,6 +2653,8 @@ class EconomicLedger:
         reserve_type: Optional[str | ReserveType] = None,
         status: Optional[str | ReserveStatus] = None,
         network: Optional[str] = None,
+        genesis_hash: Optional[str] = None,
+        program_id: Optional[str] = None,
         token_mint: Optional[str] = None,
     ) -> list[AgentReserve]:
         conditions = ["agent_account = ?"]
@@ -2573,6 +2670,12 @@ class EconomicLedger:
         if network is not None:
             conditions.append("network = ?")
             params.append(network)
+        if genesis_hash is not None:
+            conditions.append("genesis_hash = ?")
+            params.append(genesis_hash)
+        if program_id is not None:
+            conditions.append("program_id = ?")
+            params.append(program_id)
         if token_mint is not None:
             conditions.append("token_mint = ?")
             params.append(token_mint)
@@ -2721,6 +2824,8 @@ class EconomicLedger:
         agent_account: str,
         *,
         network: Optional[str] = None,
+        genesis_hash: Optional[str] = None,
+        program_id: Optional[str] = None,
         token_mint: Optional[str] = None,
         economic_period: Optional[str] = None,
     ) -> list[AgentEconomicSummary]:
@@ -2728,32 +2833,34 @@ class EconomicLedger:
 
         pending obligations, budget estimations, and segregated capital reserves.
         """
-        # Discover all (network, token_mint) partitions for the agent
+        # Discover all (network, genesis_hash, program_id, token_mint) partitions for the agent
         sql_parts = """
-            SELECT DISTINCT network, token_mint FROM economic_movements WHERE agent_account = ?
+            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM economic_movements WHERE agent_account = ?
             UNION
-            SELECT DISTINCT network, token_mint FROM agent_costs WHERE agent_account = ?
+            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM agent_costs WHERE agent_account = ?
             UNION
-            SELECT DISTINCT network, token_mint FROM agent_reserves WHERE agent_account = ?;
+            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM agent_reserves WHERE agent_account = ?;
         """
         rows = self._conn.execute(sql_parts, (agent_account, agent_account, agent_account)).fetchall()
-        found_pairs = {(r["network"], r["token_mint"]) for r in rows}
-        if network and token_mint:
-            found_pairs = {(network, token_mint)}
-        elif network:
-            found_pairs = {p for p in found_pairs if p[0] == network}
-        elif token_mint:
-            found_pairs = {p for p in found_pairs if p[1] == token_mint}
+        found_tuples = {(r["network"], r["genesis_hash"], r["program_id"], r["token_mint"]) for r in rows}
+        if network:
+            found_tuples = {t for t in found_tuples if t[0] == network}
+        if genesis_hash:
+            found_tuples = {t for t in found_tuples if t[1] == genesis_hash}
+        if program_id:
+            found_tuples = {t for t in found_tuples if t[2] == program_id}
+        if token_mint:
+            found_tuples = {t for t in found_tuples if t[3] == token_mint}
 
         summaries = []
-        for net, mint in sorted(found_pairs):
+        for net, gen, prog, mint in sorted(found_tuples):
             # 1. Income from economic_movements
             inc_rows = self._conn.execute(
                 """
                 SELECT status, amount_base_units FROM economic_movements
-                WHERE agent_account = ? AND network = ? AND token_mint = ? AND nature = 'INCOME';
+                WHERE agent_account = ? AND network = ? AND genesis_hash = ? AND program_id = ? AND token_mint = ? AND nature = 'INCOME';
                 """,
-                (agent_account, net, mint),
+                (agent_account, net, gen, prog, mint),
             ).fetchall()
             inc_reconciled = 0
             inc_provisional = 0
@@ -2767,9 +2874,9 @@ class EconomicLedger:
             # 2. Costs from agent_costs
             cost_query = """
                 SELECT category, cost_nature, status, amount_base_units FROM agent_costs
-                WHERE agent_account = ? AND network = ? AND token_mint = ?
+                WHERE agent_account = ? AND network = ? AND genesis_hash = ? AND program_id = ? AND token_mint = ?
             """
-            cost_params: list[Any] = [agent_account, net, mint]
+            cost_params: list[Any] = [agent_account, net, gen, prog, mint]
             if economic_period is not None:
                 cost_query += " AND economic_period = ?"
                 cost_params.append(economic_period)
@@ -2800,9 +2907,9 @@ class EconomicLedger:
             res_rows = self._conn.execute(
                 """
                 SELECT reserve_type, current_reserved_base_units FROM agent_reserves
-                WHERE agent_account = ? AND network = ? AND token_mint = ? AND status = 'ACTIVE';
+                WHERE agent_account = ? AND network = ? AND genesis_hash = ? AND program_id = ? AND token_mint = ? AND status = 'ACTIVE';
                 """,
-                (agent_account, net, mint),
+                (agent_account, net, gen, prog, mint),
             ).fetchall()
             by_reserve: dict[str, int] = {rt.value: 0 for rt in ReserveType}
             total_reserved = 0
@@ -2821,12 +2928,14 @@ class EconomicLedger:
                 JOIN journal_entries je ON le.journal_entry_id = je.journal_entry_id
                 WHERE le.agent_account = ?
                   AND je.network = ?
+                  AND je.genesis_hash = ?
+                  AND je.program_id = ?
                   AND je.token_mint = ?
                   AND le.account_name LIKE 'ASSET:%'
                   AND le.account_name != 'ASSET:TREASURY'
                   AND NOT le.account_name LIKE 'ASSET:RESERVED:%';
                 """,
-                (agent_account, net, mint),
+                (agent_account, net, gen, prog, mint),
             ).fetchall()
             capex_total = 0
             for c_row in capex_rows:
@@ -2848,9 +2957,11 @@ class EconomicLedger:
                 WHERE le.agent_account = ?
                   AND le.account_name = 'ASSET:TREASURY'
                   AND je.network = ?
+                  AND je.genesis_hash = ?
+                  AND je.program_id = ?
                   AND je.token_mint = ?;
                 """,
-                (agent_account, net, mint),
+                (agent_account, net, gen, prog, mint),
             ).fetchall()
             treasury_rec_debits = 0
             treasury_all_credits = 0
@@ -2864,7 +2975,8 @@ class EconomicLedger:
 
             avail = max(0, treasury_rec_debits - treasury_all_credits)
             surplus = max(0, avail - accrued_obs)
-            tot_effective = inc_reconciled + inc_provisional - realized_exp
+            # Net Worth (Patrimonio Neto) = Total Assets - Total Liabilities
+            tot_effective = (avail + total_reserved + capex_investments + inc_provisional) - accrued_obs
 
             summaries.append(
                 AgentEconomicSummary(
@@ -2893,10 +3005,10 @@ class EconomicLedger:
                     capex_investments_str=str(capex_investments),
                     costs_by_category=by_category,
                     reserves_by_type=by_reserve,
+                    genesis_hash=gen,
+                    program_id=prog,
                 )
             )
-
-        return summaries
 
         return summaries
 
@@ -3130,6 +3242,9 @@ class EconomicLedger:
             except Exception:
                 meta = {}
 
+        r_gen = row["genesis_hash"] if "genesis_hash" in row.keys() else DEFAULT_GENESIS_HASH
+        r_prog = row["program_id"] if "program_id" in row.keys() else DEFAULT_PROGRAM_ID
+
         return AgentCost(
             cost_id=row["cost_id"],
             idempotency_key=row["idempotency_key"],
@@ -3155,6 +3270,8 @@ class EconomicLedger:
             description=row["description"],
             reversal_of_cost_id=row["reversal_of_cost_id"],
             metadata=meta,
+            genesis_hash=r_gen,
+            program_id=r_prog,
         )
 
     @staticmethod
@@ -3165,6 +3282,9 @@ class EconomicLedger:
                 meta = json.loads(row["metadata_json"])
             except Exception:
                 meta = {}
+
+        r_gen = row["genesis_hash"] if "genesis_hash" in row.keys() else DEFAULT_GENESIS_HASH
+        r_prog = row["program_id"] if "program_id" in row.keys() else DEFAULT_PROGRAM_ID
 
         return AgentReserve(
             reserve_id=row["reserve_id"],
@@ -3182,6 +3302,8 @@ class EconomicLedger:
             updated_at=int(row["updated_at"]),
             description=row["description"],
             metadata=meta,
+            genesis_hash=r_gen,
+            program_id=r_prog,
         )
 
     @staticmethod

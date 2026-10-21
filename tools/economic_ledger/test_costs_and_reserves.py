@@ -1,4 +1,5 @@
 """Comprehensive test suite for Conatus Agent Costs and Reserves (CON-24)."""
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -1077,7 +1078,7 @@ class AgentCostsAndReservesTests(unittest.TestCase):
         # - Capital Reserved: 20M
         # - Accrued Obligations: 15M
         # - Realized Expenses: 0 (accrual is not realized cash outflow)
-        # - Total Effective Balance (Net Worth): 100M (Cash 50M + Equipment 30M + Reserve 20M)
+        # - Total Effective Balance (Net Worth): 85M (Assets: Cash 50M + Equipment 30M + Reserve 20M = 100M; Liabilities: Accrued 15M)
         summary = self._summary()
         self.assertIsNotNone(summary)
         self.assertEqual(summary.total_income_reconciled, 100_000_000)
@@ -1087,9 +1088,41 @@ class AgentCostsAndReservesTests(unittest.TestCase):
         self.assertEqual(summary.total_expenses_realized, 0)
         self.assertEqual(summary.available_balance, 50_000_000)
         self.assertEqual(summary.investible_surplus, 35_000_000)
-        self.assertEqual(summary.total_effective_balance, 100_000_000)
+        self.assertEqual(summary.total_effective_balance, 85_000_000, "Net worth must equal Assets (100M) minus Liabilities (15M) = 85M!")
 
-        # 5. Now incur a realized expense paid FROM the reserve (10,000,000 USDC)
+        # 5. Now incur an independent realized expense paid from treasury cash (10,000,000 USDC)
+        # Net worth should become 75,000,000 (Assets 90M - Liabilities 15M)
+        cost_direct = self.ledger.record_cost(
+            idempotency_key="cost-direct-surplus-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            category=CostCategory.ENERGY_FUEL,
+            cost_nature=CostNature.REALIZED,
+            economic_period="2026-10",
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=10_000_000,
+        )
+
+        summary_direct = self._summary()
+        self.assertIsNotNone(summary_direct)
+        self.assertEqual(summary_direct.available_balance, 40_000_000)
+        self.assertEqual(summary_direct.total_capital_reserved, 20_000_000)
+        self.assertEqual(summary_direct.capex_investments, 30_000_000)
+        self.assertEqual(summary_direct.total_obligations_accrued, 15_000_000)
+        self.assertEqual(summary_direct.total_expenses_realized, 10_000_000)
+        self.assertEqual(summary_direct.total_effective_balance, 75_000_000, "Net worth after 10M expense must be 75M!")
+        self.assertEqual(summary_direct.investible_surplus, 25_000_000)
+
+        # 6. Now incur a realized expense paid FROM the reserve (10,000,000 USDC)
+        # Verify NO double counting of reserve consumption:
+        # - Available cash is untouched (stays 40,000,000)
+        # - Reserve decreases by 10,000,000 (to 10,000,000)
+        # - Realized expenses increases to 20,000,000
+        # - Total Assets = 40M (cash) + 10M (reserve) + 30M (equipment) = 80M
+        # - Total Liabilities = 15M
+        # - Net Worth = 80M - 15M = 65M
         cost_from_res = self.ledger.record_cost(
             idempotency_key="cost-from-res-surplus-001",
             agent_id="11" * 32,
@@ -1104,19 +1137,13 @@ class AgentCostsAndReservesTests(unittest.TestCase):
             from_reserve_id=res.reserve_id,
         )
 
-        # Verify NO double deduction on available cash:
-        # - Available Cash remains 50,000,000 (since expense was paid from reserve, NOT treasury cash)
-        # - Total Capital Reserved decreases to 10,000,000
-        # - Realized Expenses increases to 10,000,000
-        # - Total Effective Balance decreases to 90,000,000
-        # - Investible Surplus remains 35,000,000
         summary2 = self._summary()
         self.assertIsNotNone(summary2)
-        self.assertEqual(summary2.available_balance, 50_000_000, "Cash must NOT be double deducted when paid from reserve!")
+        self.assertEqual(summary2.available_balance, 40_000_000, "Cash must NOT be double deducted when paid from reserve!")
         self.assertEqual(summary2.total_capital_reserved, 10_000_000)
-        self.assertEqual(summary2.total_expenses_realized, 10_000_000)
-        self.assertEqual(summary2.total_effective_balance, 90_000_000)
-        self.assertEqual(summary2.investible_surplus, 35_000_000)
+        self.assertEqual(summary2.total_expenses_realized, 20_000_000)
+        self.assertEqual(summary2.total_effective_balance, 65_000_000)
+        self.assertEqual(summary2.investible_surplus, 25_000_000)
 
         # General ledger accounting invariants must hold
         totals = self.ledger.get_ledger_totals()
@@ -1175,6 +1202,351 @@ class AgentCostsAndReservesTests(unittest.TestCase):
             network="solana:localnet", token_mint=MINT_USDC
         )
         self.assertEqual(localnet_gen, LOCALNET_GENESIS_HASH)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 17. CON-24 Review Hardening: Release Reserve, Net Worth, & Genesis Segregation
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def test_release_reserve_partial_and_total_exact_balance(self):
+        """Tests that releasing a reserve properly returns capital to treasury cash,
+        preserves double-entry balance, and transitions reserve status from ACTIVE to CLOSED.
+        """
+        self._fund_agent(amount=100_000_000)
+
+        # Allocate 40 USDC to reserve
+        res = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-rel-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.MAINTENANCE,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=40_000_000,
+        )
+
+        sum_alloc = self._summary()
+        self.assertEqual(sum_alloc.available_balance, 60_000_000)
+        self.assertEqual(sum_alloc.total_capital_reserved, 40_000_000)
+
+        # 1. Partial release of 15 USDC
+        rel_partial = self.ledger.release_reserve(
+            idempotency_key="rel-part-001",
+            reserve_id=res.reserve_id,
+            amount_base_units=15_000_000,
+            reason="Partial reserve release to cover working float",
+        )
+        self.assertEqual(rel_partial.status, ReserveStatus.ACTIVE)
+        self.assertEqual(rel_partial.current_reserved_base_units, 25_000_000)
+
+        sum_part = self._summary()
+        self.assertEqual(sum_part.available_balance, 75_000_000, "Treasury available cash must increase by exactly 15M!")
+        self.assertEqual(sum_part.total_capital_reserved, 25_000_000, "Reserved capital must decrease by exactly 15M!")
+        self.assertEqual(sum_part.total_effective_balance, 100_000_000, "Net worth must remain 100M!")
+
+        # 2. Total release of remaining 25 USDC
+        rel_total = self.ledger.release_reserve(
+            idempotency_key="rel-tot-001",
+            reserve_id=res.reserve_id,
+            amount_base_units=25_000_000,
+            reason="Full liquidation of maintenance reserve",
+        )
+        self.assertEqual(rel_total.status, ReserveStatus.CLOSED)
+        self.assertEqual(rel_total.current_reserved_base_units, 0)
+
+        sum_tot = self._summary()
+        self.assertEqual(sum_tot.available_balance, 100_000_000, "Treasury cash must be fully restored to 100M!")
+        self.assertEqual(sum_tot.total_capital_reserved, 0, "No active reserved capital remains!")
+        self.assertEqual(sum_tot.total_effective_balance, 100_000_000)
+
+        # Over-release must be rejected
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.release_reserve(
+                idempotency_key="rel-over-001",
+                reserve_id=res.reserve_id,
+                amount_base_units=1,
+            )
+        self.assertIn("exceeds current reserve balance", str(ctx.exception))
+
+        # Accounting double-entry invariants must hold
+        self.assertTrue(self.ledger.get_ledger_totals()["is_balanced"])
+
+    def test_release_reserve_idempotency_retry(self):
+        """Tests that retrying release_reserve with the same idempotency key is safely idempotent."""
+        self._fund_agent(amount=100_000_000)
+
+        res = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-idemp-rel-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.CONTINGENCY,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=50_000_000,
+        )
+
+        # First release call
+        r1 = self.ledger.release_reserve(
+            idempotency_key="rel-key-same-001",
+            reserve_id=res.reserve_id,
+            amount_base_units=20_000_000,
+        )
+        self.assertEqual(r1.current_reserved_base_units, 30_000_000)
+
+        # Second release call with same idempotency_key
+        r2 = self.ledger.release_reserve(
+            idempotency_key="rel-key-same-001",
+            reserve_id=res.reserve_id,
+            amount_base_units=20_000_000,
+        )
+        self.assertEqual(r2.current_reserved_base_units, 30_000_000, "Idempotent retry must not deduct funds again!")
+
+        # Verify only 1 release record in reserve_transactions
+        cur = self.ledger._conn.execute(
+            "SELECT COUNT(*) as c FROM reserve_transactions WHERE idempotency_key = ?;",
+            ("rel-key-same-001",),
+        )
+        self.assertEqual(cur.fetchone()["c"], 1)
+
+        summary = self._summary()
+        self.assertEqual(summary.available_balance, 70_000_000)
+        self.assertEqual(summary.total_capital_reserved, 30_000_000)
+        self.assertTrue(self.ledger.get_ledger_totals()["is_balanced"])
+
+    def test_release_reserve_persists_across_sqlite_restart(self):
+        """Tests that reserve release state and balances persist correctly after SQLite connection restart."""
+        temp_dir = tempfile.TemporaryDirectory()
+        db_path = Path(temp_dir.name) / "persist_release.db"
+
+        # Session 1: allocate and release
+        with EconomicLedger(db_path, reconciliation_verifier=self.test_verifier) as led1:
+            sig = "5SigPersist001"
+            m = led1.record_movement(
+                idempotency_key="fund-persist-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                network=NET_LOCALNET,
+                genesis_hash=GENESIS_HASH,
+                program_id=PROGRAM_ID,
+                token_mint=MINT_USDC,
+                amount_base_units=100_000_000,
+                nature=MovementNature.INCOME,
+                status=MovementStatus.PROVISIONAL,
+                tx_signature=sig,
+            )
+            led1.reconcile_movement(
+                m.movement_id,
+                evidence_hash=VALID_HASH,
+                authorized_by="conatus:protocol:reconciler:v1",
+                slot=5000,
+                tx_signature=sig,
+            )
+            res = led1.create_or_allocate_reserve(
+                idempotency_key="res-persist-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.OPERATIONAL_CONTINUITY,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=40_000_000,
+            )
+            led1.release_reserve(
+                idempotency_key="rel-persist-001",
+                reserve_id=res.reserve_id,
+                amount_base_units=15_000_000,
+                reason="Pre-restart release",
+            )
+            r_id = res.reserve_id
+
+        # Session 2: reopen database from disk
+        with EconomicLedger(db_path, reconciliation_verifier=self.test_verifier) as led2:
+            res_loaded = led2.get_reserve(r_id)
+            self.assertIsNotNone(res_loaded)
+            self.assertEqual(res_loaded.current_reserved_base_units, 25_000_000)
+            self.assertEqual(res_loaded.status, ReserveStatus.ACTIVE)
+
+            summaries = led2.get_economic_summary(AGENT_1, network=NET_LOCALNET, token_mint=MINT_USDC)
+            self.assertEqual(len(summaries), 1)
+            s = summaries[0]
+            self.assertEqual(s.available_balance, 75_000_000)
+            self.assertEqual(s.total_capital_reserved, 25_000_000)
+            self.assertEqual(s.total_effective_balance, 100_000_000)
+
+            bals = led2.get_balances(AGENT_1, network=NET_LOCALNET, token_mint=MINT_USDC)
+            self.assertEqual(len(bals), 1)
+            self.assertEqual(bals[0].reserved_balance, 25_000_000)
+
+        temp_dir.cleanup()
+
+    def test_release_reserve_rollback_on_journal_entry_fault(self):
+        """Tests atomic rollback when a failure occurs during the release accounting movement."""
+        self._fund_agent(amount=100_000_000)
+        res = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-rollback-rel-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.MAINTENANCE,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=40_000_000,
+        )
+
+        # Inject trigger fault: fail on ledger entry insert with specific marker amount
+        self.ledger._conn.execute(
+            """
+            CREATE TRIGGER inject_release_fault
+            BEFORE INSERT ON ledger_entries
+            WHEN NEW.amount_base_units = '17000000'
+            BEGIN
+                SELECT RAISE(ABORT, 'Injected journal entry crash during reserve release');
+            END;
+            """
+        )
+
+        with self.assertRaises((sqlite3.IntegrityError, LedgerValidationError)) as ctx:
+            self.ledger.release_reserve(
+                idempotency_key="rel-fault-001",
+                reserve_id=res.reserve_id,
+                amount_base_units=17_000_000,
+            )
+        self.assertIn("Injected journal entry crash", str(ctx.exception))
+
+        # Verify atomic rollback: reserve balance remains 40M, available remains 60M
+        res_after = self.ledger.get_reserve(res.reserve_id)
+        self.assertEqual(res_after.current_reserved_base_units, 40_000_000)
+
+        summary = self._summary()
+        self.assertEqual(summary.available_balance, 60_000_000)
+        self.assertEqual(summary.total_capital_reserved, 40_000_000)
+
+        # Clean up trigger
+        self.ledger._conn.execute("DROP TRIGGER inject_release_fault;")
+
+    def test_direct_reconciled_manual_income_strictly_rejected(self):
+        """Ensures that manual entry or direct attempts to create RECONCILED income are strictly rejected."""
+        # 1. Income with RECONCILED directly without reconciliation verifier must fail
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.record_movement(
+                idempotency_key="fake-rec-income-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=50_000_000,
+                nature=MovementNature.INCOME,
+                status=MovementStatus.RECONCILED,
+                provenance_source=ProvenanceSource.MANUAL_ENTRY,
+            )
+        self.assertIn("PROVISIONAL", str(ctx.exception))
+
+        # 2. Movement crediting REVENUE cannot be created directly as RECONCILED even with custom legs
+        legs = [
+            {"account_name": "ASSET:TREASURY", "entry_type": EntryType.DEBIT.value, "amount_base_units": 10_000_000},
+            {"account_name": "REVENUE:SETTLEMENT", "entry_type": EntryType.CREDIT.value, "amount_base_units": 10_000_000},
+        ]
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.record_movement(
+                idempotency_key="fake-rec-income-002",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=10_000_000,
+                nature=MovementNature.ADJUSTMENT,
+                status=MovementStatus.RECONCILED,
+                provenance_source=ProvenanceSource.ONCHAIN_VERIFIED,
+                external_ref="some_ref",
+                custom_journal_legs=legs,
+            )
+        self.assertIn("Cannot record direct RECONCILED status on movements that credit REVENUE", str(ctx.exception))
+
+    def test_two_localnets_different_genesis_do_not_share_funds(self):
+        """Proves that two Localnets with the same network name ('solana:localnet') and mint
+        but different genesis_hash do NOT share reserves, income, or balances.
+        """
+        GENESIS_A = "GENESIS_LOCALNET_ALPHA_11111111111111111111111111"
+        GENESIS_B = "GENESIS_LOCALNET_BETA_222222222222222222222222222"
+
+        # 1. Fund agent on Localnet Alpha with 100M USDC
+        sig_a = "5SigLocalnetAlpha001"
+        mov_a = self.ledger.record_movement(
+            idempotency_key="fund-alpha-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            network=NET_LOCALNET,
+            genesis_hash=GENESIS_A,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=100_000_000,
+            nature=MovementNature.INCOME,
+            status=MovementStatus.PROVISIONAL,
+            tx_signature=sig_a,
+        )
+        self.ledger.reconcile_movement(
+            mov_a.movement_id,
+            evidence_hash=VALID_HASH,
+            authorized_by="conatus:protocol:reconciler:v1",
+            slot=1000,
+            tx_signature=sig_a,
+        )
+
+        # 2. Allocate 40M reserve on Localnet Alpha
+        self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-alpha-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.MAINTENANCE,
+            network=NET_LOCALNET,
+            genesis_hash=GENESIS_A,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=40_000_000,
+        )
+
+        # 3. Verify Localnet Beta has ZERO funds and CANNOT allocate reserves
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.create_or_allocate_reserve(
+                idempotency_key="res-beta-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.MAINTENANCE,
+                network=NET_LOCALNET,
+                genesis_hash=GENESIS_B,
+                program_id=PROGRAM_ID,
+                token_mint=MINT_USDC,
+                amount_base_units=10_000_000,
+            )
+        self.assertIn("Insufficient reconciled funds in ASSET:TREASURY: available 0", str(ctx.exception))
+
+        # 4. Check balances segregated by genesis
+        bals_alpha = self.ledger.get_balances(AGENT_1, network=NET_LOCALNET, genesis_hash=GENESIS_A, token_mint=MINT_USDC)
+        self.assertEqual(len(bals_alpha), 1)
+        self.assertEqual(bals_alpha[0].reconciled_balance, 100_000_000)
+        self.assertEqual(bals_alpha[0].reserved_balance, 40_000_000)
+
+        bals_beta = self.ledger.get_balances(AGENT_1, network=NET_LOCALNET, genesis_hash=GENESIS_B, token_mint=MINT_USDC)
+        self.assertEqual(len(bals_beta), 0)
+
+        # 5. Check economic summaries segregated by genesis
+        sum_alpha = self.ledger.get_economic_summary(AGENT_1, network=NET_LOCALNET, genesis_hash=GENESIS_A, token_mint=MINT_USDC)
+        self.assertEqual(len(sum_alpha), 1)
+        self.assertEqual(sum_alpha[0].available_balance, 60_000_000)
+        self.assertEqual(sum_alpha[0].total_capital_reserved, 40_000_000)
+        self.assertEqual(sum_alpha[0].total_effective_balance, 100_000_000)
+
+        sum_all_localnet = self.ledger.get_economic_summary(AGENT_1, network=NET_LOCALNET, token_mint=MINT_USDC)
+        # Should only list active partitions for the agent
+        self.assertEqual(len(sum_all_localnet), 1)
+        self.assertEqual(sum_all_localnet[0].genesis_hash, GENESIS_A)
 
 
 if __name__ == "__main__":
