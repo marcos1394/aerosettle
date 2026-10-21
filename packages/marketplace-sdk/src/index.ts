@@ -129,7 +129,8 @@ export type ReserveType =
 export type ReserveStatus =
   | 'ACTIVE'
   | 'DEPLETED'
-  | 'CLOSED';
+  | 'CLOSED'
+  | 'PENDING_RESOLUTION';
 
 export type ReserveAction =
   | 'ALLOCATE'

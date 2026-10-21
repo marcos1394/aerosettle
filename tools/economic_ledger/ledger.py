@@ -477,6 +477,7 @@ class EconomicLedger:
         metadata: Optional[dict[str, Any]] = None,
         custom_journal_legs: Optional[list[dict[str, Any]]] = None,
         cursor: Optional[sqlite3.Cursor] = None,
+        _reclassification_context: Optional[dict[str, Any]] = None,
     ) -> EconomicMovement:
         """Idempotently records an economic movement with balanced double-entry accounting."""
         if not idempotency_key or not idempotency_key.strip():
@@ -501,35 +502,63 @@ class EconomicLedger:
         amount_str = str(amount_int)
 
         # Conservative Reconciliation Gate for CON-22 & CON-24:
-        # 1. Income (or movements crediting REVENUE) must always start as PROVISIONAL;
-        #    transition to RECONCILED requires verified evidence via reconcile_movement().
-        # 2. MANUAL_ENTRY cannot directly set RECONCILED or REVERTED under any circumstances.
-        # 3. Direct assignment of RECONCILED is permitted ONLY for:
-        #    a) System contrasientos (reversals), OR
-        #    b) Internal asset-to-asset transfers/adjustments of previously verified funds
-        #       (nature in (ADJUSTMENT, INTERNAL_TRANSFER), source in (ONCHAIN_VERIFIED, EXTERNAL_VERIFIED),
-        #        with verifiable external_ref or evidence_hash, and NO legs touching REVENUE).
+        # 1. Direct assignment of RECONCILED is strictly prohibited for external/arbitrary callers;
+        #    initial economic movements must start as PROVISIONAL, and transition to RECONCILED
+        #    requires authentic evidence via reconcile_movement().
+        # 2. Reversals (system contrasientos) have reversal_of_movement_id set.
+        # 3. Internal restricted reclassification of verified asset capital (release_reserve)
+        #    passes _reclassification_context with explicit validation of the reserve and balancing legs.
+        # 4. MANUAL_ENTRY cannot directly set RECONCILED or REVERTED under any circumstances.
         if status_enum == MovementStatus.RECONCILED:
             if reversal_of_movement_id is not None:
                 pass  # System reversal
-            elif (
-                nature_enum in (MovementNature.ADJUSTMENT, MovementNature.INTERNAL_TRANSFER)
-                and source_enum in (ProvenanceSource.ONCHAIN_VERIFIED, ProvenanceSource.EXTERNAL_VERIFIED)
-                and (external_ref or evidence_hash or attestation_id or tx_signature)
-            ):
-                legs_to_check = custom_journal_legs or []
-                for leg in legs_to_check:
-                    acc = leg.get("account_name", "")
-                    etype = leg.get("entry_type", "")
-                    if acc.startswith("REVENUE:") or (etype == EntryType.CREDIT.value and "REVENUE" in acc):
-                        raise LedgerValidationError(
-                            "Cannot record direct RECONCILED status on movements that credit REVENUE accounts. "
-                            "Income must be initiated as PROVISIONAL and reconciled via reconcile_movement()."
-                        )
+            elif _reclassification_context is not None:
+                op = _reclassification_context.get("operation")
+                res_id = _reclassification_context.get("reserve_id")
+                if op != "release_reserve" or not res_id:
+                    raise LedgerValidationError(
+                        "Arbitrary creation of RECONCILED movements is strictly prohibited. "
+                        "Reclassification is restricted to verified internal asset transfers."
+                    )
+                chk_cursor = cursor if cursor is not None else self._conn.cursor()
+                chk_cursor.execute(
+                    "SELECT * FROM agent_reserves WHERE reserve_id = ?;",
+                    (res_id,),
+                )
+                res_rec = chk_cursor.fetchone()
+                if not res_rec:
+                    raise LedgerValidationError(f"Internal reclassification target reserve '{res_id}' does not exist")
+                if res_rec["agent_account"] != agent_account:
+                    raise LedgerValidationError("Reclassification agent account mismatch with target reserve")
+                if res_rec["network"] != net_val or res_rec["token_mint"] != mint_val:
+                    raise LedgerValidationError("Reclassification monetary context mismatch with target reserve")
+
+                # Offset legs must strictly transfer from ASSET:RESERVED:<TYPE> to ASSET:TREASURY
+                if not custom_journal_legs or len(custom_journal_legs) != 2:
+                    raise LedgerValidationError("Reclassification requires exactly two balanced asset legs")
+
+                expected_debit = "ASSET:TREASURY"
+                expected_credit = f"ASSET:RESERVED:{res_rec['reserve_type']}"
+
+                leg_debit = next((l for l in custom_journal_legs if l.get("entry_type") == EntryType.DEBIT.value), None)
+                leg_credit = next((l for l in custom_journal_legs if l.get("entry_type") == EntryType.CREDIT.value), None)
+
+                if not leg_debit or not leg_credit:
+                    raise LedgerValidationError("Reclassification journal legs must contain both DEBIT and CREDIT")
+                if leg_debit.get("account_name") != expected_debit or leg_credit.get("account_name") != expected_credit:
+                    raise LedgerValidationError(
+                        f"Reclassification legs must debit '{expected_debit}' and credit '{expected_credit}', "
+                        f"got debit '{leg_debit.get('account_name')}' and credit '{leg_credit.get('account_name')}'"
+                    )
+                if int(leg_debit.get("amount_base_units", 0)) != amount_int or int(leg_credit.get("amount_base_units", 0)) != amount_int:
+                    raise LedgerValidationError("Reclassification leg amounts must exactly match movement amount")
+                if external_ref != f"reserve:{res_id}":
+                    raise LedgerValidationError("Reclassification external_ref must match reserve reference")
             else:
                 raise LedgerValidationError(
                     "Initial economic movements must be recorded as PROVISIONAL; "
-                    "transition to RECONCILED requires verified evidence via reconcile_movement()."
+                    "Arbitrary creation of RECONCILED movements is strictly prohibited, "
+                    "and transition requires authentic verification via reconcile_movement()."
                 )
 
         # Reconciliation Guard: MANUAL_ENTRY cannot directly set RECONCILED or REVERTED under any circumstances
@@ -1496,6 +1525,8 @@ class EconomicLedger:
         if genesis_hash:
             conditions.append("genesis_hash = ?")
             params.append(genesis_hash)
+        else:
+            conditions.append("genesis_hash != 'PENDING_RESOLUTION'")
         if program_id:
             conditions.append("program_id = ?")
             params.append(program_id)
@@ -1566,6 +1597,8 @@ class EconomicLedger:
             if genesis_hash:
                 res_conditions.append("genesis_hash = ?")
                 res_params.append(genesis_hash)
+            else:
+                res_conditions.append("genesis_hash != 'PENDING_RESOLUTION'")
             if program_id:
                 res_conditions.append("program_id = ?")
                 res_params.append(program_id)
@@ -2324,18 +2357,46 @@ class EconomicLedger:
         if manage_tx:
             tx_cursor.execute("BEGIN IMMEDIATE;")
         try:
-            # Check idempotency on reserve transaction
+            # Check idempotency on reserve transaction with semantic payload validation
             tx_cursor.execute(
                 "SELECT * FROM reserve_transactions WHERE idempotency_key = ?;",
                 (clean_idempotency_key,),
             )
             existing_tx = tx_cursor.fetchone()
             if existing_tx:
+                if existing_tx["action"] != ReserveAction.ALLOCATE.value:
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: key '{clean_idempotency_key}' previously used with action '{existing_tx['action']}'"
+                    )
+                if int(existing_tx["amount_base_units"]) != amount_int:
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: key '{clean_idempotency_key}' previously used with amount {existing_tx['amount_base_units']}, got {amount_int}"
+                    )
                 res = self.get_reserve(existing_tx["reserve_id"])
-                if res:
-                    if manage_tx:
-                        tx_cursor.execute("COMMIT;")
-                    return res
+                if not res:
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: target reserve '{existing_tx['reserve_id']}' not found"
+                    )
+                if res.agent_account != agent_account:
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: key previously used for agent '{res.agent_account}', got '{agent_account}'"
+                    )
+                if res.reserve_type != type_enum:
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: key previously used for reserve type '{res.reserve_type.value}', got '{type_enum.value}'"
+                    )
+                if (
+                    res.network != net_val
+                    or res.genesis_hash != gen_val
+                    or res.program_id != prog_val
+                    or res.token_mint != mint_val
+                ):
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: monetary context mismatch for key '{clean_idempotency_key}'"
+                    )
+                if manage_tx:
+                    tx_cursor.execute("COMMIT;")
+                return res
 
             # Reconciled Capital Availability Check strictly from ASSET:TREASURY in the partition (net_val, gen_val, prog_val, mint_val)
             tx_cursor.execute(
@@ -2515,6 +2576,35 @@ class EconomicLedger:
         if manage_tx:
             tx_cursor.execute("BEGIN IMMEDIATE;")
         try:
+            amount_int = validate_base_units(amount_base_units, allow_zero=False)
+            amount_str = str(amount_int)
+
+            # 1. Check idempotency FIRST before validating current reserve balance
+            tx_cursor.execute(
+                "SELECT * FROM reserve_transactions WHERE idempotency_key = ?;",
+                (clean_idempotency_key,),
+            )
+            existing_tx = tx_cursor.fetchone()
+            if existing_tx:
+                if existing_tx["action"] != ReserveAction.RELEASE.value:
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: key '{clean_idempotency_key}' previously used with action '{existing_tx['action']}'"
+                    )
+                if existing_tx["reserve_id"] != reserve_id:
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: key '{clean_idempotency_key}' previously used with reserve_id '{existing_tx['reserve_id']}'"
+                    )
+                if int(existing_tx["amount_base_units"]) != amount_int:
+                    raise IdempotencyConflictError(
+                        f"Idempotency conflict: key '{clean_idempotency_key}' previously used with amount {existing_tx['amount_base_units']}, got {amount_int}"
+                    )
+                res = self.get_reserve(reserve_id)
+                if res:
+                    if manage_tx:
+                        tx_cursor.execute("COMMIT;")
+                    return res
+
+            # 2. Query target reserve
             tx_cursor.execute(
                 "SELECT * FROM agent_reserves WHERE reserve_id = ?;",
                 (reserve_id,),
@@ -2523,8 +2613,7 @@ class EconomicLedger:
             if not res_row:
                 raise LedgerValidationError(f"Reserve '{reserve_id}' not found")
 
-            amount_int = validate_base_units(amount_base_units, allow_zero=False)
-            amount_str = str(amount_int)
+            # 3. Validate balance
             cur_reserved = int(res_row["current_reserved_base_units"])
             if amount_int > cur_reserved:
                 raise LedgerValidationError(
@@ -2532,19 +2621,6 @@ class EconomicLedger:
                 )
 
             now = int(time.time())
-
-            # Check idempotency
-            tx_cursor.execute(
-                "SELECT * FROM reserve_transactions WHERE idempotency_key = ?;",
-                (clean_idempotency_key,),
-            )
-            existing_tx = tx_cursor.fetchone()
-            if existing_tx:
-                res = self.get_reserve(reserve_id)
-                if res:
-                    if manage_tx:
-                        tx_cursor.execute("COMMIT;")
-                    return res
 
             new_reserved = cur_reserved - amount_int
             new_status = ReserveStatus.CLOSED.value if new_reserved == 0 else ReserveStatus.ACTIVE.value
@@ -2602,6 +2678,7 @@ class EconomicLedger:
                 metadata={"reserve_id": reserve_id, "action": "release", "reason": reason, "release_evidence": ev_hash},
                 custom_journal_legs=legs,
                 cursor=tx_cursor,
+                _reclassification_context={"operation": "release_reserve", "reserve_id": reserve_id},
             )
 
             rtx_id = f"rtx_{uuid.uuid4().hex[:16]}"
@@ -2834,15 +2911,23 @@ class EconomicLedger:
         pending obligations, budget estimations, and segregated capital reserves.
         """
         # Discover all (network, genesis_hash, program_id, token_mint) partitions for the agent
+        # Exclude records marked as PENDING_RESOLUTION from active economic availability and summary calculations
         sql_parts = """
-            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM economic_movements WHERE agent_account = ?
+            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM economic_movements
+            WHERE agent_account = ? AND genesis_hash != 'PENDING_RESOLUTION'
             UNION
-            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM agent_costs WHERE agent_account = ?
+            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM agent_costs
+            WHERE agent_account = ? AND genesis_hash != 'PENDING_RESOLUTION'
             UNION
-            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM agent_reserves WHERE agent_account = ?;
+            SELECT DISTINCT network, genesis_hash, program_id, token_mint FROM agent_reserves
+            WHERE agent_account = ? AND status != 'PENDING_RESOLUTION' AND genesis_hash != 'PENDING_RESOLUTION';
         """
         rows = self._conn.execute(sql_parts, (agent_account, agent_account, agent_account)).fetchall()
-        found_tuples = {(r["network"], r["genesis_hash"], r["program_id"], r["token_mint"]) for r in rows}
+        found_tuples = {
+            (r["network"], r["genesis_hash"], r["program_id"], r["token_mint"])
+            for r in rows
+            if r["genesis_hash"] != "PENDING_RESOLUTION" and r["program_id"] != "PENDING_RESOLUTION"
+        }
         if network:
             found_tuples = {t for t in found_tuples if t[0] == network}
         if genesis_hash:

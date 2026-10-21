@@ -536,7 +536,7 @@ def build():
                 "current_reserved_str": {"type": "string"},
                 "status": {
                     "type": "string",
-                    "enum": ["ACTIVE", "DEPLETED", "CLOSED"],
+                    "enum": ["ACTIVE", "DEPLETED", "CLOSED", "PENDING_RESOLUTION"],
                 },
                 "created_at": {"type": "integer"},
                 "updated_at": {"type": "integer"},
@@ -810,7 +810,7 @@ def build():
             "status",
             {
                 "type": "string",
-                "enum": ["ACTIVE", "DEPLETED", "CLOSED"],
+                "enum": ["ACTIVE", "DEPLETED", "CLOSED", "PENDING_RESOLUTION"],
             },
             "Reserve status",
         ),

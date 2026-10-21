@@ -1,6 +1,7 @@
 """Comprehensive test suite for Conatus Agent Costs and Reserves (CON-24)."""
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -1442,9 +1443,9 @@ class AgentCostsAndReservesTests(unittest.TestCase):
                 status=MovementStatus.RECONCILED,
                 provenance_source=ProvenanceSource.MANUAL_ENTRY,
             )
-        self.assertIn("PROVISIONAL", str(ctx.exception))
+        self.assertIn("Arbitrary creation of RECONCILED movements is strictly prohibited", str(ctx.exception))
 
-        # 2. Movement crediting REVENUE cannot be created directly as RECONCILED even with custom legs
+        # 2. Direct reconciled adjustment with external_ref="fake" and treasury debit is strictly rejected
         legs = [
             {"account_name": "ASSET:TREASURY", "entry_type": EntryType.DEBIT.value, "amount_base_units": 10_000_000},
             {"account_name": "REVENUE:SETTLEMENT", "entry_type": EntryType.CREDIT.value, "amount_base_units": 10_000_000},
@@ -1461,10 +1462,37 @@ class AgentCostsAndReservesTests(unittest.TestCase):
                 nature=MovementNature.ADJUSTMENT,
                 status=MovementStatus.RECONCILED,
                 provenance_source=ProvenanceSource.ONCHAIN_VERIFIED,
-                external_ref="some_ref",
+                external_ref="fake",
                 custom_journal_legs=legs,
             )
-        self.assertIn("Cannot record direct RECONCILED status on movements that credit REVENUE", str(ctx.exception))
+        self.assertIn("Arbitrary creation of RECONCILED movements is strictly prohibited", str(ctx.exception))
+
+    def test_direct_reconciled_adjustment_fake_ref_treasury_debit_rejected(self):
+        """Negative test: attempts to directly register a RECONCILED adjustment with external_ref='fake'
+        and a debit to ASSET:TREASURY must be strictly rejected with LedgerValidationError.
+        """
+        legs = [
+            {"account_name": "ASSET:TREASURY", "entry_type": EntryType.DEBIT.value, "amount_base_units": 50_000_000},
+            {"account_name": "ASSET:EQUIPMENT_CAPITAL", "entry_type": EntryType.CREDIT.value, "amount_base_units": 50_000_000},
+        ]
+        with self.assertRaises(LedgerValidationError) as ctx:
+            self.ledger.record_movement(
+                idempotency_key="fake-adj-treasury-debit-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                network=NET_LOCALNET,
+                genesis_hash=GENESIS_HASH,
+                program_id=PROGRAM_ID,
+                token_mint=MINT_USDC,
+                amount_base_units=50_000_000,
+                nature=MovementNature.ADJUSTMENT,
+                status=MovementStatus.RECONCILED,
+                provenance_source=ProvenanceSource.ONCHAIN_VERIFIED,
+                external_ref="fake",
+                custom_journal_legs=legs,
+            )
+        self.assertIn("Arbitrary creation of RECONCILED movements is strictly prohibited", str(ctx.exception))
 
     def test_two_localnets_different_genesis_do_not_share_funds(self):
         """Proves that two Localnets with the same network name ('solana:localnet') and mint
@@ -1547,6 +1575,323 @@ class AgentCostsAndReservesTests(unittest.TestCase):
         # Should only list active partitions for the agent
         self.assertEqual(len(sum_all_localnet), 1)
         self.assertEqual(sum_all_localnet[0].genesis_hash, GENESIS_A)
+
+    def test_reserve_idempotency_total_release_zero_balance_retry(self):
+        """Proves that an identical retry of a total reserve release succeeds idempotently
+        even when the current reserve balance has dropped to zero.
+        """
+        self._fund_agent(amount=100_000_000)
+        res = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-total-rel-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.CONTINGENCY,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=40_000_000,
+        )
+        self.assertEqual(res.current_reserved_base_units, 40_000_000)
+
+        # 1. Total release of all 40M
+        rel1 = self.ledger.release_reserve(
+            idempotency_key="rel-full-key-001",
+            reserve_id=res.reserve_id,
+            amount_base_units=40_000_000,
+            reason="Full liquidation of contingency reserve",
+        )
+        self.assertEqual(rel1.current_reserved_base_units, 0)
+        self.assertEqual(rel1.status, ReserveStatus.CLOSED)
+
+        # 2. Identical retry with the same idempotency key and amount
+        # MUST NOT fail with 'Release amount exceeds current reserve balance (0)'
+        rel2 = self.ledger.release_reserve(
+            idempotency_key="rel-full-key-001",
+            reserve_id=res.reserve_id,
+            amount_base_units=40_000_000,
+            reason="Full liquidation of contingency reserve",
+        )
+        self.assertEqual(rel2.current_reserved_base_units, 0)
+        self.assertEqual(rel2.status, ReserveStatus.CLOSED)
+        self.assertEqual(rel2.reserve_id, res.reserve_id)
+
+    def test_reserve_idempotency_conflicting_payloads(self):
+        """Verifies semantic validation on idempotency keys for both allocation and release:
+        reusing keys with conflicting amounts, actions, or reserves raises IdempotencyConflictError.
+        """
+        self._fund_agent(amount=100_000_000)
+        # 1. Allocate with key 'res-key-conflict-001' for 30M
+        res1 = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-key-conflict-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.OPERATIONAL_CONTINUITY,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=30_000_000,
+        )
+
+        # Reusing same key with different amount (40M) must raise IdempotencyConflictError
+        with self.assertRaises(IdempotencyConflictError):
+            self.ledger.create_or_allocate_reserve(
+                idempotency_key="res-key-conflict-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.OPERATIONAL_CONTINUITY,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=40_000_000,
+            )
+
+        # Reusing same key with different reserve type must raise IdempotencyConflictError
+        with self.assertRaises(IdempotencyConflictError):
+            self.ledger.create_or_allocate_reserve(
+                idempotency_key="res-key-conflict-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.MAINTENANCE,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=30_000_000,
+            )
+
+        # 2. Allocate second reserve
+        res2 = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-key-second-002",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.MAINTENANCE,
+            network=NET_LOCALNET,
+            token_mint=MINT_USDC,
+            amount_base_units=20_000_000,
+        )
+
+        # Release 10M from res1 with key 'rel-key-conflict-001'
+        self.ledger.release_reserve(
+            idempotency_key="rel-key-conflict-001",
+            reserve_id=res1.reserve_id,
+            amount_base_units=10_000_000,
+        )
+
+        # Reusing release key with different amount (15M) must raise IdempotencyConflictError
+        with self.assertRaises(IdempotencyConflictError):
+            self.ledger.release_reserve(
+                idempotency_key="rel-key-conflict-001",
+                reserve_id=res1.reserve_id,
+                amount_base_units=15_000_000,
+            )
+
+        # Reusing release key with different reserve_id (res2) must raise IdempotencyConflictError
+        with self.assertRaises(IdempotencyConflictError):
+            self.ledger.release_reserve(
+                idempotency_key="rel-key-conflict-001",
+                reserve_id=res2.reserve_id,
+                amount_base_units=10_000_000,
+            )
+
+    def test_reserve_idempotency_across_restarts(self):
+        """Tests that idempotency keys persist and function accurately across SQLite connection restarts."""
+        temp_dir = tempfile.TemporaryDirectory()
+        db_path = Path(temp_dir.name) / "test_idempotency_restart.db"
+
+        alloc_key = "alloc-restart-key-001"
+        rel_key = "rel-restart-key-001"
+        res_id = None
+
+        # Session 1: allocate and release
+        with EconomicLedger(db_path, reconciliation_verifier=self.test_verifier) as led1:
+            sig = "5SigRestart001"
+            m = led1.record_movement(
+                idempotency_key="fund-restart-001",
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                network=NET_LOCALNET,
+                genesis_hash=GENESIS_HASH,
+                program_id=PROGRAM_ID,
+                token_mint=MINT_USDC,
+                amount_base_units=100_000_000,
+                nature=MovementNature.INCOME,
+                status=MovementStatus.PROVISIONAL,
+                tx_signature=sig,
+            )
+            led1.reconcile_movement(
+                m.movement_id,
+                evidence_hash=VALID_HASH,
+                authorized_by="conatus:protocol:reconciler:v1",
+                slot=5000,
+                tx_signature=sig,
+            )
+            res = led1.create_or_allocate_reserve(
+                idempotency_key=alloc_key,
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.OPERATIONAL_CONTINUITY,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=50_000_000,
+            )
+            res_id = res.reserve_id
+            led1.release_reserve(
+                idempotency_key=rel_key,
+                reserve_id=res_id,
+                amount_base_units=20_000_000,
+            )
+
+        # Session 2: Reopen from disk and retry both keys
+        with EconomicLedger(db_path, reconciliation_verifier=self.test_verifier) as led2:
+            # Retry allocation key -> returns res with same parameters
+            alloc_retry = led2.create_or_allocate_reserve(
+                idempotency_key=alloc_key,
+                agent_id="11" * 32,
+                agent_account=AGENT_1,
+                owner_pubkey=OWNER_1,
+                reserve_type=ReserveType.OPERATIONAL_CONTINUITY,
+                network=NET_LOCALNET,
+                token_mint=MINT_USDC,
+                amount_base_units=50_000_000,
+            )
+            self.assertEqual(alloc_retry.reserve_id, res_id)
+
+            # Retry release key -> returns res with balance 30M
+            rel_retry = led2.release_reserve(
+                idempotency_key=rel_key,
+                reserve_id=res_id,
+                amount_base_units=20_000_000,
+            )
+            self.assertEqual(rel_retry.reserve_id, res_id)
+            self.assertEqual(rel_retry.current_reserved_base_units, 30_000_000)
+
+            # Conflicting retry across restart fails
+            with self.assertRaises(IdempotencyConflictError):
+                led2.release_reserve(
+                    idempotency_key=rel_key,
+                    reserve_id=res_id,
+                    amount_base_units=25_000_000,
+                )
+
+        temp_dir.cleanup()
+
+    def test_migration_historical_multi_network_genesis_segregation(self):
+        """Tests safe schema migration from legacy DBs with reserves on Devnet, Localnet,
+        and custom networks, verifying that:
+        1. Devnet reserves derive Devnet genesis hash.
+        2. Localnet reserves derive Localnet genesis hash.
+        3. Custom/unknown networks are marked PENDING_RESOLUTION and excluded from active economic calculations.
+        """
+        temp_dir = tempfile.TemporaryDirectory()
+        db_path = Path(temp_dir.name) / "test_legacy_migration.db"
+        conn = sqlite3.connect(str(db_path), isolation_level=None)
+        conn.row_factory = sqlite3.Row
+
+        # 1. Apply legacy migrations 001, 002, 003
+        from tools.economic_ledger.schema import split_sql_statements, MIGRATIONS_DIR
+        for v in [1, 2, 3]:
+            mfile = next(MIGRATIONS_DIR.glob(f"{v:03d}_*.sql"))
+            stmts = split_sql_statements(mfile.read_text(encoding="utf-8"))
+            conn.execute("BEGIN IMMEDIATE;")
+            for stmt in stmts:
+                conn.execute(stmt)
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL);"
+            )
+            conn.execute("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?);", (v, mfile.stem, int(time.time())))
+            conn.execute("COMMIT;")
+
+        # 2. Insert historical data in legacy schema (without genesis_hash in agent_costs/agent_reserves)
+        now = int(time.time())
+        # Devnet reserve with linked movement
+        conn.execute("BEGIN IMMEDIATE;")
+        conn.execute(
+            """
+            INSERT INTO economic_movements (
+                movement_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                network, genesis_hash, program_id, token_mint, amount_base_units, amount_str,
+                nature, status, provenance_source, registered_at, observed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("mov_dev_01", "key_mov_dev", "11"*32, AGENT_1, OWNER_1, "solana:devnet", DEVNET_GENESIS_HASH, PROGRAM_ID, MINT_USDC, "50000000", "50000000", "RESERVE", "PROVISIONAL", "MANUAL_ENTRY", now, now)
+        )
+        conn.execute(
+            """
+            INSERT INTO agent_reserves (
+                reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                reserve_type, network, token_mint, target_amount_base_units,
+                current_reserved_base_units, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("res_dev_01", "key_res_dev", "11"*32, AGENT_1, OWNER_1, "MAINTENANCE", "solana:devnet", MINT_USDC, "50000000", "50000000", "ACTIVE", now, now)
+        )
+        conn.execute(
+            """
+            INSERT INTO reserve_transactions (
+                transaction_id, reserve_id, idempotency_key, action, amount_base_units,
+                movement_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("rtx_dev_01", "res_dev_01", "key_res_dev", "ALLOCATE", "50000000", "mov_dev_01", now)
+        )
+
+        # Localnet reserve
+        conn.execute(
+            """
+            INSERT INTO agent_reserves (
+                reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                reserve_type, network, token_mint, target_amount_base_units,
+                current_reserved_base_units, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("res_loc_01", "key_res_loc", "11"*32, AGENT_1, OWNER_1, "OPERATIONAL_CONTINUITY", "solana:localnet", MINT_USDC, "30000000", "30000000", "ACTIVE", now, now)
+        )
+
+        # Unknown custom network reserve with unknown genesis
+        conn.execute(
+            """
+            INSERT INTO agent_reserves (
+                reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                reserve_type, network, token_mint, target_amount_base_units,
+                current_reserved_base_units, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("res_unk_01", "key_res_unk", "11"*32, AGENT_1, OWNER_1, "CONTINGENCY", "custom:unknown-net", MINT_USDC, "20000000", "20000000", "ACTIVE", now, now)
+        )
+        conn.execute("COMMIT;")
+        conn.close()
+
+        # 3. Open via EconomicLedger to run remaining migrations (004 and 005)
+        with EconomicLedger(db_path, reconciliation_verifier=self.test_verifier) as led:
+            # Check Devnet reserve was assigned Devnet genesis
+            res_dev = led.get_reserve("res_dev_01")
+            self.assertIsNotNone(res_dev)
+            self.assertEqual(res_dev.genesis_hash, DEVNET_GENESIS_HASH)
+            self.assertEqual(res_dev.status, ReserveStatus.ACTIVE)
+
+            # Check Localnet reserve was assigned Localnet genesis
+            res_loc = led.get_reserve("res_loc_01")
+            self.assertIsNotNone(res_loc)
+            self.assertEqual(res_loc.genesis_hash, LOCALNET_GENESIS_HASH)
+            self.assertEqual(res_loc.status, ReserveStatus.ACTIVE)
+
+            # Check unknown network reserve has genesis marked PENDING_RESOLUTION
+            res_unk = led.get_reserve("res_unk_01")
+            self.assertIsNotNone(res_unk)
+            self.assertEqual(res_unk.genesis_hash, "PENDING_RESOLUTION")
+            self.assertEqual(res_unk.program_id, "PENDING_RESOLUTION")
+
+            # 4. Check that economic summary excludes PENDING_RESOLUTION reserve
+            summaries = led.get_economic_summary(AGENT_1, network="custom:unknown-net", token_mint=MINT_USDC)
+            self.assertEqual(len(summaries), 0)
+
+            # Check balances exclude PENDING_RESOLUTION reserve
+            bals = led.get_balances(AGENT_1, network="custom:unknown-net", token_mint=MINT_USDC)
+            self.assertEqual(len(bals), 0)
+
+        temp_dir.cleanup()
 
 
 if __name__ == "__main__":

@@ -44,6 +44,7 @@ class ReserveStatus(str, Enum):
     ACTIVE = "ACTIVE"
     DEPLETED = "DEPLETED"
     CLOSED = "CLOSED"
+    PENDING_RESOLUTION = "PENDING_RESOLUTION"
 
 
 class ReserveAction(str, Enum):
