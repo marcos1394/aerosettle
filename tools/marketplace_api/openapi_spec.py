@@ -284,7 +284,15 @@ def build():
                 "amount_str": {"type": "string"},
                 "nature": {
                     "type": "string",
-                    "enum": ["INCOME", "EXPENSE", "RESERVE", "ADJUSTMENT"],
+                    "enum": [
+                        "INCOME",
+                        "EXPENSE",
+                        "RESERVE",
+                        "ADJUSTMENT",
+                        "PROVISION",
+                        "INTERNAL_TRANSFER",
+                        "CAPITAL_INVESTMENT",
+                    ],
                 },
                 "status": {
                     "type": "string",
@@ -329,6 +337,8 @@ def build():
             "properties": {
                 "agent_account": ref("Pubkey"),
                 "network": {"type": "string"},
+                "genesis_hash": {"type": "string"},
+                "program_id": ref("Pubkey"),
                 "token_mint": ref("Pubkey"),
                 "reconciled_balance": {"type": "integer"},
                 "provisional_balance": {"type": "integer"},
@@ -383,6 +393,234 @@ def build():
                         "reverted": ref("EconomicMovement"),
                         "compensating": ref("EconomicMovement"),
                     },
+                },
+                "meta": ref("Meta"),
+            },
+        },
+        "AgentCost": {
+            "type": "object",
+            "required": [
+                "cost_id",
+                "idempotency_key",
+                "agent_id",
+                "agent_account",
+                "owner_pubkey",
+                "category",
+                "cost_nature",
+                "economic_period",
+                "network",
+                "token_mint",
+                "amount_base_units",
+                "amount_str",
+                "status",
+                "provenance_source",
+                "created_at",
+                "incurred_at",
+            ],
+            "properties": {
+                "cost_id": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+                "agent_id": {"type": "string"},
+                "agent_account": ref("Pubkey"),
+                "owner_pubkey": ref("Pubkey"),
+                "category": {
+                    "type": "string",
+                    "enum": [
+                        "ENERGY_FUEL",
+                        "MAINTENANCE",
+                        "CONNECTIVITY_COMPUTE",
+                        "SUBSCRIPTIONS",
+                        "INSURANCE",
+                        "DEPRECIATION_REPLACEMENT",
+                        "OTHER",
+                    ],
+                },
+                "cost_nature": {
+                    "type": "string",
+                    "enum": ["REALIZED", "ESTIMATED", "ACCRUED_LIABILITY"],
+                },
+                "economic_period": {"type": "string"},
+                "network": {"type": "string"},
+                "genesis_hash": {"type": "string"},
+                "program_id": ref("Pubkey"),
+                "token_mint": ref("Pubkey"),
+                "amount_base_units": {"type": "integer"},
+                "amount_str": {"type": "string"},
+                "status": {
+                    "type": "string",
+                    "enum": ["PROVISIONAL", "RECONCILED", "REVERTED"],
+                },
+                "provenance_source": {
+                    "type": "string",
+                    "enum": [
+                        "ONCHAIN_VERIFIED",
+                        "EXTERNAL_VERIFIED",
+                        "SIMULATED",
+                        "MANUAL_ENTRY",
+                        "SETTLEMENT_EVENT",
+                    ],
+                },
+                "created_at": {"type": "integer"},
+                "incurred_at": {"type": "integer"},
+                "journal_entry_id": {"type": ["string", "null"]},
+                "movement_id": {"type": ["string", "null"]},
+                "evidence_hash": {"type": ["string", "null"]},
+                "evidence_url": {"type": ["string", "null"]},
+                "attestation_id": {"type": ["string", "null"]},
+                "description": {"type": ["string", "null"]},
+                "reversal_of_cost_id": {"type": ["string", "null"]},
+                "metadata": {"type": "object"},
+            },
+        },
+        "AgentCostPage": {
+            "type": "object",
+            "required": ["data", "page", "meta"],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": ref("AgentCost"),
+                },
+                "page": ref("Page"),
+                "meta": ref("Meta"),
+            },
+        },
+        "AgentCostResponse": {
+            "type": "object",
+            "required": ["data", "meta"],
+            "properties": {
+                "data": ref("AgentCost"),
+                "meta": ref("Meta"),
+            },
+        },
+        "AgentReserve": {
+            "type": "object",
+            "required": [
+                "reserve_id",
+                "idempotency_key",
+                "agent_id",
+                "agent_account",
+                "owner_pubkey",
+                "reserve_type",
+                "network",
+                "token_mint",
+                "target_amount_base_units",
+                "target_amount_str",
+                "current_reserved_base_units",
+                "current_reserved_str",
+                "status",
+                "created_at",
+                "updated_at",
+            ],
+            "properties": {
+                "reserve_id": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+                "agent_id": {"type": "string"},
+                "agent_account": ref("Pubkey"),
+                "owner_pubkey": ref("Pubkey"),
+                "reserve_type": {
+                    "type": "string",
+                    "enum": [
+                        "MAINTENANCE",
+                        "HARDWARE_REPLACEMENT",
+                        "OPERATIONAL_CONTINUITY",
+                        "CONTINGENCY",
+                    ],
+                },
+                "network": {"type": "string"},
+                "genesis_hash": {"type": "string"},
+                "program_id": ref("Pubkey"),
+                "token_mint": ref("Pubkey"),
+                "target_amount_base_units": {"type": "integer"},
+                "target_amount_str": {"type": "string"},
+                "current_reserved_base_units": {"type": "integer"},
+                "current_reserved_str": {"type": "string"},
+                "status": {
+                    "type": "string",
+                    "enum": ["ACTIVE", "DEPLETED", "CLOSED", "PENDING_RESOLUTION"],
+                },
+                "created_at": {"type": "integer"},
+                "updated_at": {"type": "integer"},
+                "description": {"type": ["string", "null"]},
+                "metadata": {"type": "object"},
+            },
+        },
+        "ReserveListResponse": {
+            "type": "object",
+            "required": ["data", "meta"],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": ref("AgentReserve"),
+                },
+                "meta": ref("Meta"),
+            },
+        },
+        "AgentReserveResponse": {
+            "type": "object",
+            "required": ["data", "meta"],
+            "properties": {
+                "data": ref("AgentReserve"),
+                "meta": ref("Meta"),
+            },
+        },
+        "AgentEconomicSummary": {
+            "type": "object",
+            "required": [
+                "agent_account",
+                "network",
+                "token_mint",
+                "total_income_reconciled",
+                "total_income_provisional",
+                "total_expenses_realized",
+                "total_obligations_accrued",
+                "total_estimated_costs",
+                "total_capital_reserved",
+                "available_balance",
+                "total_effective_balance",
+                "total_income_reconciled_str",
+                "total_income_provisional_str",
+                "total_expenses_realized_str",
+                "total_obligations_accrued_str",
+                "total_estimated_costs_str",
+                "total_capital_reserved_str",
+                "available_balance_str",
+                "total_effective_balance_str",
+                "costs_by_category",
+                "reserves_by_type",
+            ],
+            "properties": {
+                "agent_account": ref("Pubkey"),
+                "network": {"type": "string"},
+                "genesis_hash": {"type": "string"},
+                "program_id": ref("Pubkey"),
+                "token_mint": ref("Pubkey"),
+                "total_income_reconciled": {"type": "integer"},
+                "total_income_provisional": {"type": "integer"},
+                "total_expenses_realized": {"type": "integer"},
+                "total_obligations_accrued": {"type": "integer"},
+                "total_estimated_costs": {"type": "integer"},
+                "total_capital_reserved": {"type": "integer"},
+                "available_balance": {"type": "integer"},
+                "total_effective_balance": {"type": "integer"},
+                "total_income_reconciled_str": {"type": "string"},
+                "total_income_provisional_str": {"type": "string"},
+                "total_expenses_realized_str": {"type": "string"},
+                "total_obligations_accrued_str": {"type": "string"},
+                "total_estimated_costs_str": {"type": "string"},
+                "total_capital_reserved_str": {"type": "string"},
+                "available_balance_str": {"type": "string"},
+                "total_effective_balance_str": {"type": "string"},
+                "costs_by_category": {"type": "object"},
+                "reserves_by_type": {"type": "object"},
+            },
+        },
+        "EconomicSummaryResponse": {
+            "type": "object",
+            "required": ["data", "meta"],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": ref("AgentEconomicSummary"),
                 },
                 "meta": ref("Meta"),
             },
@@ -479,7 +717,15 @@ def build():
             "nature",
             {
                 "type": "string",
-                "enum": ["INCOME", "EXPENSE", "RESERVE", "ADJUSTMENT"],
+                "enum": [
+                    "INCOME",
+                    "EXPENSE",
+                    "RESERVE",
+                    "ADJUSTMENT",
+                    "PROVISION",
+                    "INTERNAL_TRANSFER",
+                    "CAPITAL_INVESTMENT",
+                ],
             },
             "Economic movement nature filter",
         ),
@@ -510,6 +756,82 @@ def build():
             "to_ts",
             {"type": "integer"},
             "Ending observation timestamp (unix seconds)",
+        ),
+        "CostId": {
+            "name": "cost_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        "ReserveId": {
+            "name": "reserve_id",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        },
+        "CostCategory": param(
+            "category",
+            {
+                "type": "string",
+                "enum": [
+                    "ENERGY_FUEL",
+                    "MAINTENANCE",
+                    "CONNECTIVITY_COMPUTE",
+                    "SUBSCRIPTIONS",
+                    "INSURANCE",
+                    "DEPRECIATION_REPLACEMENT",
+                    "OTHER",
+                ],
+            },
+            "Cost category",
+        ),
+        "CostNature": param(
+            "cost_nature",
+            {
+                "type": "string",
+                "enum": ["REALIZED", "ESTIMATED", "ACCRUED_LIABILITY"],
+            },
+            "Cost nature",
+        ),
+        "ReserveType": param(
+            "reserve_type",
+            {
+                "type": "string",
+                "enum": [
+                    "MAINTENANCE",
+                    "HARDWARE_REPLACEMENT",
+                    "OPERATIONAL_CONTINUITY",
+                    "CONTINGENCY",
+                ],
+            },
+            "Reserve type",
+        ),
+        "ReserveStatus": param(
+            "status",
+            {
+                "type": "string",
+                "enum": ["ACTIVE", "DEPLETED", "CLOSED", "PENDING_RESOLUTION"],
+            },
+            "Reserve status",
+        ),
+        "Period": param(
+            "period",
+            {"type": "string"},
+            "Economic period (e.g. 2026-10, 2026-Q1)",
+        ),
+        "ProvenanceSource": param(
+            "provenance_source",
+            {
+                "type": "string",
+                "enum": [
+                    "ONCHAIN_VERIFIED",
+                    "EXTERNAL_VERIFIED",
+                    "SIMULATED",
+                    "MANUAL_ENTRY",
+                    "SETTLEMENT_EVENT",
+                ],
+            },
+            "Provenance source",
         ),
     }
 
@@ -543,6 +865,34 @@ def build():
             "Limit", "Cursor",
         ),
         paged=True,
+    )
+
+    costs_page = operation(
+        "List agent operational costs and provisions",
+        ref("AgentCostPage"),
+        (
+            "AgentId", "CostCategory", "CostNature", "Period",
+            "MovementStatus", "Mint", "Network", "ProvenanceSource",
+            "FromTs", "ToTs", "Limit", "Cursor",
+        ),
+        paged=True,
+    )
+
+    reserves_page = operation(
+        "List agent segregated capital reserves",
+        ref("ReserveListResponse"),
+        (
+            "AgentId", "ReserveType", "ReserveStatus",
+            "Mint", "Network",
+        ),
+    )
+
+    summary_page = operation(
+        "Get agent comprehensive economic summary",
+        ref("EconomicSummaryResponse"),
+        (
+            "AgentId", "Mint", "Network", "Period",
+        ),
     )
 
     return {
@@ -589,6 +939,29 @@ def build():
                     "Get economic balances for agent",
                     ref("BalanceListResponse"),
                     ("AgentId", "Mint", "Network"),
+                )
+            },
+            "/v1/agents/{agent_id}/costs": {
+                "get": costs_page,
+            },
+            "/v1/agents/{agent_id}/reserves": {
+                "get": reserves_page,
+            },
+            "/v1/agents/{agent_id}/economic-summary": {
+                "get": summary_page,
+            },
+            "/v1/costs/{cost_id}": {
+                "get": operation(
+                    "Get operational cost detail",
+                    ref("AgentCostResponse"),
+                    ("CostId",),
+                )
+            },
+            "/v1/reserves/{reserve_id}": {
+                "get": operation(
+                    "Get capital reserve detail",
+                    ref("AgentReserveResponse"),
+                    ("ReserveId",),
                 )
             },
             "/v1/economic-movements/{movement_id}": {

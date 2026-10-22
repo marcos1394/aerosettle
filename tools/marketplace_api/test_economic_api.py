@@ -303,6 +303,150 @@ class EconomicApiTests(unittest.TestCase):
         self.assertEqual(len(prov_list["data"]), 1)
         self.assertEqual(prov_list["data"][0]["nature"], "INCOME")
 
+    def test_costs_reserves_and_economic_summary_api(self):
+        # 0. Fund DRONE with reconciled income so it has available treasury balance
+        m_fund = self.provider.ledger.record_movement(
+            idempotency_key="fund-drone-api-costs",
+            agent_id="11" * 32,
+            agent_account=DRONE,
+            owner_pubkey=OWNER_DRONE,
+            network="solana:localnet",
+            genesis_hash=server.GENESIS,
+            program_id=server.PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=10_000_000,
+            nature=MovementNature.INCOME,
+            tx_signature="sig-fund-api-111111111111111111",
+        )
+        self.provider.ledger.reconcile_movement(
+            m_fund.movement_id,
+            evidence_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            authorized_by="conatus:protocol:reconciler:v1",
+            slot=100,
+            tx_signature="sig-fund-api-111111111111111111",
+        )
+
+        # 1. Allocate a capital reserve for DRONE
+        res = self.provider.ledger.create_or_allocate_reserve(
+            idempotency_key="res-api-001",
+            agent_id="11" * 32,
+            agent_account=DRONE,
+            owner_pubkey=OWNER_DRONE,
+            reserve_type="MAINTENANCE",
+            network="solana:localnet",
+            token_mint=MINT_USDC,
+            amount_base_units=2_000_000,
+            description="API test reserve",
+        )
+
+        # 2. Record a realized operational cost
+        cost_real = self.provider.ledger.record_cost(
+            idempotency_key="cost-api-001",
+            agent_id="11" * 32,
+            agent_account=DRONE,
+            owner_pubkey=OWNER_DRONE,
+            category="ENERGY_FUEL",
+            cost_nature="REALIZED",
+            economic_period="2026-10",
+            network="solana:localnet",
+            token_mint=MINT_USDC,
+            amount_base_units=500_000,
+            description="Solar recharge API test",
+        )
+
+        # 3. Record a budget estimation
+        cost_est = self.provider.ledger.record_cost(
+            idempotency_key="cost-api-002",
+            agent_id="11" * 32,
+            agent_account=DRONE,
+            owner_pubkey=OWNER_DRONE,
+            category="MAINTENANCE",
+            cost_nature="ESTIMATED",
+            economic_period="2026-11",
+            network="solana:localnet",
+            token_mint=MINT_USDC,
+            amount_base_units=1_000_000,
+            description="Projected overhaul",
+        )
+
+        auth_headers = create_auth_headers(OWNER_DRONE_SECRET, DRONE)
+
+        # 4. Query /v1/agents/{account}/costs
+        status, costs_resp = self.request(
+            f"/v1/agents/{DRONE}/costs",
+            headers=auth_headers,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(costs_resp["data"]), 2)
+        self.assertIn("page", costs_resp)
+
+        # Query filtered by category
+        status, cat_resp = self.request(
+            f"/v1/agents/{DRONE}/costs?category=ENERGY_FUEL",
+            headers=auth_headers,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(cat_resp["data"]), 1)
+        self.assertEqual(cat_resp["data"][0]["cost_id"], cost_real.cost_id)
+
+        # 5. Query /v1/agents/{account}/reserves
+        status, res_resp = self.request(
+            f"/v1/agents/{DRONE}/reserves",
+            headers=auth_headers,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(res_resp["data"]), 1)
+        self.assertEqual(res_resp["data"][0]["reserve_id"], res.reserve_id)
+        self.assertEqual(res_resp["data"][0]["current_reserved_base_units"], 2_000_000)
+
+        # 6. Query /v1/agents/{account}/economic-summary
+        status, sum_resp = self.request(
+            f"/v1/agents/{DRONE}/economic-summary?mint={MINT_USDC}",
+            headers=auth_headers,
+        )
+        self.assertEqual(status, 200)
+        self.assertGreaterEqual(len(sum_resp["data"]), 1)
+        s = sum_resp["data"][0]
+        self.assertEqual(s["total_expenses_realized"], 500_000)
+        self.assertEqual(s["total_estimated_costs"], 1_000_000)
+        self.assertEqual(s["total_capital_reserved"], 2_000_000)
+
+        # 7. Query /v1/costs/{cost_id}
+        status, cost_detail = self.request(
+            f"/v1/costs/{cost_real.cost_id}",
+            headers=auth_headers,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(cost_detail["data"]["cost_id"], cost_real.cost_id)
+
+        # 8. Query /v1/reserves/{reserve_id}
+        status, res_detail = self.request(
+            f"/v1/reserves/{res.reserve_id}",
+            headers=auth_headers,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(res_detail["data"]["reserve_id"], res.reserve_id)
+
+        # 9. Test unauthorized access
+        unauth_status, _ = self.request(f"/v1/agents/{DRONE}/costs")
+        self.assertEqual(unauth_status, 401)
+
+        wrong_headers = create_auth_headers(OWNER_OTHER_SECRET, DRONE)
+        forbid_status, _ = self.request(
+            f"/v1/agents/{DRONE}/costs",
+            headers=wrong_headers,
+        )
+        self.assertEqual(forbid_status, 403)
+
+        # 10. Write endpoint disabled
+        post_status, _ = self.request(
+            f"/v1/costs",
+            method="POST",
+            body={"category": "ENERGY_FUEL"},
+            headers=auth_headers,
+        )
+        self.assertEqual(post_status, 405)
+
 
 if __name__ == "__main__":
     unittest.main()

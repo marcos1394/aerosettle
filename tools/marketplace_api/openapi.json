@@ -378,6 +378,330 @@
         }
       }
     },
+    "/v1/agents/{agent_id}/costs": {
+      "get": {
+        "summary": "List agent operational costs and provisions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/CostCategory"
+          },
+          {
+            "$ref": "#/components/parameters/CostNature"
+          },
+          {
+            "$ref": "#/components/parameters/Period"
+          },
+          {
+            "$ref": "#/components/parameters/MovementStatus"
+          },
+          {
+            "$ref": "#/components/parameters/Mint"
+          },
+          {
+            "$ref": "#/components/parameters/Network"
+          },
+          {
+            "$ref": "#/components/parameters/ProvenanceSource"
+          },
+          {
+            "$ref": "#/components/parameters/FromTs"
+          },
+          {
+            "$ref": "#/components/parameters/ToTs"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCostPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cursor no longer matches results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/reserves": {
+      "get": {
+        "summary": "List agent segregated capital reserves",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/ReserveType"
+          },
+          {
+            "$ref": "#/components/parameters/ReserveStatus"
+          },
+          {
+            "$ref": "#/components/parameters/Mint"
+          },
+          {
+            "$ref": "#/components/parameters/Network"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReserveListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/economic-summary": {
+      "get": {
+        "summary": "Get agent comprehensive economic summary",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/Mint"
+          },
+          {
+            "$ref": "#/components/parameters/Network"
+          },
+          {
+            "$ref": "#/components/parameters/Period"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomicSummaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/costs/{cost_id}": {
+      "get": {
+        "summary": "Get operational cost detail",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CostId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCostResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reserves/{reserve_id}": {
+      "get": {
+        "summary": "Get capital reserve detail",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReserveId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentReserveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/economic-movements/{movement_id}": {
       "get": {
         "summary": "Get economic movement detail",
@@ -1144,7 +1468,10 @@
               "INCOME",
               "EXPENSE",
               "RESERVE",
-              "ADJUSTMENT"
+              "ADJUSTMENT",
+              "PROVISION",
+              "INTERNAL_TRANSFER",
+              "CAPITAL_INVESTMENT"
             ]
           },
           "status": {
@@ -1228,6 +1555,12 @@
           },
           "network": {
             "type": "string"
+          },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
           },
           "token_mint": {
             "$ref": "#/components/schemas/Pubkey"
@@ -1336,6 +1669,433 @@
               "compensating": {
                 "$ref": "#/components/schemas/EconomicMovement"
               }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "AgentCost": {
+        "type": "object",
+        "required": [
+          "cost_id",
+          "idempotency_key",
+          "agent_id",
+          "agent_account",
+          "owner_pubkey",
+          "category",
+          "cost_nature",
+          "economic_period",
+          "network",
+          "token_mint",
+          "amount_base_units",
+          "amount_str",
+          "status",
+          "provenance_source",
+          "created_at",
+          "incurred_at"
+        ],
+        "properties": {
+          "cost_id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "owner_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "ENERGY_FUEL",
+              "MAINTENANCE",
+              "CONNECTIVITY_COMPUTE",
+              "SUBSCRIPTIONS",
+              "INSURANCE",
+              "DEPRECIATION_REPLACEMENT",
+              "OTHER"
+            ]
+          },
+          "cost_nature": {
+            "type": "string",
+            "enum": [
+              "REALIZED",
+              "ESTIMATED",
+              "ACCRUED_LIABILITY"
+            ]
+          },
+          "economic_period": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "amount_base_units": {
+            "type": "integer"
+          },
+          "amount_str": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PROVISIONAL",
+              "RECONCILED",
+              "REVERTED"
+            ]
+          },
+          "provenance_source": {
+            "type": "string",
+            "enum": [
+              "ONCHAIN_VERIFIED",
+              "EXTERNAL_VERIFIED",
+              "SIMULATED",
+              "MANUAL_ENTRY",
+              "SETTLEMENT_EVENT"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "incurred_at": {
+            "type": "integer"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "movement_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attestation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reversal_of_cost_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "AgentCostPage": {
+        "type": "object",
+        "required": [
+          "data",
+          "page",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCost"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/Page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "AgentCostResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AgentCost"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "AgentReserve": {
+        "type": "object",
+        "required": [
+          "reserve_id",
+          "idempotency_key",
+          "agent_id",
+          "agent_account",
+          "owner_pubkey",
+          "reserve_type",
+          "network",
+          "token_mint",
+          "target_amount_base_units",
+          "target_amount_str",
+          "current_reserved_base_units",
+          "current_reserved_str",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "reserve_id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "owner_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "reserve_type": {
+            "type": "string",
+            "enum": [
+              "MAINTENANCE",
+              "HARDWARE_REPLACEMENT",
+              "OPERATIONAL_CONTINUITY",
+              "CONTINGENCY"
+            ]
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "target_amount_base_units": {
+            "type": "integer"
+          },
+          "target_amount_str": {
+            "type": "string"
+          },
+          "current_reserved_base_units": {
+            "type": "integer"
+          },
+          "current_reserved_str": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DEPLETED",
+              "CLOSED",
+              "PENDING_RESOLUTION"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "integer"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "ReserveListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentReserve"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "AgentReserveResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AgentReserve"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "AgentEconomicSummary": {
+        "type": "object",
+        "required": [
+          "agent_account",
+          "network",
+          "token_mint",
+          "total_income_reconciled",
+          "total_income_provisional",
+          "total_expenses_realized",
+          "total_obligations_accrued",
+          "total_estimated_costs",
+          "total_capital_reserved",
+          "available_balance",
+          "total_effective_balance",
+          "total_income_reconciled_str",
+          "total_income_provisional_str",
+          "total_expenses_realized_str",
+          "total_obligations_accrued_str",
+          "total_estimated_costs_str",
+          "total_capital_reserved_str",
+          "available_balance_str",
+          "total_effective_balance_str",
+          "costs_by_category",
+          "reserves_by_type"
+        ],
+        "properties": {
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "type": "string"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "total_income_reconciled": {
+            "type": "integer"
+          },
+          "total_income_provisional": {
+            "type": "integer"
+          },
+          "total_expenses_realized": {
+            "type": "integer"
+          },
+          "total_obligations_accrued": {
+            "type": "integer"
+          },
+          "total_estimated_costs": {
+            "type": "integer"
+          },
+          "total_capital_reserved": {
+            "type": "integer"
+          },
+          "available_balance": {
+            "type": "integer"
+          },
+          "total_effective_balance": {
+            "type": "integer"
+          },
+          "total_income_reconciled_str": {
+            "type": "string"
+          },
+          "total_income_provisional_str": {
+            "type": "string"
+          },
+          "total_expenses_realized_str": {
+            "type": "string"
+          },
+          "total_obligations_accrued_str": {
+            "type": "string"
+          },
+          "total_estimated_costs_str": {
+            "type": "string"
+          },
+          "total_capital_reserved_str": {
+            "type": "string"
+          },
+          "available_balance_str": {
+            "type": "string"
+          },
+          "total_effective_balance_str": {
+            "type": "string"
+          },
+          "costs_by_category": {
+            "type": "object"
+          },
+          "reserves_by_type": {
+            "type": "object"
+          }
+        }
+      },
+      "EconomicSummaryResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentEconomicSummary"
             }
           },
           "meta": {
@@ -1476,7 +2236,10 @@
             "INCOME",
             "EXPENSE",
             "RESERVE",
-            "ADJUSTMENT"
+            "ADJUSTMENT",
+            "PROVISION",
+            "INTERNAL_TRANSFER",
+            "CAPITAL_INVESTMENT"
           ]
         }
       },
@@ -1528,6 +2291,109 @@
         "description": "Ending observation timestamp (unix seconds)",
         "schema": {
           "type": "integer"
+        }
+      },
+      "CostId": {
+        "name": "cost_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ReserveId": {
+        "name": "reserve_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "CostCategory": {
+        "name": "category",
+        "in": "query",
+        "required": false,
+        "description": "Cost category",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "ENERGY_FUEL",
+            "MAINTENANCE",
+            "CONNECTIVITY_COMPUTE",
+            "SUBSCRIPTIONS",
+            "INSURANCE",
+            "DEPRECIATION_REPLACEMENT",
+            "OTHER"
+          ]
+        }
+      },
+      "CostNature": {
+        "name": "cost_nature",
+        "in": "query",
+        "required": false,
+        "description": "Cost nature",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "REALIZED",
+            "ESTIMATED",
+            "ACCRUED_LIABILITY"
+          ]
+        }
+      },
+      "ReserveType": {
+        "name": "reserve_type",
+        "in": "query",
+        "required": false,
+        "description": "Reserve type",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "MAINTENANCE",
+            "HARDWARE_REPLACEMENT",
+            "OPERATIONAL_CONTINUITY",
+            "CONTINGENCY"
+          ]
+        }
+      },
+      "ReserveStatus": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Reserve status",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "DEPLETED",
+            "CLOSED",
+            "PENDING_RESOLUTION"
+          ]
+        }
+      },
+      "Period": {
+        "name": "period",
+        "in": "query",
+        "required": false,
+        "description": "Economic period (e.g. 2026-10, 2026-Q1)",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ProvenanceSource": {
+        "name": "provenance_source",
+        "in": "query",
+        "required": false,
+        "description": "Provenance source",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "ONCHAIN_VERIFIED",
+            "EXTERNAL_VERIFIED",
+            "SIMULATED",
+            "MANUAL_ENTRY",
+            "SETTLEMENT_EVENT"
+          ]
         }
       }
     }
