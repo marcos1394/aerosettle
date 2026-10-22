@@ -39,29 +39,23 @@ WHERE EXISTS (
     WHERE rt.reserve_id = agent_reserves.reserve_id
 );
 
--- 3. Resolve remaining records by verified network context
--- Localnet
-UPDATE agent_costs SET genesis_hash = 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg', program_id = 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy'
-WHERE genesis_hash IS NULL AND network IN ('solana:localnet', 'localnet');
-
-UPDATE agent_reserves SET genesis_hash = 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg', program_id = 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy'
-WHERE genesis_hash IS NULL AND network IN ('solana:localnet', 'localnet');
-
--- Devnet
+-- 3. Resolve remaining records by verified public cluster network context only
+-- Devnet (well-known public cluster)
 UPDATE agent_costs SET genesis_hash = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG', program_id = 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy'
 WHERE genesis_hash IS NULL AND network IN ('solana:devnet', 'devnet');
 
 UPDATE agent_reserves SET genesis_hash = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG', program_id = 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy'
 WHERE genesis_hash IS NULL AND network IN ('solana:devnet', 'devnet');
 
--- Mainnet
+-- Mainnet (well-known public cluster)
 UPDATE agent_costs SET genesis_hash = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d', program_id = 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy'
 WHERE genesis_hash IS NULL AND network IN ('solana:mainnet-beta', 'mainnet-beta', 'mainnet');
 
 UPDATE agent_reserves SET genesis_hash = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d', program_id = 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy'
 WHERE genesis_hash IS NULL AND network IN ('solana:mainnet-beta', 'mainnet-beta', 'mainnet');
 
--- 4. Mark uncertain/unknown monetary identities as PENDING_RESOLUTION and exclude from active calculations
+-- 4. Localnet without linked movement/evidence, and unknown networks must remain PENDING_RESOLUTION
+-- They must never be arbitrarily attributed to a default genesis hash.
 UPDATE agent_costs SET genesis_hash = 'PENDING_RESOLUTION', program_id = 'PENDING_RESOLUTION'
 WHERE genesis_hash IS NULL;
 

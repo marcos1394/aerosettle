@@ -2,7 +2,7 @@
 -- Version: 005
 -- Name: fix_monetary_identity_backfill
 
--- 1. Re-align Agent Reserves from authentic underlying transactions and movements
+-- 1. Re-align Agent Reserves from authentic underlying transactions and movements (preserve verified identities)
 UPDATE agent_reserves
 SET genesis_hash = (
     SELECT em.genesis_hash
@@ -26,7 +26,7 @@ WHERE EXISTS (
       AND (agent_reserves.genesis_hash != em.genesis_hash OR agent_reserves.program_id != em.program_id)
 );
 
--- 2. Re-align Agent Costs from authentic underlying economic movements
+-- 2. Re-align Agent Costs from authentic underlying economic movements (preserve verified identities)
 UPDATE agent_costs
 SET genesis_hash = (SELECT em.genesis_hash FROM economic_movements em WHERE em.movement_id = agent_costs.movement_id),
     program_id = (SELECT em.program_id FROM economic_movements em WHERE em.movement_id = agent_costs.movement_id)
@@ -74,12 +74,12 @@ WHERE network IN ('solana:mainnet-beta', 'mainnet-beta', 'mainnet')
   AND (genesis_hash IS NULL OR genesis_hash = 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg')
   AND (movement_id IS NULL OR NOT EXISTS (SELECT 1 FROM economic_movements em WHERE em.movement_id = agent_costs.movement_id));
 
--- 5. Mark unlinked unknown/custom network records as PENDING_RESOLUTION and exclude from active calculations
+-- 5. Correct unlinked Localnet records and unknown network records without verified movements:
+-- They must NEVER be arbitrarily attributed to a default genesis hash; keep them as PENDING_RESOLUTION.
 UPDATE agent_reserves
 SET genesis_hash = 'PENDING_RESOLUTION',
     program_id = 'PENDING_RESOLUTION'
-WHERE network NOT IN ('solana:localnet', 'localnet', 'solana:devnet', 'devnet', 'solana:mainnet-beta', 'mainnet-beta', 'mainnet')
-  AND (genesis_hash IS NULL OR genesis_hash = 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg')
+WHERE (network IN ('solana:localnet', 'localnet') OR network NOT IN ('solana:devnet', 'devnet', 'solana:mainnet-beta', 'mainnet-beta', 'mainnet'))
   AND NOT EXISTS (
       SELECT 1 FROM reserve_transactions rt
       JOIN economic_movements em ON rt.movement_id = em.movement_id
@@ -89,8 +89,7 @@ WHERE network NOT IN ('solana:localnet', 'localnet', 'solana:devnet', 'devnet', 
 UPDATE agent_costs
 SET genesis_hash = 'PENDING_RESOLUTION',
     program_id = 'PENDING_RESOLUTION'
-WHERE network NOT IN ('solana:localnet', 'localnet', 'solana:devnet', 'devnet', 'solana:mainnet-beta', 'mainnet-beta', 'mainnet')
-  AND (genesis_hash IS NULL OR genesis_hash = 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg')
+WHERE (network IN ('solana:localnet', 'localnet') OR network NOT IN ('solana:devnet', 'devnet', 'solana:mainnet-beta', 'mainnet-beta', 'mainnet'))
   AND (movement_id IS NULL OR NOT EXISTS (SELECT 1 FROM economic_movements em WHERE em.movement_id = agent_costs.movement_id));
 
 -- 6. Ensure indexes are present

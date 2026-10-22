@@ -1837,7 +1837,17 @@ class AgentCostsAndReservesTests(unittest.TestCase):
             ("rtx_dev_01", "res_dev_01", "key_res_dev", "ALLOCATE", "50000000", "mov_dev_01", now)
         )
 
-        # Localnet reserve
+        # Localnet reserve WITH linked movement
+        conn.execute(
+            """
+            INSERT INTO economic_movements (
+                movement_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                network, genesis_hash, program_id, token_mint, amount_base_units, amount_str,
+                nature, status, provenance_source, registered_at, observed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("mov_loc_01", "key_mov_loc", "11"*32, AGENT_1, OWNER_1, "solana:localnet", LOCALNET_GENESIS_HASH, PROGRAM_ID, MINT_USDC, "30000000", "30000000", "RESERVE", "PROVISIONAL", "MANUAL_ENTRY", now, now)
+        )
         conn.execute(
             """
             INSERT INTO agent_reserves (
@@ -1847,6 +1857,27 @@ class AgentCostsAndReservesTests(unittest.TestCase):
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             ("res_loc_01", "key_res_loc", "11"*32, AGENT_1, OWNER_1, "OPERATIONAL_CONTINUITY", "solana:localnet", MINT_USDC, "30000000", "30000000", "ACTIVE", now, now)
+        )
+        conn.execute(
+            """
+            INSERT INTO reserve_transactions (
+                transaction_id, reserve_id, idempotency_key, action, amount_base_units,
+                movement_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("rtx_loc_01", "res_loc_01", "key_res_loc", "ALLOCATE", "30000000", "mov_loc_01", now)
+        )
+
+        # Localnet reserve WITHOUT linked movement (must remain PENDING_RESOLUTION)
+        conn.execute(
+            """
+            INSERT INTO agent_reserves (
+                reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                reserve_type, network, token_mint, target_amount_base_units,
+                current_reserved_base_units, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("res_loc_unlinked", "key_res_loc_unlinked", "11"*32, AGENT_1, OWNER_1, "MAINTENANCE", "solana:localnet", MINT_USDC, "15000000", "15000000", "ACTIVE", now, now)
         )
 
         # Unknown custom network reserve with unknown genesis
@@ -1865,17 +1896,22 @@ class AgentCostsAndReservesTests(unittest.TestCase):
 
         # 3. Open via EconomicLedger to run remaining migrations (004 and 005)
         with EconomicLedger(db_path, reconciliation_verifier=self.test_verifier) as led:
-            # Check Devnet reserve was assigned Devnet genesis
+            # Check Devnet reserve was assigned Devnet genesis from linked movement
             res_dev = led.get_reserve("res_dev_01")
             self.assertIsNotNone(res_dev)
             self.assertEqual(res_dev.genesis_hash, DEVNET_GENESIS_HASH)
             self.assertEqual(res_dev.status, ReserveStatus.ACTIVE)
 
-            # Check Localnet reserve was assigned Localnet genesis
+            # Check linked Localnet reserve was assigned Localnet genesis from linked movement
             res_loc = led.get_reserve("res_loc_01")
             self.assertIsNotNone(res_loc)
             self.assertEqual(res_loc.genesis_hash, LOCALNET_GENESIS_HASH)
             self.assertEqual(res_loc.status, ReserveStatus.ACTIVE)
+
+            # Check unlinked Localnet reserve was preserved as PENDING_RESOLUTION (not arbitrarily defaulted)
+            res_loc_unl = led.get_reserve("res_loc_unlinked")
+            self.assertIsNotNone(res_loc_unl)
+            self.assertEqual(res_loc_unl.genesis_hash, "PENDING_RESOLUTION")
 
             # Check unknown network reserve has genesis marked PENDING_RESOLUTION
             res_unk = led.get_reserve("res_unk_01")
@@ -1890,6 +1926,281 @@ class AgentCostsAndReservesTests(unittest.TestCase):
             # Check balances exclude PENDING_RESOLUTION reserve
             bals = led.get_balances(AGENT_1, network="custom:unknown-net", token_mint=MINT_USDC)
             self.assertEqual(len(bals), 0)
+
+        temp_dir.cleanup()
+
+    def test_two_localnet_validators_same_network_and_mint_different_genesis(self):
+        """Requirement 4: Proves that two Localnet validators with the same network name ('solana:localnet')
+        and token mint, but different genesis_hash, maintain completely segregated balances and reserves.
+        """
+        GEN_VAL_1 = "LocalnetVal1Cluster1111111111111111111111111111"
+        GEN_VAL_2 = "LocalnetVal2Cluster2222222222222222222222222222"
+
+        # 1. Fund Agent 1 on Validator Cluster 1 (100M)
+        sig1 = "5SigVal1Income001"
+        m1 = self.ledger.record_movement(
+            idempotency_key="fund-val1-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            network=NET_LOCALNET,
+            genesis_hash=GEN_VAL_1,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=100_000_000,
+            nature=MovementNature.INCOME,
+            status=MovementStatus.PROVISIONAL,
+            tx_signature=sig1,
+        )
+        self.ledger.reconcile_movement(
+            m1.movement_id,
+            evidence_hash=VALID_HASH,
+            authorized_by="conatus:protocol:reconciler:v1",
+            slot=1000,
+            tx_signature=sig1,
+        )
+
+        # 2. Fund Agent 1 on Validator Cluster 2 (60M)
+        sig2 = "5SigVal2Income001"
+        m2 = self.ledger.record_movement(
+            idempotency_key="fund-val2-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            network=NET_LOCALNET,
+            genesis_hash=GEN_VAL_2,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=60_000_000,
+            nature=MovementNature.INCOME,
+            status=MovementStatus.PROVISIONAL,
+            tx_signature=sig2,
+        )
+        self.ledger.reconcile_movement(
+            m2.movement_id,
+            evidence_hash=VALID_HASH,
+            authorized_by="conatus:protocol:reconciler:v1",
+            slot=2000,
+            tx_signature=sig2,
+        )
+
+        # 3. Allocate 40M reserve on Validator 1
+        res1 = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-val1-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.OPERATIONAL_CONTINUITY,
+            network=NET_LOCALNET,
+            genesis_hash=GEN_VAL_1,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=40_000_000,
+        )
+
+        # 4. Allocate 25M reserve on Validator 2
+        res2 = self.ledger.create_or_allocate_reserve(
+            idempotency_key="res-val2-001",
+            agent_id="11" * 32,
+            agent_account=AGENT_1,
+            owner_pubkey=OWNER_1,
+            reserve_type=ReserveType.MAINTENANCE,
+            network=NET_LOCALNET,
+            genesis_hash=GEN_VAL_2,
+            program_id=PROGRAM_ID,
+            token_mint=MINT_USDC,
+            amount_base_units=25_000_000,
+        )
+
+        # Verify segregated balances
+        bals = self.ledger.get_balances(AGENT_1, network=NET_LOCALNET, token_mint=MINT_USDC)
+        self.assertEqual(len(bals), 2)
+        bal_map = {b.genesis_hash: b for b in bals}
+        self.assertIn(GEN_VAL_1, bal_map)
+        self.assertIn(GEN_VAL_2, bal_map)
+
+        self.assertEqual(bal_map[GEN_VAL_1].reconciled_balance, 100_000_000)
+        self.assertEqual(bal_map[GEN_VAL_1].reserved_balance, 40_000_000)
+
+        self.assertEqual(bal_map[GEN_VAL_2].reconciled_balance, 60_000_000)
+        self.assertEqual(bal_map[GEN_VAL_2].reserved_balance, 25_000_000)
+
+        # Verify summaries
+        sum1 = self.ledger.get_economic_summary(AGENT_1, network=NET_LOCALNET, genesis_hash=GEN_VAL_1, token_mint=MINT_USDC)[0]
+        self.assertEqual(sum1.available_balance, 60_000_000)
+        self.assertEqual(sum1.total_capital_reserved, 40_000_000)
+
+        sum2 = self.ledger.get_economic_summary(AGENT_1, network=NET_LOCALNET, genesis_hash=GEN_VAL_2, token_mint=MINT_USDC)[0]
+        self.assertEqual(sum2.available_balance, 35_000_000)
+        self.assertEqual(sum2.total_capital_reserved, 25_000_000)
+
+        # Release 15M from Validator 1: affects ONLY Validator 1
+        self.ledger.release_reserve(
+            idempotency_key="rel-val1-001",
+            reserve_id=res1.reserve_id,
+            amount_base_units=15_000_000,
+        )
+
+        sum1_after = self.ledger.get_economic_summary(AGENT_1, network=NET_LOCALNET, genesis_hash=GEN_VAL_1, token_mint=MINT_USDC)[0]
+        self.assertEqual(sum1_after.available_balance, 75_000_000)
+        self.assertEqual(sum1_after.total_capital_reserved, 25_000_000)
+
+        sum2_after = self.ledger.get_economic_summary(AGENT_1, network=NET_LOCALNET, genesis_hash=GEN_VAL_2, token_mint=MINT_USDC)[0]
+        self.assertEqual(sum2_after.available_balance, 35_000_000)
+        self.assertEqual(sum2_after.total_capital_reserved, 25_000_000)
+
+    def test_migration_localnet_unlinked_reserve_becomes_pending(self):
+        """Requirement 5: Proves that a legacy Localnet reserve without linked movement or evidence
+        remains PENDING_RESOLUTION and is NEVER arbitrarily attributed to the default Localnet genesis.
+        """
+        temp_dir = tempfile.TemporaryDirectory()
+        db_path = Path(temp_dir.name) / "test_unlinked_localnet.db"
+        conn = sqlite3.connect(str(db_path), isolation_level=None)
+        conn.row_factory = sqlite3.Row
+
+        from tools.economic_ledger.schema import split_sql_statements, MIGRATIONS_DIR
+        for v in [1, 2, 3]:
+            mfile = next(MIGRATIONS_DIR.glob(f"{v:03d}_*.sql"))
+            stmts = split_sql_statements(mfile.read_text(encoding="utf-8"))
+            conn.execute("BEGIN IMMEDIATE;")
+            for stmt in stmts:
+                conn.execute(stmt)
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL);"
+            )
+            conn.execute("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?);", (v, mfile.stem, int(time.time())))
+            conn.execute("COMMIT;")
+
+        now = int(time.time())
+        conn.execute("BEGIN IMMEDIATE;")
+        # Insert Localnet reserve with NO underlying movement
+        conn.execute(
+            """
+            INSERT INTO agent_reserves (
+                reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                reserve_type, network, token_mint, target_amount_base_units,
+                current_reserved_base_units, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("res_loc_orphan", "key_res_loc_orphan", "11"*32, AGENT_1, OWNER_1, "CONTINGENCY", "solana:localnet", MINT_USDC, "45000000", "45000000", "ACTIVE", now, now)
+        )
+        conn.execute("COMMIT;")
+        conn.close()
+
+        # Migrate via EconomicLedger (runs 004 and 005)
+        with EconomicLedger(db_path, reconciliation_verifier=self.test_verifier) as led:
+            res = led.get_reserve("res_loc_orphan")
+            self.assertIsNotNone(res)
+            # MUST NOT be defaulted to LOCALNET_GENESIS_HASH
+            self.assertNotEqual(res.genesis_hash, LOCALNET_GENESIS_HASH)
+            self.assertEqual(res.genesis_hash, "PENDING_RESOLUTION")
+            self.assertEqual(res.program_id, "PENDING_RESOLUTION")
+
+            # Must be excluded from active balances and investible surplus
+            bals = led.get_balances(AGENT_1, network="solana:localnet", token_mint=MINT_USDC)
+            self.assertEqual(len(bals), 0)
+
+            summaries = led.get_economic_summary(AGENT_1, network="solana:localnet", token_mint=MINT_USDC)
+            self.assertEqual(len(summaries), 0)
+
+        temp_dir.cleanup()
+
+    def test_migrations_fresh_db_and_existing_004_db(self):
+        """Requirement 6: Verifies that migrations work identically on both:
+        1. A completely fresh database running 001..005 sequentially.
+        2. An existing database where 004 had previously run and assigned the default genesis,
+           with 005 properly correcting unlinked Localnet records to PENDING_RESOLUTION.
+        """
+        temp_dir = tempfile.TemporaryDirectory()
+
+        # Case 1: Fresh database
+        fresh_db = Path(temp_dir.name) / "fresh.db"
+        with EconomicLedger(fresh_db, reconciliation_verifier=self.test_verifier) as led_fresh:
+            # Tables exist, migrations 001..005 applied
+            cur = led_fresh._conn.execute("SELECT MAX(version) FROM schema_migrations;")
+            self.assertEqual(cur.fetchone()[0], 5)
+
+        # Case 2: Existing database that previously executed 004 with default Localnet genesis
+        legacy_db = Path(temp_dir.name) / "legacy_004.db"
+        conn = sqlite3.connect(str(legacy_db), isolation_level=None)
+        conn.row_factory = sqlite3.Row
+
+        from tools.economic_ledger.schema import split_sql_statements, MIGRATIONS_DIR
+        for v in [1, 2, 3]:
+            mfile = next(MIGRATIONS_DIR.glob(f"{v:03d}_*.sql"))
+            stmts = split_sql_statements(mfile.read_text(encoding="utf-8"))
+            conn.execute("BEGIN IMMEDIATE;")
+            for stmt in stmts:
+                conn.execute(stmt)
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL);"
+            )
+            conn.execute("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?);", (v, mfile.stem, int(time.time())))
+            conn.execute("COMMIT;")
+
+        # Simulate old 004 execution: add columns with default 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg'
+        conn.execute("BEGIN IMMEDIATE;")
+        conn.execute("ALTER TABLE agent_costs ADD COLUMN genesis_hash TEXT NOT NULL DEFAULT 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg';")
+        conn.execute("ALTER TABLE agent_costs ADD COLUMN program_id TEXT NOT NULL DEFAULT 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy';")
+        conn.execute("ALTER TABLE agent_reserves ADD COLUMN genesis_hash TEXT NOT NULL DEFAULT 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg';")
+        conn.execute("ALTER TABLE agent_reserves ADD COLUMN program_id TEXT NOT NULL DEFAULT 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy';")
+        conn.execute("INSERT INTO schema_migrations (version, name, applied_at) VALUES (4, '004_monetary_identity_segregation', ?);", (int(time.time()),))
+
+        now = int(time.time())
+        # Insert an unlinked Localnet reserve in this 004-applied DB
+        conn.execute(
+            """
+            INSERT INTO agent_reserves (
+                reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                reserve_type, network, genesis_hash, program_id, token_mint,
+                target_amount_base_units, current_reserved_base_units, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("res_004_unlinked", "key_004_unlinked", "11"*32, AGENT_1, OWNER_1, "CONTINGENCY", "solana:localnet", LOCALNET_GENESIS_HASH, PROGRAM_ID, MINT_USDC, "33000000", "33000000", "ACTIVE", now, now)
+        )
+        # Insert a linked Localnet reserve with custom validator genesis
+        CUSTOM_VAL = "CustomLocalnetValidator99999999999999999999"
+        conn.execute(
+            """
+            INSERT INTO economic_movements (
+                movement_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                network, genesis_hash, program_id, token_mint, amount_base_units, amount_str,
+                nature, status, provenance_source, registered_at, observed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("mov_004_linked", "key_mov_004", "11"*32, AGENT_1, OWNER_1, "solana:localnet", CUSTOM_VAL, PROGRAM_ID, MINT_USDC, "22000000", "22000000", "RESERVE", "PROVISIONAL", "MANUAL_ENTRY", now, now)
+        )
+        conn.execute(
+            """
+            INSERT INTO agent_reserves (
+                reserve_id, idempotency_key, agent_id, agent_account, owner_pubkey,
+                reserve_type, network, genesis_hash, program_id, token_mint,
+                target_amount_base_units, current_reserved_base_units, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("res_004_linked", "key_004_linked", "11"*32, AGENT_1, OWNER_1, "MAINTENANCE", "solana:localnet", LOCALNET_GENESIS_HASH, PROGRAM_ID, MINT_USDC, "22000000", "22000000", "ACTIVE", now, now)
+        )
+        conn.execute(
+            """
+            INSERT INTO reserve_transactions (
+                transaction_id, reserve_id, idempotency_key, action, amount_base_units,
+                movement_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            """,
+            ("rtx_004_linked", "res_004_linked", "key_004_linked", "ALLOCATE", "22000000", "mov_004_linked", now)
+        )
+        conn.execute("COMMIT;")
+        conn.close()
+
+        # Now open via EconomicLedger -> 005 runs and fixes monetary identities
+        with EconomicLedger(legacy_db, reconciliation_verifier=self.test_verifier) as led_upgraded:
+            # 1. Unlinked Localnet reserve must be corrected from default to PENDING_RESOLUTION
+            res_unl = led_upgraded.get_reserve("res_004_unlinked")
+            self.assertEqual(res_unl.genesis_hash, "PENDING_RESOLUTION")
+
+            # 2. Linked Localnet reserve must be corrected to authentic custom validator genesis
+            res_lnk = led_upgraded.get_reserve("res_004_linked")
+            self.assertEqual(res_lnk.genesis_hash, CUSTOM_VAL)
 
         temp_dir.cleanup()
 
