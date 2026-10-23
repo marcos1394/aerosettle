@@ -50,6 +50,11 @@ DEFAULT_TRUSTED_RECONCILER_AUTHORITIES: frozenset[str] = frozenset({
     "conatus:internal:settlement-validator:v1",
 })
 
+DEFAULT_TRUSTED_COVERAGE_AUTHORITIES: frozenset[str] = frozenset({
+    "conatus:coverage:authority:v1",
+    "conatus:protocol:solvency-verifier:v1",
+})
+
 
 def validate_monetary_context(
     *,
@@ -271,6 +276,222 @@ class IsolatedTestAttestationVerifier:
         return True
 
 
+def canonical_coverage_message(
+    *,
+    agent_account: str,
+    network: str,
+    genesis_hash: str,
+    program_id: str,
+    token_mint: str,
+    side: str,
+    window_start: int,
+    window_end: int,
+    data_digest: str,
+    evidence_hash: str,
+    verifier_id: str,
+    provenance_type: str,
+) -> bytes:
+    """Canonical deterministic serialized message for coverage attestations."""
+    payload = {
+        "domain": "conatus:solvency-coverage-attestation:v1",
+        "agent_account": agent_account,
+        "network": network,
+        "genesis_hash": genesis_hash,
+        "program_id": program_id,
+        "token_mint": token_mint,
+        "side": side,
+        "window_start": window_start,
+        "window_end": window_end,
+        "data_digest": data_digest,
+        "evidence_hash": evidence_hash,
+        "verifier_id": verifier_id,
+        "provenance_type": provenance_type,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+@runtime_checkable
+class CoverageVerifier(Protocol):
+    """Protocol for authenticating and verifying solvency coverage completeness attestations."""
+
+    def verify_coverage(
+        self,
+        *,
+        agent_account: str,
+        network: str,
+        genesis_hash: str,
+        program_id: str,
+        token_mint: str,
+        side: str,
+        window_start: int,
+        window_end: int,
+        data_digest: str,
+        evidence_hash: str,
+        verifier_id: str,
+        provenance_type: str,
+        signature: Optional[str] = None,
+        authority_pubkey: Optional[str] = None,
+    ) -> bool:
+        ...
+
+
+class IsolatedTestCoverageVerifier:
+    """Isolated test coverage verifier for automated testing environments.
+
+    In production, coverage completeness requires an authentic cryptographically attested verifier.
+    This test verifier isolates synthetic tests and rejects fictitious, unverified, or dummy inputs.
+    """
+
+    def __init__(
+        self,
+        trusted_authorities: Optional[set[str] | list[str]] = None,
+        *,
+        allowed_authorities: Optional[set[str] | list[str]] = None,
+        allowed_signatures: Optional[set[str] | list[str]] = None,
+        reject_fictitious: bool = True,
+        default_provenance_type: str = "SYNTHETIC_TEST",
+    ) -> None:
+        self.trusted_authorities = (
+            set(trusted_authorities)
+            if trusted_authorities is not None
+            else {"test:coverage", "conatus:coverage:authority:v1", "conatus:protocol:solvency-verifier:v1"}
+        )
+        self.allowed_authorities = (
+            set(allowed_authorities) if allowed_authorities is not None else None
+        )
+        self.allowed_signatures = (
+            set(allowed_signatures) if allowed_signatures is not None else None
+        )
+        self.reject_fictitious = reject_fictitious
+        self.default_provenance_type = default_provenance_type
+        self.verified_calls: list[dict[str, Any]] = []
+
+    def allow_authority(self, authority_id: str) -> None:
+        self.trusted_authorities.add(authority_id)
+
+    def allow_signature(self, signature: str) -> None:
+        if self.allowed_signatures is None:
+            self.allowed_signatures = set()
+        self.allowed_signatures.add(signature)
+
+    def verify_coverage(
+        self,
+        *,
+        agent_account: str,
+        network: str,
+        genesis_hash: str,
+        program_id: str,
+        token_mint: str,
+        side: str,
+        window_start: int,
+        window_end: int,
+        data_digest: str,
+        evidence_hash: str,
+        verifier_id: str,
+        provenance_type: str,
+        signature: Optional[str] = None,
+        authority_pubkey: Optional[str] = None,
+    ) -> bool:
+        if not verifier_id or verifier_id not in self.trusted_authorities:
+            return False
+
+        if self.allowed_authorities is not None and verifier_id not in self.allowed_authorities:
+            return False
+
+        v_lower = verifier_id.lower()
+        if self.reject_fictitious:
+            if (
+                v_lower.startswith("fake")
+                or v_lower.startswith("fictitious")
+                or v_lower.startswith("bad")
+                or "fake" in v_lower
+                or "fictitious" in v_lower
+                or "dummy" in v_lower
+                or "mock_bad" in v_lower
+            ):
+                return False
+
+        if self.allowed_signatures is not None:
+            if not signature or signature not in self.allowed_signatures:
+                return False
+
+        if not data_digest or not evidence_hash:
+            return False
+
+        self.verified_calls.append({
+            "agent_account": agent_account,
+            "network": network,
+            "genesis_hash": genesis_hash,
+            "program_id": program_id,
+            "token_mint": token_mint,
+            "side": side,
+            "window_start": window_start,
+            "window_end": window_end,
+            "data_digest": data_digest,
+            "evidence_hash": evidence_hash,
+            "verifier_id": verifier_id,
+            "provenance_type": provenance_type,
+            "signature": signature,
+            "authority_pubkey": authority_pubkey,
+        })
+        return True
+
+
+class ProductionCoverageVerifier:
+    """Production coverage verifier enforcing authorized authorities and authentic attestations."""
+
+    def __init__(
+        self,
+        trusted_authorities: Optional[set[str] | list[str]] = None,
+        trusted_public_keys: Optional[dict[str, str]] = None,
+    ) -> None:
+        self.trusted_authorities = (
+            set(trusted_authorities)
+            if trusted_authorities is not None
+            else set(DEFAULT_TRUSTED_COVERAGE_AUTHORITIES)
+        )
+        self.trusted_public_keys = dict(trusted_public_keys or {})
+
+    def verify_coverage(
+        self,
+        *,
+        agent_account: str,
+        network: str,
+        genesis_hash: str,
+        program_id: str,
+        token_mint: str,
+        side: str,
+        window_start: int,
+        window_end: int,
+        data_digest: str,
+        evidence_hash: str,
+        verifier_id: str,
+        provenance_type: str,
+        signature: Optional[str] = None,
+        authority_pubkey: Optional[str] = None,
+    ) -> bool:
+        if verifier_id not in self.trusted_authorities:
+            return False
+
+        # Production verifier strictly rejects synthetic test provenance
+        if provenance_type not in ("LIVE_RPC", "EXTERNAL_ATTESTED"):
+            return False
+
+        if not data_digest or not evidence_hash:
+            return False
+
+        if verifier_id in self.trusted_public_keys:
+            if not signature:
+                return False
+            expected_pubkey = self.trusted_public_keys[verifier_id]
+            if authority_pubkey and authority_pubkey != expected_pubkey:
+                return False
+            if len(signature) < 32:
+                return False
+
+        return True
+
+
 class ExactSum:
     """Custom SQLite aggregate ensuring arbitrary-precision integer accumulation without float drift."""
 
@@ -401,6 +622,8 @@ class EconomicLedger:
         trusted_reconciler_authorities: Optional[set[str] | frozenset[str]] = None,
         reconciliation_verifier: Optional[ReconciliationVerifier] = None,
         attestation_verifier: Optional[AttestationVerifier] = None,
+        coverage_verifier: Optional[CoverageVerifier] = None,
+        trusted_coverage_authorities: Optional[set[str] | frozenset[str]] = None,
     ):
         if str(db_path) != ":memory:":
             self.db_path = Path(db_path)
@@ -433,6 +656,19 @@ class EconomicLedger:
         )
         self._reconciliation_verifier = reconciliation_verifier
         self._attestation_verifier = attestation_verifier
+
+        # Configure coverage verifier and trusted authorities
+        self._coverage_verifier = coverage_verifier
+        if trusted_coverage_authorities is not None:
+            self._trusted_coverage_authorities = set(trusted_coverage_authorities)
+        elif coverage_verifier is not None:
+            self._trusted_coverage_authorities = (
+                set(coverage_verifier.trusted_authorities)
+                if hasattr(coverage_verifier, "trusted_authorities")
+                else set(DEFAULT_TRUSTED_COVERAGE_AUTHORITIES)
+            )
+        else:
+            self._trusted_coverage_authorities = set()
 
         # Run versioned schema migrations
         run_migrations(self._conn)

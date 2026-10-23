@@ -12,25 +12,44 @@ La referencia `master` local al iniciar estaba obsoleta. El `master` remoto sí 
 
 Se suman ingresos `INCOME` conciliados con evidencia de reconciliación. El gasto operativo cuenta costos `REALIZED` atestados, conciliados y respaldados por un movimiento vigente. Se excluyen provisionales, reversados, estimaciones, depreciación no monetaria, reservas y CAPEX. Las obligaciones devengadas se muestran aparte; no entran de nuevo al OPEX cuando se pagan como costo realizado. El ratio es ingresos verificados / OPEX verificado. El margen operativo es `(ingresos - OPEX) / ingresos`, el excedente operativo es la diferencia exacta en unidades base. Los cocientes se truncan a ocho decimales; no se redondean montos antes de dividir.
 
-Para afirmar cobertura completa, **ambos lados** requieren una atestación independiente para la misma ventana y contexto monetario. `record_coverage` es un punto de ingestión interno que exige un verificador externo; no existe endpoint público que cree coberturas. El ledger actual no trae una prueba de exhaustividad para una ventana arbitraria. Hasta integrar un verificador real de cobertura, los datos existentes producen `INSUFFICIENT_DATA`, aunque los importes individuales estén conciliados. Esto evita convertir ausencia de registros en cero comprobado.
+Para afirmar cobertura completa, **ambos lados** requieren una atestación independiente para la misma ventana y contexto monetario vinculada a un **canonical data digest**. `record_coverage` es un punto de ingestión interno que exige un `CoverageVerifier` (no admite callables arbitrarios). El ledger no trae una prueba de exhaustividad para una ventana arbitraria. Hasta integrar un verificador real de cobertura, los datos existentes producen `INSUFFICIENT_DATA`, aunque los importes individuales estén conciliados. Esto evita convertir ausencia de registros en cero comprobado.
 
-Los estados son `VALID`, `INSUFFICIENT_DATA`, `UNDEFINED_RATIO`, `STALE_DATA`, `MIXED_ASSET_CONTEXT` y `ERROR`. Los fallos de integridad al calcular un contexto producen `ERROR` sin importes ni ratio; si falla el acceso a la base antes de identificar contextos, la API devuelve un error HTTP. `VALID` exige ambas coberturas y valores elegibles; denominador cero da `UNDEFINED_RATIO`. En la ventana actual, evidencia más antigua que siete días da `STALE_DATA`. Una petición consolidada entre identidades distintas da `MIXED_ASSET_CONTEXT` sin ratio. Clasificación configurable: `<1` AT_RISK, `[1,1.6)` STABLE, `>=1.6` THRIVING; cualquier ratio inválido es UNDETERMINED.
+## Hardening de Cobertura y Procedencia
 
-La liquidez disponible reutiliza el saldo conservador de tesorería de CON-24: débitos conciliados menos todos los créditos. Esto contempla reservas, pagos, transferencias y CAPEX, sin tratar ingresos provisionales como caja. El capital líquido elegible resta obligaciones devengadas. El runway divide ese capital entre OPEX monetario diario realizado; con gasto cero queda indefinido. Las reservas son segregaciones contables off-chain, no tokens bloqueados. El patrimonio verificado permanece `null` porque el modelo actual no verifica de forma uniforme el valor de todos los activos y pasivos; se expone separado el valor contable provisional.
+### 1. Snapshots inmutables y Data Digest canónico
+`calculate_side_data_digest()` genera un digest SHA-256 canónico y determinista (`conatus-solvency-data-digest-v1`) sobre todos los registros económicos relevantes (tanto elegibles como excluidos: provisionales, estimados, no verificados, devengos y reversiones) dentro de `[window_start, window_end)`.
+- Si se agrega un nuevo gasto o ingreso posterior a la atestación, si un ingreso provisional se concilia tardíamente, si ocurre una reversión o si se altera un hash de evidencia, el digest recalculado en `assess_agent()` difiere del almacenado en `solvency_coverage`.
+- Ante cualquier discrepancia de digest o digest faltante, la evaluación arroja inmediatamente `INSUFFICIENT_DATA` (nunca `VALID`).
+- Las coberturas con cero eventos tienen un digest canónico reproducible sobre una lista vacía; cualquier movimiento posterior invalida dicha cobertura.
+- Los snapshots guardados en `agent_solvency_assessments` son inmutables (`INSERT OR IGNORE`) y nunca se sobrescriben.
 
-`006_agent_solvency_assessments.sql` almacena solo atestaciones de cobertura y snapshots de resultados. Cada snapshot conserva período, versiones, hash de entradas y referencias consultables. `GET /solvency` calcula y guarda un snapshot idempotente; `/history` lee los snapshots. No se duplican asientos ni se mueve capital.
+### 2. Frontera de confianza y Verificador de Cobertura
+- Se formaliza el protocolo `CoverageVerifier` y la serialización canónica `canonical_coverage_message()`.
+- Se rechazan callables o lambdas arbitrarios como prueba de cobertura.
+- Si no existe una autoridad confiable configurada en el ledger (`_trusted_coverage_authorities`), las evaluaciones arrojan `INSUFFICIENT_DATA`.
+- `IsolatedTestCoverageVerifier` aísla los entornos de prueba, validando firmas/autoridades y rechazando identificadores ficticios (`bad`, `fake`, `fictitious`, `dummy`).
+- `ProductionCoverageVerifier` rechaza estrictamente la procedencia sintética (`SYNTHETIC_TEST`) en flujos de producción.
+
+### 3. Procedencia persistente entre reinicios
+La procedencia nunca depende de clases Python en memoria:
+- Cada registro de cobertura persiste su `provenance_type` (`LIVE_RPC`, `EXTERNAL_ATTESTED`, `HISTORICAL_FIXTURE`, `SYNTHETIC_TEST`) en la columna SQLite `solvency_coverage.provenance_type`.
+- `agent_solvency_assessments` almacena `provenance_type` en columna dedicada y dentro de `result_json`.
+- Tras cerrar y reabrir la conexión SQLite, una cobertura creada con fixtures sintéticos conserva `SYNTHETIC_TEST` y jamás se promueve a verificación productiva (`LIVE_RPC` o `EXTERNAL_ATTESTED`).
+
+### 4. Migración 007
+`007_solvency_coverage_digest_and_provenance.sql` añade incrementalmente `data_digest`, `provenance_type`, `authority_pubkey` y `signature` a `solvency_coverage`, y `provenance_type` a `agent_solvency_assessments`. Los registros históricos sin digest verificable quedan como `HISTORICAL_UNVERIFIED` y resultan inválidos (`INSUFFICIENT_DATA`) para nuevas evaluaciones.
 
 ## Ejemplos con verificadores de prueba
 
 | Ingresos | OPEX | Cobertura | Estado | Ratio | Clase |
 |---:|---:|---|---|---:|---|
-| 100 | 50 | Ambas partes atestadas | VALID | 2.00000000 | THRIVING |
-| 50 | 100 | Ambas partes atestadas | VALID | 0.50000000 | AT_RISK |
-| 100 | 0 | Ambas partes atestadas | UNDEFINED_RATIO | — | UNDETERMINED |
-| 100 | 50 | Sin atestación de cobertura | INSUFFICIENT_DATA | — | UNDETERMINED |
+| 100 | 50 | Ambas partes atestadas con digest válido | VALID | 2.00000000 | THRIVING |
+| 50 | 100 | Ambas partes atestadas con digest válido | VALID | 0.50000000 | AT_RISK |
+| 100 | 0 | Ambas partes atestadas con digest válido | UNDEFINED_RATIO | — | UNDETERMINED |
+| 100 | 50 | Sin atestación o con digest mismatch | INSUFFICIENT_DATA | — | UNDETERMINED |
 
 USDC y EURC, o dos redes/génesis/programas, se evalúan por separado. No hay conversión FX ni ratio de flota verificado. Economy, Fleet y perfiles Atlas siguen mostrando una simulación explícita; el perfil real consulta la API con firma del propietario.
 
 ## Evidencia y límites
 
-Las pruebas automáticas usan `IsolatedTestReconcilerVerifier`, `IsolatedTestAttestationVerifier` y un verificador de cobertura de fixture. **No son liquidaciones verificadas contra una blockchain viva.** `provenance` distingue esos resultados como `TEST_VERIFIER_FIXTURE`. La integración E2E contra Solana, la fuente productiva de atestaciones de cobertura, la liquidación contable de obligaciones previamente devengadas y la valoración verificable de activos fijos quedan pendientes. Por eso no se afirma patrimonio verificado ni rentabilidad futura.
+Las pruebas automáticas usan `IsolatedTestReconcilerVerifier`, `IsolatedTestAttestationVerifier` y `IsolatedTestCoverageVerifier`. **No son liquidaciones verificadas contra una blockchain viva.** `provenance` distingue de forma persistente esos resultados como `SYNTHETIC_TEST` (o `HISTORICAL_FIXTURE`). La integración E2E contra Solana, la fuente productiva de atestaciones de cobertura, la liquidación contable de obligaciones previamente devengadas y la valoración verificable de activos fijos quedan pendientes. Por eso no se afirma patrimonio verificado ni rentabilidad futura.
