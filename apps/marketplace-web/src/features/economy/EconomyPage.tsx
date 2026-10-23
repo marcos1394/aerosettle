@@ -18,6 +18,7 @@ import {
 } from '../../app/atlas';
 import { Icon, PageHeader, ProvenanceBadge } from '../../components/ui';
 import { PROVENANCE_SOURCES } from '../../app/provenance';
+import { AuthorizedEconomySection } from '../agents/AuthorizedEconomySection';
 import {
   AnimatedNumber,
   AreaChart,
@@ -207,6 +208,12 @@ export default function EconomyPage() {
         }
       />
 
+      <AuthorizedEconomySection
+        heading={c('Owner-authorized economic records', 'Registros económicos autorizados por el propietario')}
+        panelTitle={c('Live agent economy', 'Economía real del agente')}
+      />
+
+      <p className="hint">SIMULATED — ATLAS SCENARIO</p>
       <p className="hint"><ProvenanceBadge meta={PROVENANCE_SOURCES.SIMULATED_ATLAS_SNAPSHOT('Economy scenario')} compact /> {c('Simulated economic scenario · fleet ratios here are illustrative.', 'Escenario económico simulado · los ratios de esta flota son ilustrativos.')}</p>
 
       <section className="hero-panel economy-hero">

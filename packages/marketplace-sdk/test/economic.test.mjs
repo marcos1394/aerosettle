@@ -122,6 +122,8 @@ test('SDK: getAgentBalances returns strictly partitioned balances', async () => 
             {
               agent_account: AGENT,
               network: 'solana:localnet',
+              genesis_hash: 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg',
+              program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy',
               token_mint: MINT,
               reconciled_balance: 7000000,
               provisional_balance: 1500000,
@@ -219,11 +221,13 @@ test('SDK: listAgentCosts, listAgentReserves, and getAgentEconomicSummary', asyn
   let capturedCostUrl = '';
   let capturedReserveUrl = '';
   let capturedSummaryUrl = '';
+  const signedHeaders = [];
 
   const client = new MarketplaceClient({
     baseUrl: 'http://127.0.0.1:8787',
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init) => {
       const u = url.toString();
+      signedHeaders.push(init.headers);
       if (u.includes('/costs')) {
         capturedCostUrl = u;
         return new Response(
@@ -239,6 +243,8 @@ test('SDK: listAgentCosts, listAgentReserves, and getAgentEconomicSummary', asyn
                 cost_nature: 'REALIZED',
                 economic_period: '2026-10',
                 network: 'solana:localnet',
+                genesis_hash: 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg',
+                program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy',
                 token_mint: MINT,
                 amount_base_units: 350000,
                 amount_str: '350000',
@@ -278,6 +284,8 @@ test('SDK: listAgentCosts, listAgentReserves, and getAgentEconomicSummary', asyn
                 owner_pubkey: OWNER,
                 reserve_type: 'MAINTENANCE',
                 network: 'solana:localnet',
+                genesis_hash: 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg',
+                program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy',
                 token_mint: MINT,
                 target_amount_base_units: 5000000,
                 target_amount_str: '5000000',
@@ -310,8 +318,10 @@ test('SDK: listAgentCosts, listAgentReserves, and getAgentEconomicSummary', asyn
               {
                 agent_account: AGENT,
                 network: 'solana:localnet',
+                genesis_hash: 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg',
+                program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy',
                 token_mint: MINT,
-                total_income_reconciled: 10000000,
+                total_income_reconciled: 9007199254740992,
                 total_income_provisional: 0,
                 total_expenses_realized: 350000,
                 total_obligations_accrued: 200000,
@@ -319,7 +329,7 @@ test('SDK: listAgentCosts, listAgentReserves, and getAgentEconomicSummary', asyn
                 total_capital_reserved: 3000000,
                 available_balance: 6650000,
                 total_effective_balance: 9650000,
-                total_income_reconciled_str: '10000000',
+                total_income_reconciled_str: '9007199254740993',
                 total_income_provisional_str: '0',
                 total_expenses_realized_str: '350000',
                 total_obligations_accrued_str: '200000',
@@ -348,19 +358,46 @@ test('SDK: listAgentCosts, listAgentReserves, and getAgentEconomicSummary', asyn
     },
   });
 
-  const costs = await client.listAgentCosts(AGENT, { category: 'ENERGY_FUEL' }, { ownerPubkey: OWNER });
+  const authHeaders = { 'X-Signer-Pubkey': OWNER, 'X-Timestamp': '1000', 'X-Signature': 'signed' };
+  const costs = await client.listAgentCosts(AGENT, { category: 'ENERGY_FUEL' }, { authHeaders });
   assert.equal(costs.data.length, 1);
   assert.equal(costs.data[0].category, 'ENERGY_FUEL');
   assert.match(capturedCostUrl, /category=ENERGY_FUEL/);
 
-  const reserves = await client.listAgentReserves(AGENT, { reserve_type: 'MAINTENANCE' }, { ownerPubkey: OWNER });
+  const reserves = await client.listAgentReserves(AGENT, { reserve_type: 'MAINTENANCE' }, { authHeaders });
   assert.equal(reserves.data.length, 1);
   assert.equal(reserves.data[0].current_reserved_base_units, 3000000);
   assert.match(capturedReserveUrl, /reserve_type=MAINTENANCE/);
 
-  const summary = await client.getAgentEconomicSummary(AGENT, { mint: MINT }, { ownerPubkey: OWNER });
+  const summary = await client.getAgentEconomicSummary(AGENT, { mint: MINT }, { authHeaders });
   assert.equal(summary.data.length, 1);
   assert.equal(summary.data[0].available_balance, 6650000);
   assert.equal(summary.data[0].total_capital_reserved, 3000000);
+  assert.equal(summary.data[0].total_income_reconciled, null);
+  assert.equal(summary.data[0].total_income_reconciled_str, '9007199254740993');
+  assert.deepEqual(signedHeaders.map((headers) => headers['X-Signature']), ['signed', 'signed', 'signed']);
   assert.match(capturedSummaryUrl, /mint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/);
+});
+
+test('SDK rejects mismatched exact monetary fields and missing context', async () => {
+  const base = {
+    agent_account: AGENT, network: 'solana:localnet',
+    genesis_hash: 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg',
+    program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy', token_mint: MINT,
+    reconciled_balance: 5, reconciled_balance_str: '6',
+    provisional_balance: 0, provisional_balance_str: '0',
+    reserved_balance: 0, reserved_balance_str: '0',
+    total_effective_balance: 5, total_effective_balance_str: '5', movement_count: 1,
+  };
+  const meta = {
+    program_id: base.program_id, commitment: 'confirmed', chain_now_unix: 1000,
+    atomic_snapshot: false, read_only: true, matching_engine: 'rust-epic-3.1', rpc_context_slots: {},
+  };
+  const client = (row) => new MarketplaceClient({
+    baseUrl: 'http://127.0.0.1:8787',
+    fetchImpl: async () => new Response(JSON.stringify({ data: [row], meta }), { status: 200 }),
+  });
+  await assert.rejects(client(base).getAgentBalances(AGENT), /Mismatched reconciled_balance/);
+  await assert.rejects(client({ ...base, reconciled_balance_str: '5', genesis_hash: undefined })
+    .getAgentBalances(AGENT), /Invalid genesis_hash/);
 });

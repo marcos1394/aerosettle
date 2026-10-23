@@ -13,10 +13,8 @@ import {
   type OperationalState,
   type Sustainability,
 } from '../../app/atlas';
-import { api } from '../../app/api';
-import { short } from '../../app/config';
 import { useCopy, useI18n } from '../../app/i18n';
-import { useResource } from '../../app/useResource';
+import { AuthorizedEconomySection } from '../agents/AuthorizedEconomySection';
 import {
   CopyAddress,
   Empty,
@@ -24,7 +22,7 @@ import {
   PageHeader,
   ProvenanceBadge,
 } from '../../components/ui';
-import { PROVENANCE_SOURCES, assertNoSilentAggregation } from '../../app/provenance';
+import { PROVENANCE_SOURCES } from '../../app/provenance';
 import { WalletControl } from '../../components/ui/WalletControl';
 import {
   AnimatedNumber,
@@ -80,18 +78,13 @@ const STATE_TONE: Record<OperationalState, Tone> = {
 
 type RemediationKey = 'lowerPrice' | 'autoInsurance' | 'highDemandRoute';
 
-type FleetItem = AtlasAgent & { onChain?: boolean };
+type FleetItem = AtlasAgent;
 
 export default function FleetPage() {
   const { locale } = useI18n();
   const c = useCopy();
   const { publicKey, connected } = useWallet();
   const [snapshot, setSnapshot] = useSnapshot();
-
-  // Optional live on-chain agent merge
-  const liveAgents = useResource('fleet:live-agents', (signal) =>
-    api.listAgents({ limit: 24 }, signal)
-  );
 
   // Interactive operator UI state
   const [filter, setFilter] = useState<'all' | 'working' | 'available' | 'at-risk'>('all');
@@ -112,63 +105,12 @@ export default function FleetPage() {
   const [runwayGuard, setRunwayGuard] = useState<boolean>(true);
 
   const fleet = useMemo<FleetItem[]>(() => {
-    const base: FleetItem[] = snapshot
+    return snapshot
       ? OPERATOR_FLEET_IDS.map((id) => AGENTS.find((a) => a.id === id)).filter(
           (a): a is AtlasAgent => Boolean(a)
         )
       : [];
-
-    const onChainRows: FleetItem[] = (liveAgents.data?.data ?? [])
-      .filter((row) =>
-        publicKey
-          ? String(row.owner ?? '') === publicKey.toBase58() || base.length === 0
-          : false
-      )
-      .slice(0, 4)
-      .map(
-        (row, idx): FleetItem => ({
-          id: row.agent_account,
-          account: row.agent_account,
-          owner: String(row.owner ?? ''),
-          signingAuthority: String(row.signing_authority ?? ''),
-          name: row.agent_id ? short(row.agent_id) : `Machine #${idx + 1}`,
-          model:
-            typeof row.metadata_uri === 'string' && row.metadata_uri
-              ? row.metadata_uri
-              : c('On-chain registered unit', 'Unidad registrada on-chain'),
-          embodiment: 'Drone',
-          capabilities: [0, 5, 15],
-          city: 'Solana',
-          country: 'ON-CHAIN',
-          position: [50, 50],
-          state: row.active ? 'available' : 'maintenance',
-          autonomy: 'Autonomous',
-          reputation: 94,
-          jobs: 18,
-          successRate: 0.98,
-          rate: 145,
-          revenue30d: 3120,
-          costs30d: {
-            energy: 390,
-            maintenance: 620,
-            insurance: 410,
-            connectivity: 140,
-            protocol: 120,
-          },
-          treasury: 4250,
-          bond: 800,
-          conatus: 1.85,
-          runwayDays: 76,
-          sustainability: 'thriving',
-          earnings: [80, 92, 85, 104, 110, 95, 115, 120, 108, 125, 130, 118],
-          registeredDaysAgo: 14,
-          uptime: 0.992,
-          onChain: true,
-        })
-      );
-
-    return [...onChainRows, ...base];
-  }, [snapshot, liveAgents.data, publicKey, c]);
+  }, [snapshot]);
 
   // Compute effective per-agent numbers incorporating UI top-ups and applied remediations
   const enrichedFleet = useMemo(() => {
@@ -213,27 +155,13 @@ export default function FleetPage() {
     });
   }, [fleet, topUps, remediations, pausedIds]);
 
-  const onChainFleet = useMemo(
-    () => enrichedFleet.filter((a) => a.onChain),
-    [enrichedFleet]
-  );
-  const simulatedFleet = useMemo(
-    () => enrichedFleet.filter((a) => !a.onChain),
-    [enrichedFleet]
-  );
+  const simulatedFleet = enrichedFleet;
 
   const kpis = useMemo(() => {
     // Audit check: All fleet financial metrics come from the simulation model.
     // If on-chain agents exist, their on-chain state tracks registry/identity, NOT historical revenue.
     // Therefore, financial KPIs are strictly SIMULATED projections.
-    const onChainRevenue = onChainFleet.reduce((acc, a) => acc + (a.onChain ? 0 : a.effectiveRevenue), 0);
-    const simulatedRevenue = simulatedFleet.reduce((acc, a) => acc + a.effectiveRevenue, 0);
-
-    // Strict guardrail: assert no silent aggregation between on-chain financial figures and simulated models
-    assertNoSilentAggregation(onChainRevenue, simulatedRevenue, 'Fleet Financial KPIs');
-
-    // Isolate simulated dataset from on-chain dataset to prevent silent aggregation
-    const targetSet = simulatedFleet.length > 0 ? simulatedFleet : enrichedFleet;
+    const targetSet = simulatedFleet;
     const revenue30d = targetSet.reduce((acc, a) => acc + a.effectiveRevenue, 0);
     const costs30d = targetSet.reduce((acc, a) => acc + a.effectiveCosts, 0);
     const net30d = revenue30d - costs30d;
@@ -259,10 +187,9 @@ export default function FleetPage() {
       runwayDays,
       combinedEarnings,
       sustainability,
-      onChainCount: onChainFleet.length,
       simulatedCount: simulatedFleet.length,
     };
-  }, [enrichedFleet, simulatedFleet, onChainFleet]);
+  }, [simulatedFleet]);
 
   const filteredFleet = useMemo(() => {
     return enrichedFleet.filter((agent) => {
@@ -348,6 +275,12 @@ export default function FleetPage() {
         }
       />
 
+      <AuthorizedEconomySection
+        heading={c('Authorized fleet economy', 'Economía de flota autorizada')}
+        panelTitle={c('Selected owned agent · economic context', 'Agente propio seleccionado · contexto económico')}
+      />
+
+      <p className="hint">SIMULATED — ATLAS SCENARIO</p>
       <p className="hint"><ProvenanceBadge meta={PROVENANCE_SOURCES.SIMULATED_FLEET_PROJECTION()} compact /> {c('Simulated economic scenario · fleet ratio does not include verified live assessments.', 'Escenario económico simulado · el ratio de flota no incluye evaluaciones reales verificadas.')}</p>
 
       {/* Operator wallet connection / preview bar */}
@@ -435,11 +368,7 @@ export default function FleetPage() {
               <div className="kpi-foot">
                 <span className="delta-up">+14.8%</span>
                 <span>
-                  {kpis.onChainCount > 0
-                    ? c('{onChain} on-chain · {sim} simulated', '{onChain} on-chain · {sim} simuladas')
-                        .replace('{onChain}', String(kpis.onChainCount))
-                        .replace('{sim}', String(kpis.simulatedCount))
-                    : `${kpis.simulatedCount} ${c('machines', 'máquinas')} · ${SETTLEMENT_SYMBOL}`}
+                  {`${kpis.simulatedCount} ${c('simulated machines', 'máquinas simuladas')} · ${SETTLEMENT_SYMBOL}`}
                 </span>
               </div>
               <Sparkline values={kpis.combinedEarnings} tone="accent" width={110} height={32} />
@@ -684,17 +613,10 @@ export default function FleetPage() {
                             <div>
                               <strong>
                                 {agent.name}{' '}
-                                {agent.onChain ? (
-                                  <ProvenanceBadge
-                                    meta={PROVENANCE_SOURCES.ONCHAIN_AGENT_REGISTRY('Solana Localnet')}
-                                    compact
-                                  />
-                                ) : (
-                                  <ProvenanceBadge
-                                    meta={PROVENANCE_SOURCES.SIMULATED_FLEET_PROJECTION()}
-                                    compact
-                                  />
-                                )}
+                                <ProvenanceBadge
+                                  meta={PROVENANCE_SOURCES.SIMULATED_FLEET_PROJECTION()}
+                                  compact
+                                />
                               </strong>
                               <small>
                                 {agent.model} · {agent.city}, {agent.country}

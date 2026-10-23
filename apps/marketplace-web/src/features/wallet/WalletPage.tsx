@@ -15,6 +15,7 @@ import {
   type CostBreakdown,
 } from '../../app/atlas';
 import { verifyNetwork } from '../../app/api';
+import { formatUnits } from '../../app/economic';
 import {
   LOCALNET_GENESIS,
   MINT,
@@ -33,7 +34,7 @@ import {
   ProvenanceBadge,
   ResourceState,
 } from '../../components/ui';
-import { PROVENANCE_SOURCES, assertNoSilentAggregation } from '../../app/provenance';
+import { PROVENANCE_SOURCES } from '../../app/provenance';
 import { WalletControl } from '../../components/ui/WalletControl';
 import {
   AnimatedNumber,
@@ -42,6 +43,8 @@ import {
   Pulse,
 } from '../../components/ui/viz';
 import { OPERATOR_FLEET_IDS } from '../fleet/FleetPage';
+import { AuthorizedEconomySection } from '../agents/AuthorizedEconomySection';
+import { ProtocolEscrowSection } from './ProtocolEscrowSection';
 import '../../styles/treasury.css';
 
 const EXPENSE_LABELS: Record<keyof CostBreakdown, [string, string]> = {
@@ -70,7 +73,7 @@ export default function WalletPage() {
         return {
           network,
           balance: null,
-          tokens: [] as { address: string; amount: string }[],
+          tokens: [] as { address: string; amountRaw: string; decimals: number }[],
         };
       const [balanceRes, tokenAccountsRes] = await Promise.all([
         connection.getBalanceAndContext(publicKey, 'confirmed'),
@@ -81,6 +84,8 @@ export default function WalletPage() {
         ),
       ]);
       const balance = balanceRes.value;
+      if (!Number.isSafeInteger(balance) || balance < 0)
+        throw new Error('Unsafe native SOL balance from RPC.');
       const balanceSlot = balanceRes.context.slot;
       const tokenSlot = tokenAccountsRes.context.slot;
 
@@ -91,12 +96,15 @@ export default function WalletPage() {
         if (
           info?.mint !== MINT.toBase58() ||
           info?.owner !== publicKey.toBase58() ||
-          typeof info?.tokenAmount?.uiAmountString !== 'string'
+          typeof info?.tokenAmount?.amount !== 'string' ||
+          !/^\d+$/.test(info.tokenAmount.amount) ||
+          !Number.isInteger(info.tokenAmount.decimals)
         )
           throw new Error('Respuesta de saldo SPL incompatible.');
         return {
           address: item.pubkey.toBase58(),
-          amount: info.tokenAmount.uiAmountString as string,
+          amountRaw: info.tokenAmount.amount as string,
+          decimals: info.tokenAmount.decimals as number,
         };
       });
       return {
@@ -112,11 +120,12 @@ export default function WalletPage() {
 
   // Sum live SPL settlement balance if present
   const liveTokenBalance = useMemo(() => {
-    if (!resource.data?.tokens.length) return 0;
-    return resource.data.tokens.reduce(
-      (sum, item) => sum + (Number.parseFloat(item.amount) || 0),
-      0
-    );
+    if (!resource.data) return null;
+    if (!resource.data.tokens.length) return `0 ${SETTLEMENT_SYMBOL}`;
+    const decimals = resource.data.tokens[0].decimals;
+    if (resource.data.tokens.some((item) => item.decimals !== decimals)) return null;
+    const raw = resource.data.tokens.reduce((sum, item) => sum + BigInt(item.amountRaw), 0n);
+    return `${formatUnits(raw.toString(), decimals)} ${SETTLEMENT_SYMBOL}`;
   }, [resource.data]);
 
   // Portfolio breakdown across Available, Locked in escrow, Agent treasuries, and Bonded stake
@@ -127,7 +136,7 @@ export default function WalletPage() {
         )
       : [];
 
-    // Strictly segregated: simulated available is from Atlas scenario, liveTokenBalance is tracked separately
+    // This scenario contains only Atlas values; RPC and ledger amounts are rendered in separate sections.
     const simulatedAvailable = snapshot ? 18_420 : 0;
     const lockedEscrow = snapshot
       ? MISSIONS.filter((m) =>
@@ -139,9 +148,6 @@ export default function WalletPage() {
     const agentTreasuries = fleetAgents.reduce((sum, a) => sum + a.treasury, 0);
     const bondedStake = fleetAgents.reduce((sum, a) => sum + a.bond, 0);
     const total = simulatedAvailable + lockedEscrow + agentTreasuries + bondedStake;
-
-    // Strict guardrails: guarantee no silent aggregation between verified on-chain and simulated figures
-    assertNoSilentAggregation(total, { verified: liveTokenBalance, simulated: simulatedAvailable }, 'WalletPage Portfolio Total');
 
     // 30-day portfolio valuation series ending at `total`
     const base = total > 0 ? total : 0;
@@ -216,8 +222,8 @@ export default function WalletPage() {
         eyebrow={c('OPERATE / TREASURY', 'OPERAR / TESORERÍA')}
         title={c('Treasury & settlements', 'Tesorería y liquidaciones')}
         description={c(
-          `Consolidated ${SETTLEMENT_SYMBOL} liquidity across your operator wallet, active protocol escrows, and autonomous machine treasuries.`,
-          `Liquidez consolidada en ${SETTLEMENT_SYMBOL} a través de tu wallet de operador, escrows activos del protocolo y tesorerías autónomas de máquinas.`
+          `Separate ${SETTLEMENT_SYMBOL} wallet balances, protocol escrow and off-chain accounting reserves.`,
+          `Saldos de wallet ${SETTLEMENT_SYMBOL}, escrow del protocolo y reservas contables off-chain por separado.`
         )}
         action={<WalletControl />}
       />
@@ -225,12 +231,13 @@ export default function WalletPage() {
       {/* Only show page-level error if snapshot is disabled */}
       {!snapshot && <ResourceState {...resource} />}
 
-      {/* Verified On-Chain Liquid Assets Panel (when wallet connected) */}
+      {/* RPC balances are a separate source from escrow and the Economic Ledger. */}
+      {!publicKey && <p role="status">{c('Wallet disconnected. On-chain balances are unavailable.', 'Wallet desconectada. No hay saldos on-chain disponibles.')}</p>}
       {publicKey && (
         <section className="panel" style={{ marginBottom: 20 }}>
           <div className="section-heading">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <h2>{c('Verified on-chain liquid holdings', 'Saldos líquidos verificados on-chain')}</h2>
+              <h2>ON-CHAIN WALLET BALANCE</h2>
               <ProvenanceBadge
                 meta={PROVENANCE_SOURCES.ONCHAIN_SPL_BALANCE({
                   mint: MINT.toBase58(),
@@ -279,7 +286,7 @@ export default function WalletPage() {
                   <Icon name="coin" />
                 </div>
                 <strong className="tabular">
-                  {liveTokenBalance.toLocaleString(locale === 'es' ? 'es-MX' : 'en-US')} {SETTLEMENT_SYMBOL}
+                  {liveTokenBalance ?? '—'}
                 </strong>
                 <div className="kpi-foot">
                   <span>SPL Mint {short(MINT.toBase58())}</span>
@@ -302,7 +309,7 @@ export default function WalletPage() {
                 </div>
                 <strong className="tabular">
                   {resource.data.balance != null
-                    ? `${(resource.data.balance / 1e9).toFixed(4)} SOL`
+                    ? `${formatUnits(BigInt(resource.data.balance).toString(), 9)} SOL`
                     : '—'}
                 </strong>
                 <div className="kpi-foot">
@@ -322,6 +329,13 @@ export default function WalletPage() {
           )}
         </section>
       )}
+
+      <ProtocolEscrowSection />
+      <AuthorizedEconomySection
+        heading="OFF-CHAIN ACCOUNTING RESERVE"
+        panelTitle={c('Economic Ledger · treasury and reserve', 'Economic Ledger · tesorería y reserva')}
+      />
+      <p className="hint">{c('An accounting reserve in SQLite does not lock SPL tokens on-chain. RPC wallet balance, protocol escrow and ledger amounts are not added together. Differences require reconciliation.', 'Una reserva contable en SQLite no bloquea tokens SPL on-chain. El saldo RPC, el escrow y el ledger no se suman. Las diferencias requieren conciliación.')}</p>
 
       {/* Portfolio Hero */}
       <section className="hero-panel" aria-label={c('Treasury portfolio valuation', 'Valoración del portafolio de tesorería')}>
@@ -627,10 +641,7 @@ export default function WalletPage() {
                     ? (
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                           <span>
-                            {new Intl.NumberFormat(
-                              locale === 'es' ? 'es-MX' : 'en-US',
-                              { maximumFractionDigits: 6 }
-                            ).format(resource.data.balance / 1e9)} SOL
+                            {formatUnits(BigInt(resource.data.balance).toString(), 9)} SOL
                           </span>
                           <ProvenanceBadge
                             meta={PROVENANCE_SOURCES.ONCHAIN_SOL_BALANCE('Solana Localnet')}
@@ -680,7 +691,7 @@ export default function WalletPage() {
             <DataGrid
               items={resource.data.tokens.map((token) => [
                 <span key={`token-bal-${token.address}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <span>{token.amount} {SETTLEMENT_SYMBOL}</span>
+                  <span>{formatUnits(token.amountRaw, token.decimals)} {SETTLEMENT_SYMBOL}</span>
                   <ProvenanceBadge
                     meta={PROVENANCE_SOURCES.ONCHAIN_SPL_BALANCE(
                       MINT.toBase58(),
@@ -692,6 +703,8 @@ export default function WalletPage() {
                 <CopyAddress key={token.address} value={token.address} />,
               ])}
             />
+          ) : resource.error ? (
+            <p role="status">{c('RPC balance unknown.', 'Saldo RPC desconocido.')}</p>
           ) : (
             <p className="hint" style={{ marginBottom: 0 }}>
               {publicKey

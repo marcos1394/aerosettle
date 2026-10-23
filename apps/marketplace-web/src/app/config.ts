@@ -1,5 +1,5 @@
 import { PublicKey } from '@solana/web3.js';
-import { SETTLEMENT_SYMBOL } from './atlas';
+import { SETTLEMENT_SYMBOL } from './atlas.ts';
 export { LOCALNET_GENESIS, PROGRAM_ID } from '@aerosettle/transaction-sdk';
 export const RPC = 'http://127.0.0.1:8899';
 export const MINT = new PublicKey(
