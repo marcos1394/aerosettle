@@ -2476,12 +2476,18 @@
             ]
           },
           "verified_revenue_base_units_str": {
-            "type": "string",
-            "pattern": "^-?[0-9]+$"
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9]+$"
           },
           "verified_opex_base_units_str": {
-            "type": "string",
-            "pattern": "^-?[0-9]+$"
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9]+$"
           },
           "input_revenue_count": {
             "type": "integer"

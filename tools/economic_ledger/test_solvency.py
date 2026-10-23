@@ -4,6 +4,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.economic_ledger.ledger import EconomicLedger, IsolatedTestAttestationVerifier, IsolatedTestReconcilerVerifier
 from tools.economic_ledger.models import LedgerValidationError
@@ -210,6 +211,18 @@ class SolvencyTests(unittest.TestCase):
                 genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, side="OPEX",
                 window_start=START, window_end=NOW, evidence_hash=HASH, verifier_id="bad",
                 verifier=lambda **_: False)
+
+    def test_integrity_failure_has_error_state_without_ratio(self):
+        self.reconcile(self.income(100))
+        self.cost(50)
+        self.coverage("REVENUE")
+        self.coverage("OPEX")
+        with patch.object(self.ledger, "get_economic_summary", side_effect=ValueError("bad ledger")):
+            result = self.assessment()
+        self.assertEqual(result["calculation_status"], "ERROR")
+        self.assertIsNone(result["conatus_ratio"])
+        self.assertIsNone(result["verified_revenue_base_units_str"])
+        self.assertEqual(result["sustainability_class"], "UNDETERMINED")
 
 
 if __name__ == "__main__":

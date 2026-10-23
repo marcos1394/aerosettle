@@ -62,7 +62,7 @@ export function LiveSolvencyPanel({ account, owner }: { account: string; owner: 
       <p className="hint">{a.provenance}</p>
       <p>{a.network} · {a.token_mint}</p>
       <p>{c('Window', 'Período')}: {new Date(a.window_start * 1000).toISOString()} – {new Date(a.window_end * 1000).toISOString()} UTC</p>
-      <p>{c('Verified revenue', 'Ingresos verificados')}: {a.verified_revenue_base_units_str} · {c('Verified OPEX', 'Gasto operativo verificado')}: {a.verified_opex_base_units_str} {c('base units', 'unidades base')}</p>
+      <p>{c('Verified revenue', 'Ingresos verificados')}: {a.verified_revenue_base_units_str ?? '—'} · {c('Verified OPEX', 'Gasto operativo verificado')}: {a.verified_opex_base_units_str ?? '—'} {c('base units', 'unidades base')}</p>
       <p>{c('Available cash', 'Caja disponible')}: {a.available_liquidity_base_units_str ?? '—'} · {c('Reserved', 'Reservado')}: {a.total_reserved_base_units_str ?? '—'} · {c('Runway days', 'Días de autonomía')}: {a.runway_days ?? '—'}</p>
       <p className="hint">{a.methodology_version} · {a.threshold_config_version} · {a.evidence_references.length} {c('evidence references', 'referencias de evidencia')}</p>
     </div>)}

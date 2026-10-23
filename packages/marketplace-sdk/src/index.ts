@@ -346,8 +346,8 @@ export interface AgentSolvencyAssessment {
   data_coverage_status: string;
   input_revenue_count: number;
   input_expense_count: number;
-  verified_revenue_base_units_str: string;
-  verified_opex_base_units_str: string;
+  verified_revenue_base_units_str: string | null;
+  verified_opex_base_units_str: string | null;
   exclusion_reasons: string[];
   evidence_references: SolvencyEvidenceReference[];
   input_hash: string;
@@ -632,7 +632,10 @@ function solvencyAssessment(raw: unknown): AgentSolvencyAssessment | MixedAssetC
   }
   for (const key of ['assessment_id', 'agent_account', 'network', 'genesis_hash', 'program_id', 'token_mint', 'methodology_version', 'threshold_config_version', 'input_hash', 'provenance']) nonempty(a[key], key);
   for (const key of ['window_start', 'window_end', 'calculated_at', 'input_revenue_count', 'input_expense_count']) integer(a[key], key);
-  for (const key of ['verified_revenue_base_units_str', 'verified_opex_base_units_str']) u64(a[key], key);
+  for (const key of ['verified_revenue_base_units_str', 'verified_opex_base_units_str']) {
+    if (a[key] === null && status === 'ERROR') continue;
+    u64(a[key], key);
+  }
   for (const key of ['reserve_target_base_units_str', 'reserve_gap_base_units_str']) if (a[key] !== null) u64(a[key], key);
   for (const key of ['operating_surplus_base_units_str', 'available_liquidity_base_units_str', 'total_reserved_base_units_str', 'accrued_liabilities_base_units_str', 'eligible_liquid_capital_base_units_str', 'net_worth_verified_base_units_str', 'provisional_book_value_base_units_str']) {
     if (a[key] !== null && (typeof a[key] !== 'string' || !/^-?(0|[1-9][0-9]*)$/.test(a[key] as string))) fail(`Invalid ${key}`);

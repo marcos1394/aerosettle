@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import time
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN, localcontext
@@ -123,7 +124,38 @@ def assess_agent(
         return [{"calculation_status": "MIXED_ASSET_CONTEXT", "sustainability_class": "UNDETERMINED",
                  "conatus_ratio": None, "window_start": start, "window_end": end,
                  "contexts": [dict(zip(("network", "genesis_hash", "program_id", "token_mint"), c)) for c in contexts]}]
-    return [_assess_context(ledger, agent_account, context, start, end, instant, config) for context in contexts]
+    results = []
+    for context in contexts:
+        try:
+            results.append(_assess_context(ledger, agent_account, context, start, end, instant, config))
+        except (sqlite3.DatabaseError, ValueError, KeyError, TypeError, LedgerValidationError) as exc:
+            net, gen, prog, mint = context
+            failure_code = type(exc).__name__
+            input_hash = _hash(["ERROR", failure_code, agent_account, context, start, end])
+            results.append({
+                "assessment_id": input_hash, "agent_account": agent_account, "network": net,
+                "genesis_hash": gen, "program_id": prog, "token_mint": mint,
+                "window_start": start, "window_end": end, "calculated_at": instant,
+                "methodology_version": METHODOLOGY_VERSION,
+                "threshold_config_version": config["version"],
+                "conatus_ratio": None, "operating_margin": None,
+                "operating_surplus_base_units_str": None,
+                "available_liquidity_base_units_str": None,
+                "total_reserved_base_units_str": None,
+                "accrued_liabilities_base_units_str": None,
+                "reserve_target_base_units_str": None,
+                "reserve_gap_base_units_str": None,
+                "reserve_sufficiency": "UNKNOWN", "eligible_liquid_capital_base_units_str": None,
+                "runway_days": None, "sustainability_class": "UNDETERMINED",
+                "calculation_status": "ERROR", "data_coverage_status": "UNKNOWN",
+                "input_revenue_count": 0, "input_expense_count": 0,
+                "verified_revenue_base_units_str": None, "verified_opex_base_units_str": None,
+                "exclusion_reasons": [f"processing_error:{failure_code}"], "evidence_references": [],
+                "input_hash": input_hash, "provenance": "LEDGER_INTEGRITY_ERROR",
+                "net_worth_verified_base_units_str": None,
+                "provisional_book_value_base_units_str": None,
+            })
+    return results
 
 
 def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str, str, str],
