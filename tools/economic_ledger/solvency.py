@@ -191,7 +191,8 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
     reserved = summary.total_capital_reserved if summary else None
     liabilities = summary.total_obligations_accrued if summary else None
     reserve_rows = ledger._conn.execute("""SELECT reserve_id, target_amount_base_units FROM agent_reserves
-        WHERE agent_account=? AND network=? AND genesis_hash=? AND program_id=? AND token_mint=? AND status='ACTIVE'""", scope).fetchall()
+        WHERE agent_account=? AND network=? AND genesis_hash=? AND program_id=? AND token_mint=?
+          AND status IN ('ACTIVE', 'DEPLETED')""", scope).fetchall()
     target = sum(int(r["target_amount_base_units"]) for r in reserve_rows)
     eligible = max(0, available - liabilities) if available is not None and liabilities is not None else None
     ratio = _ratio(rev_sum, exp_sum) if status == "VALID" else None

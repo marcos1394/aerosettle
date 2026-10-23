@@ -187,6 +187,23 @@ class SolvencyTests(unittest.TestCase):
         self.assertIsNone(mixed[0]["conatus_ratio"])
         self.assertEqual(self.assessment()["conatus_ratio"], "2.00000000")
 
+    def test_reversed_cost_is_excluded_and_other_agent_isolated(self):
+        self.reconcile(self.income(200))
+        first = self.cost(50)
+        self.cost(50, key="remaining")
+        self.coverage("REVENUE")
+        self.coverage("OPEX")
+        self.assertEqual(self.assessment()["verified_opex_base_units_str"], "100")
+        self.ledger.revert_cost(first.cost_id, reason="incorrect invoice")
+        self.assertEqual(self.assessment()["verified_opex_base_units_str"], "50")
+        self.reconcile(self.income(100, agent=AGENT2))
+        self.cost(20, agent=AGENT2)
+        self.coverage("REVENUE", agent=AGENT2)
+        self.coverage("OPEX", agent=AGENT2)
+        other = assess_agent(self.ledger, AGENT2, now=NOW)[0]
+        self.assertEqual(other["conatus_ratio"], "5.00000000")
+        self.assertEqual(self.assessment()["conatus_ratio"], "4.00000000")
+
     def test_coverage_verifier_fail_closed(self):
         with self.assertRaises(LedgerValidationError):
             record_coverage(self.ledger, agent_account=AGENT, network=NETWORK,

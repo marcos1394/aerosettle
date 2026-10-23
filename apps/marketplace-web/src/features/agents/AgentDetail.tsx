@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { Link, useParams } from 'react-router';
 import { useConnection } from '@solana/wallet-adapter-react';
 import {
-  AGENTS,
   EVENTS,
   MISSIONS,
   SETTLEMENT_SYMBOL,
@@ -59,7 +58,7 @@ import { LiveSolvencyPanel } from './LiveSolvencyPanel';
 export default function AgentDetail() {
   const { agentId = '' } = useParams();
   const atlasAgent = useMemo(
-    () => agentById(agentId) ?? AGENTS.find((a) => a.account === agentId),
+    () => agentById(agentId),
     [agentId]
   );
 
