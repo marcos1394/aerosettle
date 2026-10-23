@@ -825,7 +825,7 @@ class EconomicLedgerTests(unittest.TestCase):
         """
         temp_mig_dir = Path(temp_dir.name) / "fake_migrations"
         temp_mig_dir.mkdir(parents=True, exist_ok=True)
-        (temp_mig_dir / "006_fk_violation_migration.sql").write_text(failing_sql, encoding="utf-8")
+        (temp_mig_dir / "007_fk_violation_migration.sql").write_text(failing_sql, encoding="utf-8")
 
         with patch("tools.economic_ledger.schema.MIGRATIONS_DIR", temp_mig_dir):
             with self.assertRaises(MigrationError) as ctx:
@@ -838,8 +838,8 @@ class EconomicLedgerTests(unittest.TestCase):
         )
         self.assertIsNone(cursor.fetchone())
 
-        # Version 6 must not be applied
-        cursor = conn.execute("SELECT version FROM schema_migrations WHERE version = 6;")
+        # Version 7 must not be applied
+        cursor = conn.execute("SELECT version FROM schema_migrations WHERE version = 7;")
         self.assertIsNone(cursor.fetchone())
 
         conn.close()
@@ -863,7 +863,7 @@ class EconomicLedgerTests(unittest.TestCase):
         """
         temp_mig_dir = Path(temp_dir.name) / "fake_migrations"
         temp_mig_dir.mkdir(parents=True, exist_ok=True)
-        (temp_mig_dir / "006_failing_migration.sql").write_text(failing_sql, encoding="utf-8")
+        (temp_mig_dir / "007_failing_migration.sql").write_text(failing_sql, encoding="utf-8")
 
         with patch("tools.economic_ledger.schema.MIGRATIONS_DIR", temp_mig_dir):
             with self.assertRaises(MigrationError):
@@ -875,8 +875,8 @@ class EconomicLedgerTests(unittest.TestCase):
         )
         self.assertIsNone(cursor.fetchone())
 
-        # Version 6 must NOT be in schema_migrations
-        cursor = conn.execute("SELECT version FROM schema_migrations WHERE version = 6;")
+        # Version 7 must NOT be in schema_migrations
+        cursor = conn.execute("SELECT version FROM schema_migrations WHERE version = 7;")
         self.assertIsNone(cursor.fetchone())
 
         conn.close()

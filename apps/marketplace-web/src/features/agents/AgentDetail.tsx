@@ -54,6 +54,7 @@ import {
   stateMeta,
 } from './data';
 import '../../styles/agents.css';
+import { LiveSolvencyPanel } from './LiveSolvencyPanel';
 
 export default function AgentDetail() {
   const { agentId = '' } = useParams();
@@ -196,6 +197,7 @@ function AtlasAgentProfile({ agent }: { agent: AtlasAgent }) {
 
   return (
     <>
+      <p className="hint"><ProvenanceBadge meta={PROVENANCE_SOURCES.SIMULATED_AGENT_ECONOMICS(agent.name)} compact /> {c('Simulated economic scenario · Atlas values are illustrative.', 'Escenario económico simulado · Los valores Atlas son ilustrativos.')}</p>
       <nav className="agent-breadcrumb" aria-label={c('Agent navigation', 'Navegación de agente')}>
         <Link to="/app/agents">
           ← {c('All autonomous agents', 'Todos los agentes autónomos')}
@@ -1071,6 +1073,7 @@ function LiveAgentProfile({ agentId }: { agentId: string }) {
       <ResourceState {...resource} />
       {agent && (
         <>
+          <LiveSolvencyPanel account={agentId} owner={String(agent.owner)} />
           <section className="panel">
             <div className="section-heading">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

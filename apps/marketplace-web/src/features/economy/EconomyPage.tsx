@@ -190,8 +190,8 @@ export default function EconomyPage() {
         eyebrow={c('PROTOCOL ANALYTICS / CONATUS INDEX', 'ANALÍTICA DEL PROTOCOLO / ÍNDICE CONATUS')}
         title={c('Economy & Survival Index', 'Economía e Índice Conatus')}
         description={c(
-          'Spinoza called the striving of every being to persevere in its existence conatus. Here, physical machines achieve continuity by earning more through verified work than they spend to operate.',
-          'Spinoza llamó conatus al esfuerzo de cada ser por perseverar en su existencia. Aquí, las máquinas físicas alcanzan continuidad ganando más por trabajo verificado de lo que gastan en operar.'
+          'Atlas simulation of how machine revenue can cover operating costs. Owner-verified assessments are available on live agent pages.',
+          'Simulación Atlas de cómo los ingresos pueden cubrir costos operativos. Las evaluaciones verificadas están en los perfiles de agentes reales.'
         )}
         action={
           <div className="header-action-group">
@@ -206,6 +206,8 @@ export default function EconomyPage() {
           </div>
         }
       />
+
+      <p className="hint"><ProvenanceBadge meta={PROVENANCE_SOURCES.SIMULATED_ATLAS_SNAPSHOT('Economy scenario')} compact /> {c('Simulated economic scenario · fleet ratios here are illustrative.', 'Escenario económico simulado · los ratios de esta flota son ilustrativos.')}</p>
 
       <section className="hero-panel economy-hero">
         <div className="economy-hero-main">

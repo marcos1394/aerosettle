@@ -478,6 +478,7 @@ class EconomicLedger:
         custom_journal_legs: Optional[list[dict[str, Any]]] = None,
         cursor: Optional[sqlite3.Cursor] = None,
         _reclassification_context: Optional[dict[str, Any]] = None,
+        _verified_cost_context: Optional[dict[str, Any]] = None,
     ) -> EconomicMovement:
         """Idempotently records an economic movement with balanced double-entry accounting."""
         if not idempotency_key or not idempotency_key.strip():
@@ -512,6 +513,34 @@ class EconomicLedger:
         if status_enum == MovementStatus.RECONCILED:
             if reversal_of_movement_id is not None:
                 pass  # System reversal
+            elif _verified_cost_context is not None:
+                cost_ctx = _verified_cost_context
+                if (source_enum != ProvenanceSource.EXTERNAL_VERIFIED
+                    or nature_enum not in (MovementNature.EXPENSE, MovementNature.PROVISION)
+                    or not attestation_id or not evidence_hash or not self._attestation_verifier
+                    or not cost_ctx.get("cost_id") or not cost_ctx.get("category")
+                    or cost_ctx.get("cost_nature") not in (CostNature.REALIZED.value, CostNature.ACCRUED_LIABILITY.value)
+                    or not custom_journal_legs or len(custom_journal_legs) != 2
+                    or metadata is None or metadata.get("cost_id") != cost_ctx["cost_id"]):
+                    raise LedgerValidationError("Verified cost reclassification requires authentic cost evidence")
+                debit = next((leg for leg in custom_journal_legs if leg.get("entry_type") == EntryType.DEBIT.value), None)
+                credit = next((leg for leg in custom_journal_legs if leg.get("entry_type") == EntryType.CREDIT.value), None)
+                expected_credit = ("LIABILITY:ACCRUED_EXPENSES",) if cost_ctx["cost_nature"] == CostNature.ACCRUED_LIABILITY.value else ("ASSET:TREASURY",)
+                if (not debit or not credit or debit.get("account_name") != f"EXPENSE:{cost_ctx['category']}"
+                    or (cost_ctx["cost_nature"] == CostNature.ACCRUED_LIABILITY.value and nature_enum != MovementNature.PROVISION)
+                    or (cost_ctx["cost_nature"] == CostNature.REALIZED.value and nature_enum != MovementNature.EXPENSE)
+                    or (credit.get("account_name") not in expected_credit
+                        and not (cost_ctx["cost_nature"] == CostNature.REALIZED.value
+                                 and str(credit.get("account_name", "")).startswith("ASSET:RESERVED:")))
+                    or int(debit.get("amount_base_units", 0)) != amount_int
+                    or int(credit.get("amount_base_units", 0)) != amount_int
+                    or not self._attestation_verifier.verify_attestation(
+                        attestation_id=attestation_id, authorized_by=cost_ctx.get("authorized_by"),
+                        evidence_hash=evidence_hash,
+                        cost_data={"agent_account": agent_account, "category": cost_ctx["category"],
+                                   "cost_nature": cost_ctx["cost_nature"], "amount_base_units": amount_int,
+                                   "network": net_val, "token_mint": mint_val})):
+                    raise LedgerValidationError("Verified cost movement failed attestation or journal validation")
             elif _reclassification_context is not None:
                 op = _reclassification_context.get("operation")
                 res_id = _reclassification_context.get("reserve_id")
@@ -1856,6 +1885,9 @@ class EconomicLedger:
                     observed_at=incurred_time,
                     metadata={"cost_id": cost_id, "category": cat_enum.value},
                     custom_journal_legs=legs,
+                    _verified_cost_context={"cost_id": cost_id, "category": cat_enum.value,
+                                            "cost_nature": nat_enum.value, "authorized_by": meta.get("authorized_by")}
+                    if stat_enum == MovementStatus.RECONCILED else None,
                     cursor=tx_cursor,
                 )
                 movement_id = mov.movement_id
@@ -1926,6 +1958,9 @@ class EconomicLedger:
                         observed_at=incurred_time,
                         metadata={"cost_id": cost_id, "from_reserve_id": from_reserve_id},
                         custom_journal_legs=legs,
+                        _verified_cost_context={"cost_id": cost_id, "category": cat_enum.value,
+                                                "cost_nature": nat_enum.value, "authorized_by": meta.get("authorized_by")}
+                        if stat_enum == MovementStatus.RECONCILED else None,
                         cursor=tx_cursor,
                     )
                     movement_id = mov.movement_id
@@ -1962,6 +1997,9 @@ class EconomicLedger:
                         observed_at=incurred_time,
                         metadata={"cost_id": cost_id, "category": cat_enum.value},
                         custom_journal_legs=legs,
+                        _verified_cost_context={"cost_id": cost_id, "category": cat_enum.value,
+                                                "cost_nature": nat_enum.value, "authorized_by": meta.get("authorized_by")}
+                        if stat_enum == MovementStatus.RECONCILED else None,
                         cursor=tx_cursor,
                     )
                     movement_id = mov.movement_id
