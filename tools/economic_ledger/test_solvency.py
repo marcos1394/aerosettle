@@ -788,8 +788,8 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
             self.assertEqual(res_test["provenance"], "SYNTHETIC_TEST")
             self.assertEqual(res_test["conatus_ratio"], "4.00000000")
 
-        # 3. Authentic production verification reaches full LIVE_RPC_AND_EXTERNAL_ATTESTED
-        prod_db_path = Path(self.temp.name) / "authentic_prod_restart.db"
+        # A plausible signature and attestation ID carry no productive origin proof.
+        prod_db_path = Path(self.temp.name) / "unverified_prod_restart.db"
         with EconomicLedger(
             prod_db_path,
             reconciliation_verifier=ProductionReconciliationVerifier(),
@@ -802,15 +802,26 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
                 program_id=PROGRAM, token_mint=MINT, amount_base_units=400, nature="INCOME",
                 status="PROVISIONAL", tx_signature="sig-real-prod-100", observed_at=NOW - 100,
             )
-            led_p.reconcile_movement(m.movement_id, evidence_hash=HASH,
-                authorized_by="conatus:protocol:reconciler:v1", slot=1000, tx_signature="sig-real-prod-100")
+            with self.assertRaisesRegex(LedgerValidationError, "Reconciliation rejected by verifier"):
+                led_p.reconcile_movement(m.movement_id, evidence_hash=HASH,
+                    authorized_by="conatus:protocol:reconciler:v1", slot=1000,
+                    tx_signature="sig-real-prod-100")
+            with self.assertRaisesRegex(LedgerValidationError, "Attestation verification failed"):
+                led_p.record_cost(
+                    idempotency_key="cst-real-1", agent_id="11" * 32, agent_account=AGENT,
+                    owner_pubkey=OWNER, category="CONNECTIVITY_COMPUTE", cost_nature="REALIZED",
+                    economic_period="2033-05", amount_base_units=100, network=NETWORK,
+                    genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, incurred_at=NOW - 90,
+                    status="RECONCILED", provenance_source="EXTERNAL_VERIFIED",
+                    attestation_id="attest-real-1", evidence_hash=HASH,
+                    metadata={"authorized_by": "conatus:trusted:oracle:v1"},
+                )
             led_p.record_cost(
-                idempotency_key="cst-real-1", agent_id="11" * 32, agent_account=AGENT,
+                idempotency_key="cst-unverified-1", agent_id="11" * 32, agent_account=AGENT,
                 owner_pubkey=OWNER, category="CONNECTIVITY_COMPUTE", cost_nature="REALIZED",
                 economic_period="2033-05", amount_base_units=100, network=NETWORK,
                 genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, incurred_at=NOW - 90,
-                status="RECONCILED", provenance_source="EXTERNAL_VERIFIED",
-                attestation_id="attest-real-1", evidence_hash=HASH,
+                status="PROVISIONAL", attestation_id="attest-real-1", evidence_hash=HASH,
                 metadata={"authorized_by": "conatus:trusted:oracle:v1"},
             )
             r_dig, _ = calculate_side_data_digest(led_p, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "REVENUE", START, NOW)
@@ -835,27 +846,105 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
         with EconomicLedger(prod_db_path, coverage_verifier=reopened_verifier) as led_prod_real:
             res_full = assess_agent(led_prod_real, AGENT, network=NETWORK, genesis_hash=GENESIS,
                                     program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
-            self.assertEqual(res_full["calculation_status"], "VALID")
-            self.assertEqual(res_full["provenance"], "LIVE_RPC_AND_EXTERNAL_ATTESTED")
-            self.assertEqual(res_full["conatus_ratio"], "4.00000000")
+            self.assertEqual(res_full["calculation_status"], "INSUFFICIENT_DATA")
+            self.assertEqual(res_full["provenance"], "HISTORICAL_UNVERIFIED")
+            self.assertNotEqual(res_full["provenance"], "LIVE_RPC_AND_EXTERNAL_ATTESTED")
+            self.assertIsNone(res_full["conatus_ratio"])
+            self.assertIn("provisional_revenue", res_full["exclusion_reasons"])
+            self.assertIn("unverified_or_estimated_cost", res_full["exclusion_reasons"])
+            movement = led_prod_real.get_movement(m.movement_id)
+            self.assertEqual(movement.status.value, "PROVISIONAL")
+            self.assertNotIn(movement.evidence_lineage, ("LIVE_RPC", "EXTERNAL_ATTESTED"))
+            self.assertEqual(led_prod_real._conn.execute(
+                "SELECT count(*) FROM agent_costs WHERE status='RECONCILED' OR evidence_lineage='EXTERNAL_ATTESTED'"
+            ).fetchone()[0], 0)
 
-        # 2. Reopen without trusted keys: fails closed to INSUFFICIENT_DATA
+        # Reopen without trusted keys: fails closed to INSUFFICIENT_DATA
         with EconomicLedger(db_path) as led_unconfigured:
             res_unconf = assess_agent(led_unconfigured, AGENT, network=NETWORK, genesis_hash=GENESIS,
                                       program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
             self.assertEqual(res_unconf["calculation_status"], "INSUFFICIENT_DATA")
 
+    def test_sqlite_restart_rejects_legacy_productive_labels_without_origin_proof(self):
+        db_path = Path(self.temp.name) / "legacy_unverified_labels.db"
+        coverage_verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        with EconomicLedger(
+            db_path,
+            reconciliation_verifier=IsolatedTestReconcilerVerifier(),
+            attestation_verifier=IsolatedTestAttestationVerifier(),
+            coverage_verifier=coverage_verifier,
+        ) as led:
+            movement = led.record_movement(
+                idempotency_key="legacy-income", agent_id="11" * 32, agent_account=AGENT,
+                owner_pubkey=OWNER, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, amount_base_units=400, nature="INCOME",
+                status="PROVISIONAL", tx_signature="sig-real-prod-100", observed_at=NOW - 100,
+            )
+            led.reconcile_movement(
+                movement.movement_id, evidence_hash=HASH,
+                authorized_by="conatus:protocol:reconciler:v1", slot=1000,
+                tx_signature="sig-real-prod-100",
+            )
+            cost = led.record_cost(
+                idempotency_key="legacy-cost", agent_id="11" * 32, agent_account=AGENT,
+                owner_pubkey=OWNER, category="CONNECTIVITY_COMPUTE", cost_nature="REALIZED",
+                economic_period="2033-05", amount_base_units=100, network=NETWORK,
+                genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, incurred_at=NOW - 90,
+                status="RECONCILED", provenance_source="EXTERNAL_VERIFIED",
+                attestation_id="attest-real-1", evidence_hash=HASH,
+                metadata={"authorized_by": "conatus:trusted:oracle:v1"},
+            )
+            # Emulate labels written by the former format-only production verifiers.
+            led._conn.execute(
+                "UPDATE economic_movements SET evidence_lineage='LIVE_RPC' WHERE movement_id=?",
+                (movement.movement_id,),
+            )
+            led._conn.execute(
+                "UPDATE agent_costs SET evidence_lineage='EXTERNAL_ATTESTED' WHERE cost_id=?",
+                (cost.cost_id,),
+            )
+            for side, claimed_origin in (("REVENUE", "LIVE_RPC"), ("OPEX", "EXTERNAL_ATTESTED")):
+                digest, _ = calculate_side_data_digest(
+                    led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), side, START, NOW,
+                )
+                signature, public_key, _ = self._sign(
+                    self.seed_1, side=side, digest=digest, prov=claimed_origin,
+                )
+                record_coverage(
+                    led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                    program_id=PROGRAM, token_mint=MINT, side=side,
+                    window_start=START, window_end=NOW, evidence_hash=HASH,
+                    verifier_id=self.auth_1, verifier=coverage_verifier,
+                    provenance_type=claimed_origin, signature=signature,
+                    authority_pubkey=public_key, verified_at=NOW,
+                )
+
+        with EconomicLedger(db_path, coverage_verifier=coverage_verifier) as reopened:
+            result = assess_agent(
+                reopened, AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, now=NOW,
+            )[0]
+            self.assertEqual(result["calculation_status"], "INSUFFICIENT_DATA")
+            self.assertEqual(result["provenance"], "HISTORICAL_UNVERIFIED")
+            self.assertIn(
+                "productive_economic_origin_verification_unavailable",
+                result["exclusion_reasons"],
+            )
+
     def test_gate2_multiple_coverages_skips_tampered_and_selects_authentic(self):
         db_path = Path(self.temp.name) / "multi_candidates.db"
-        prod_verifier = ProductionCoverageVerifier(
+        simulation_verifier = IsolatedTestCoverageVerifier(
             trusted_authorities={self.auth_1},
             trusted_public_keys={self.auth_1: self.pub_1_b58},
         )
         test_verifier = IsolatedTestCoverageVerifier()
         with EconomicLedger(
             db_path,
-            reconciliation_verifier=ProductionReconciliationVerifier(),
-            attestation_verifier=ProductionAttestationVerifier(),
+            reconciliation_verifier=IsolatedTestReconcilerVerifier(),
+            attestation_verifier=IsolatedTestAttestationVerifier(),
             coverage_verifier=test_verifier,
         ) as led:
             m = led.record_movement(
@@ -879,13 +968,13 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
             rev_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "REVENUE", START, NOW)
             opex_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "OPEX", START, NOW)
 
-            # Insert authentic coverage (rowid 1)
-            rev_sig, rev_pk, _ = self._sign(self.seed_1, side="REVENUE", digest=rev_digest, evidence_hash="hash-authentic-1")
+            # Insert correctly signed simulation coverage (rowid 1)
+            rev_sig, rev_pk, _ = self._sign(self.seed_1, side="REVENUE", digest=rev_digest, evidence_hash="hash-authentic-1", prov="SYNTHETIC_TEST")
             record_coverage(
                 led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
                 program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
                 window_end=NOW, evidence_hash="hash-authentic-1", verifier_id=self.auth_1,
-                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                verifier=test_verifier, provenance_type="SYNTHETIC_TEST",
                 signature=rev_sig, authority_pubkey=rev_pk, verified_at=NOW - 50,
             )
             # Insert newer tampered/forged coverage for the same window (rowid 2)
@@ -894,39 +983,40 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
                 led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
                 program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
                 window_end=NOW, evidence_hash="hash-forged-2", verifier_id=self.auth_1,
-                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                verifier=test_verifier, provenance_type="SYNTHETIC_TEST",
                 signature=forged_sig, authority_pubkey=rev_pk, verified_at=NOW - 10,
             )
 
-            # OPEX authentic coverage
-            opex_sig, opex_pk, _ = self._sign(self.seed_1, side="OPEX", digest=opex_digest, evidence_hash=HASH)
+            # OPEX correctly signed simulation coverage
+            opex_sig, opex_pk, _ = self._sign(self.seed_1, side="OPEX", digest=opex_digest, evidence_hash=HASH, prov="SYNTHETIC_TEST")
             record_coverage(
                 led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
                 program_id=PROGRAM, token_mint=MINT, side="OPEX", window_start=START,
                 window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
-                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                verifier=test_verifier, provenance_type="SYNTHETIC_TEST",
                 signature=opex_sig, authority_pubkey=opex_pk, verified_at=NOW,
             )
 
-        # Reopen with ProductionCoverageVerifier
-        with EconomicLedger(db_path, coverage_verifier=prod_verifier) as led_prod:
+        # Reopen with the explicitly isolated simulation verifier
+        with EconomicLedger(db_path, coverage_verifier=simulation_verifier) as led_prod:
             res = assess_agent(led_prod, AGENT, network=NETWORK, genesis_hash=GENESIS,
                                program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
             # Must successfully select the authentic coverage and discard the forged newer one
             self.assertEqual(res["calculation_status"], "VALID")
             self.assertEqual(res["conatus_ratio"], "3.00000000")
+            self.assertEqual(res["provenance"], "SYNTHETIC_TEST")
 
     def test_gate2_multiple_coverages_skips_revoked_authority_candidate(self):
         db_path = Path(self.temp.name) / "multi_revoked.db"
-        prod_verifier = ProductionCoverageVerifier(
+        simulation_verifier = IsolatedTestCoverageVerifier(
             trusted_authorities={self.auth_1, self.auth_2},
             trusted_public_keys={self.auth_1: self.pub_1_b58, self.auth_2: self.pub_2_b58},
         )
         test_verifier = IsolatedTestCoverageVerifier()
         with EconomicLedger(
             db_path,
-            reconciliation_verifier=ProductionReconciliationVerifier(),
-            attestation_verifier=ProductionAttestationVerifier(),
+            reconciliation_verifier=IsolatedTestReconcilerVerifier(),
+            attestation_verifier=IsolatedTestAttestationVerifier(),
             coverage_verifier=test_verifier,
         ) as led:
             m = led.record_movement(
@@ -951,43 +1041,44 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
             opex_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "OPEX", START, NOW)
 
             # Insert Coverage signed by Authority 1 (which will be revoked)
-            rev_sig_1, rev_pk_1, _ = self._sign(self.seed_1, side="REVENUE", digest=rev_digest, auth=self.auth_1, evidence_hash="hash-auth1")
+            rev_sig_1, rev_pk_1, _ = self._sign(self.seed_1, side="REVENUE", digest=rev_digest, auth=self.auth_1, evidence_hash="hash-auth1", prov="SYNTHETIC_TEST")
             record_coverage(
                 led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
                 program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
                 window_end=NOW, evidence_hash="hash-auth1", verifier_id=self.auth_1,
-                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                verifier=test_verifier, provenance_type="SYNTHETIC_TEST",
                 signature=rev_sig_1, authority_pubkey=rev_pk_1, verified_at=NOW - 10,
             )
             # Insert Coverage signed by Authority 2 (which remains trusted)
-            rev_sig_2, rev_pk_2, _ = self._sign(self.seed_2, side="REVENUE", digest=rev_digest, auth=self.auth_2, evidence_hash="hash-auth2")
+            rev_sig_2, rev_pk_2, _ = self._sign(self.seed_2, side="REVENUE", digest=rev_digest, auth=self.auth_2, evidence_hash="hash-auth2", prov="SYNTHETIC_TEST")
             record_coverage(
                 led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
                 program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
                 window_end=NOW, evidence_hash="hash-auth2", verifier_id=self.auth_2,
-                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                verifier=test_verifier, provenance_type="SYNTHETIC_TEST",
                 signature=rev_sig_2, authority_pubkey=rev_pk_2, verified_at=NOW - 20,
             )
 
             # OPEX signed by Authority 2
-            opex_sig, opex_pk, _ = self._sign(self.seed_2, side="OPEX", digest=opex_digest, auth=self.auth_2, evidence_hash=HASH)
+            opex_sig, opex_pk, _ = self._sign(self.seed_2, side="OPEX", digest=opex_digest, auth=self.auth_2, evidence_hash=HASH, prov="SYNTHETIC_TEST")
             record_coverage(
                 led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
                 program_id=PROGRAM, token_mint=MINT, side="OPEX", window_start=START,
                 window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_2,
-                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                verifier=test_verifier, provenance_type="SYNTHETIC_TEST",
                 signature=opex_sig, authority_pubkey=opex_pk, verified_at=NOW,
             )
 
         # Revoke Authority 1
-        prod_verifier.revoke_authority(self.auth_1)
+        simulation_verifier.revoke_authority(self.auth_1)
 
-        with EconomicLedger(db_path, coverage_verifier=prod_verifier) as led_prod:
+        with EconomicLedger(db_path, coverage_verifier=simulation_verifier) as led_prod:
             res = assess_agent(led_prod, AGENT, network=NETWORK, genesis_hash=GENESIS,
                                program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
             # Must skip the candidate from revoked Authority 1 and select the authentic one from Authority 2
             self.assertEqual(res["calculation_status"], "VALID")
             self.assertEqual(res["conatus_ratio"], "2.00000000")
+            self.assertEqual(res["provenance"], "SYNTHETIC_TEST")
 
     def test_rfc_8032_official_vectors(self):
         """Official RFC 8032 Test Vectors 1 and 2 verification with cryptography."""
@@ -1067,121 +1158,86 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
                 )
             self.assertIn("EXTERNAL_ATTESTED", str(ctx.exception))
 
-    def test_production_rejects_mixed_real_revenue_with_synthetic_costs(self):
-        """Mixed authentic LIVE_RPC revenue with synthetic cost yields INSUFFICIENT_DATA in production."""
-        db_path = Path(self.temp.name) / "mixed_real_rev_synth_cost.db"
-        prod_verifier = ProductionCoverageVerifier(
-            trusted_authorities={self.auth_1},
-            trusted_public_keys={self.auth_1: self.pub_1_b58},
+
+    def test_production_reconciliation_without_rpc_rejects_allowlisted_signature(self):
+        verifier = ProductionReconciliationVerifier()
+        verifier.allow_signature("sig-real-prod-200")
+        self.assertFalse(verifier.verify_reconciliation(
+            movement_id="movement-1", evidence_hash=HASH,
+            authorized_by="conatus:protocol:reconciler:v1", slot=1000,
+            tx_signature="sig-real-prod-200",
+        ))
+        self.assertEqual(verifier.verified_calls, [])
+
+        with EconomicLedger(":memory:", reconciliation_verifier=verifier) as led:
+            movement = led.record_movement(
+                idempotency_key="unverified-rpc-income", agent_id="11" * 32,
+                agent_account=AGENT, owner_pubkey=OWNER, network=NETWORK,
+                genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT,
+                amount_base_units=500, nature="INCOME", status="PROVISIONAL",
+                tx_signature="sig-real-prod-200", observed_at=NOW - 100,
+            )
+            with self.assertRaisesRegex(LedgerValidationError, "Reconciliation rejected by verifier"):
+                led.reconcile_movement(
+                    movement.movement_id, evidence_hash=HASH,
+                    authorized_by="conatus:protocol:reconciler:v1", slot=1000,
+                    tx_signature="sig-real-prod-200",
+                )
+            unchanged = led.get_movement(movement.movement_id)
+            self.assertEqual(unchanged.status.value, "PROVISIONAL")
+            self.assertNotEqual(unchanged.evidence_lineage, "LIVE_RPC")
+
+    def test_production_reconciliation_rejects_fictitious_signature(self):
+        verifier = ProductionReconciliationVerifier(
+            allowed_signatures={"sig-fake-prod-200"},
         )
-        with EconomicLedger(
-            db_path,
-            reconciliation_verifier=ProductionReconciliationVerifier(),
-            attestation_verifier=IsolatedTestAttestationVerifier(),
-            coverage_verifier=prod_verifier,
-        ) as led:
-            m = led.record_movement(
-                idempotency_key="inc-real-mix", agent_id="11" * 32, agent_account=AGENT,
-                owner_pubkey=OWNER, network=NETWORK, genesis_hash=GENESIS,
-                program_id=PROGRAM, token_mint=MINT, amount_base_units=500, nature="INCOME",
-                status="PROVISIONAL", tx_signature="sig-real-prod-200", observed_at=NOW - 100,
-            )
-            led.reconcile_movement(m.movement_id, evidence_hash=HASH,
-                authorized_by="conatus:protocol:reconciler:v1", slot=1000, tx_signature="sig-real-prod-200")
+        self.assertFalse(verifier.verify_reconciliation(
+            movement_id="movement-2", evidence_hash=HASH,
+            authorized_by="conatus:protocol:reconciler:v1", slot=1000,
+            tx_signature="sig-fake-prod-200",
+        ))
+        self.assertEqual(verifier.verified_calls, [])
 
-            led.record_cost(
-                idempotency_key="cst-synth-mix", agent_id="11" * 32, agent_account=AGENT,
-                owner_pubkey=OWNER, category="CONNECTIVITY_COMPUTE", cost_nature="REALIZED",
-                economic_period="2033-05", amount_base_units=100, network=NETWORK,
-                genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, incurred_at=NOW - 90,
-                status="RECONCILED", provenance_source="EXTERNAL_VERIFIED",
-                attestation_id="attest-synth-1", evidence_hash=HASH,
-                metadata={"authorized_by": "conatus:trusted:oracle:v1"},
-            )
 
-            r_dig, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "REVENUE", START, NOW)
-            o_dig, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "OPEX", START, NOW)
-            r_sig, r_pk, _ = self._sign(self.seed_1, side="REVENUE", digest=r_dig, prov="LIVE_RPC")
-            o_sig, o_pk, _ = self._sign(self.seed_1, side="OPEX", digest=o_dig, prov="EXTERNAL_ATTESTED")
-            record_coverage(
-                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
-                program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
-                window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
-                verifier=prod_verifier, provenance_type="LIVE_RPC",
-                signature=r_sig, authority_pubkey=r_pk, verified_at=NOW,
-            )
-            record_coverage(
-                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
-                program_id=PROGRAM, token_mint=MINT, side="OPEX", window_start=START,
-                window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
-                verifier=prod_verifier, provenance_type="EXTERNAL_ATTESTED",
-                signature=o_sig, authority_pubkey=o_pk, verified_at=NOW,
-            )
+    def test_production_attestation_without_crypto_rejects_allowlisted_identifier(self):
+        verifier = ProductionAttestationVerifier()
+        verifier.allow_attestation("attest-real-2")
+        self.assertFalse(verifier.verify_attestation(
+            attestation_id="attest-real-2",
+            authorized_by="conatus:trusted:oracle:v1", evidence_hash=HASH,
+            cost_data={"agent_account": AGENT, "category": "CONNECTIVITY_COMPUTE",
+                       "cost_nature": "REALIZED", "amount_base_units": 100,
+                       "network": NETWORK, "token_mint": MINT},
+        ))
+        self.assertEqual(verifier.verified_calls, [])
 
-        with EconomicLedger(db_path, coverage_verifier=prod_verifier) as led_prod:
-            res = assess_agent(led_prod, AGENT, network=NETWORK, genesis_hash=GENESIS,
-                               program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
-            self.assertEqual(res["calculation_status"], "INSUFFICIENT_DATA")
-            self.assertIn("synthetic_or_unverified_cost_lineage", res["exclusion_reasons"])
-            self.assertEqual(res["provenance"], "SYNTHETIC_TEST")
+        with EconomicLedger(":memory:", attestation_verifier=verifier) as led:
+            with self.assertRaisesRegex(LedgerValidationError, "Attestation verification failed"):
+                led.record_cost(
+                    idempotency_key="unverified-cost-1", agent_id="11" * 32,
+                    agent_account=AGENT, owner_pubkey=OWNER,
+                    category="CONNECTIVITY_COMPUTE", cost_nature="REALIZED",
+                    economic_period="2033-05", amount_base_units=100,
+                    network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+                    token_mint=MINT, status="RECONCILED",
+                    provenance_source="EXTERNAL_VERIFIED",
+                    attestation_id="attest-real-2", evidence_hash=HASH,
+                    metadata={"authorized_by": "conatus:trusted:oracle:v1"},
+                )
+            self.assertEqual(led._conn.execute(
+                "SELECT count(*) FROM agent_costs WHERE evidence_lineage='EXTERNAL_ATTESTED'"
+            ).fetchone()[0], 0)
 
-    def test_production_rejects_mixed_synthetic_revenue_with_real_costs(self):
-        """Mixed synthetic revenue with authentic EXTERNAL_ATTESTED costs yields INSUFFICIENT_DATA in production."""
-        db_path = Path(self.temp.name) / "mixed_synth_rev_real_cost.db"
-        prod_verifier = ProductionCoverageVerifier(
-            trusted_authorities={self.auth_1},
-            trusted_public_keys={self.auth_1: self.pub_1_b58},
+    def test_production_attestation_rejects_arbitrary_identifier(self):
+        verifier = ProductionAttestationVerifier(
+            allowed_attestations={"attest-arbitrary-1"},
         )
-        with EconomicLedger(
-            db_path,
-            reconciliation_verifier=IsolatedTestReconcilerVerifier(),
-            attestation_verifier=ProductionAttestationVerifier(),
-            coverage_verifier=prod_verifier,
-        ) as led:
-            m = led.record_movement(
-                idempotency_key="inc-synth-mix2", agent_id="11" * 32, agent_account=AGENT,
-                owner_pubkey=OWNER, network=NETWORK, genesis_hash=GENESIS,
-                program_id=PROGRAM, token_mint=MINT, amount_base_units=500, nature="INCOME",
-                status="PROVISIONAL", tx_signature="sig-synth-prod-200", observed_at=NOW - 100,
-            )
-            led.reconcile_movement(m.movement_id, evidence_hash=HASH,
-                authorized_by="conatus:protocol:reconciler:v1", slot=1000, tx_signature="sig-synth-prod-200")
-
-            led.record_cost(
-                idempotency_key="cst-real-mix2", agent_id="11" * 32, agent_account=AGENT,
-                owner_pubkey=OWNER, category="CONNECTIVITY_COMPUTE", cost_nature="REALIZED",
-                economic_period="2033-05", amount_base_units=100, network=NETWORK,
-                genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, incurred_at=NOW - 90,
-                status="RECONCILED", provenance_source="EXTERNAL_VERIFIED",
-                attestation_id="attest-real-2", evidence_hash=HASH,
-                metadata={"authorized_by": "conatus:trusted:oracle:v1"},
-            )
-
-            r_dig, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "REVENUE", START, NOW)
-            o_dig, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "OPEX", START, NOW)
-            r_sig, r_pk, _ = self._sign(self.seed_1, side="REVENUE", digest=r_dig, prov="EXTERNAL_ATTESTED")
-            o_sig, o_pk, _ = self._sign(self.seed_1, side="OPEX", digest=o_dig, prov="EXTERNAL_ATTESTED")
-            record_coverage(
-                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
-                program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
-                window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
-                verifier=prod_verifier, provenance_type="EXTERNAL_ATTESTED",
-                signature=r_sig, authority_pubkey=r_pk, verified_at=NOW,
-            )
-            record_coverage(
-                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
-                program_id=PROGRAM, token_mint=MINT, side="OPEX", window_start=START,
-                window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
-                verifier=prod_verifier, provenance_type="EXTERNAL_ATTESTED",
-                signature=o_sig, authority_pubkey=o_pk, verified_at=NOW,
-            )
-
-        with EconomicLedger(db_path, coverage_verifier=prod_verifier) as led_prod:
-            res = assess_agent(led_prod, AGENT, network=NETWORK, genesis_hash=GENESIS,
-                               program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
-            self.assertEqual(res["calculation_status"], "INSUFFICIENT_DATA")
-            self.assertIn("synthetic_or_unverified_revenue_lineage", res["exclusion_reasons"])
-            self.assertEqual(res["provenance"], "SYNTHETIC_TEST")
+        self.assertFalse(verifier.verify_attestation(
+            attestation_id="attest-arbitrary-1",
+            authorized_by="conatus:trusted:oracle:v1", evidence_hash=HASH,
+            cost_data={"amount_base_units": 100},
+        ))
+        self.assertEqual(verifier.verified_calls, [])
 
     def test_missing_lineage_fails_closed_in_production(self):
         """Records with missing or unverified lineage fail closed in production."""
@@ -1192,8 +1248,8 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
         )
         with EconomicLedger(
             db_path,
-            reconciliation_verifier=ProductionReconciliationVerifier(),
-            attestation_verifier=ProductionAttestationVerifier(),
+            reconciliation_verifier=IsolatedTestReconcilerVerifier(),
+            attestation_verifier=IsolatedTestAttestationVerifier(),
             coverage_verifier=prod_verifier,
         ) as led:
             m = led.record_movement(
@@ -1219,13 +1275,13 @@ class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
 
             r_dig, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "REVENUE", START, NOW)
             o_dig, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "OPEX", START, NOW)
-            r_sig, r_pk, _ = self._sign(self.seed_1, side="REVENUE", digest=r_dig, prov="LIVE_RPC")
+            r_sig, r_pk, _ = self._sign(self.seed_1, side="REVENUE", digest=r_dig, prov="EXTERNAL_ATTESTED")
             o_sig, o_pk, _ = self._sign(self.seed_1, side="OPEX", digest=o_dig, prov="EXTERNAL_ATTESTED")
             record_coverage(
                 led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
                 program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
                 window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
-                verifier=prod_verifier, provenance_type="LIVE_RPC",
+                verifier=prod_verifier, provenance_type="EXTERNAL_ATTESTED",
                 signature=r_sig, authority_pubkey=r_pk, verified_at=NOW,
             )
             record_coverage(

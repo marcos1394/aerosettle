@@ -204,7 +204,7 @@ class IsolatedTestReconcilerVerifier:
 
 
 class ProductionReconciliationVerifier:
-    """Production on-chain transaction verifier for finalized Solana transactions."""
+    """Closed until CON-23 RPC/SPL verification is wired to this verifier (CON-34)."""
     provenance_type: str = EvidenceLineage.LIVE_RPC.value
 
     def __init__(
@@ -235,26 +235,10 @@ class ProductionReconciliationVerifier:
         tx_signature: str,
         movement: Optional[EconomicMovement] = None,
     ) -> bool:
-        if not authorized_by or authorized_by not in self.trusted_authorities:
-            return False
-        if not evidence_hash or not tx_signature:
-            return False
-        sig_clean = tx_signature.strip()
-        if len(sig_clean) < 16 or len(sig_clean) > 128:
-            return False
-        sig_lower = sig_clean.lower()
-        if any(bad in sig_lower for bad in ("fake", "fictitious", "dummy", "mock")):
-            return False
-        if self.allowed_signatures is not None and sig_clean not in self.allowed_signatures:
-            return False
-        self.verified_calls.append({
-            "movement_id": movement_id,
-            "evidence_hash": evidence_hash,
-            "authorized_by": authorized_by,
-            "slot": slot,
-            "tx_signature": tx_signature,
-        })
-        return True
+        # An authority name, signature shape, or local allowlist cannot prove that
+        # CON-23 observed a finalized SPL transaction over RPC. No such source is
+        # connected here yet, so this production verifier cannot promote lineage.
+        return False
 
 
 @runtime_checkable
@@ -342,7 +326,7 @@ class IsolatedTestAttestationVerifier:
 
 
 class ProductionAttestationVerifier:
-    """Production external cost attestation verifier."""
+    """Closed until issuer signatures over complete costs can be verified."""
     provenance_type: str = EvidenceLineage.EXTERNAL_ATTESTED.value
 
     def __init__(
@@ -371,22 +355,10 @@ class ProductionAttestationVerifier:
         evidence_hash: Optional[str] = None,
         cost_data: Optional[dict[str, Any]] = None,
     ) -> bool:
-        if not authorized_by or authorized_by not in self.trusted_authorities:
-            return False
-        if not attestation_id or not evidence_hash:
-            return False
-        att_lower = attestation_id.lower()
-        if any(bad in att_lower for bad in ("fake", "invented", "forged", "dummy", "mock")):
-            return False
-        if self.allowed_attestations is not None and attestation_id not in self.allowed_attestations:
-            return False
-        self.verified_calls.append({
-            "attestation_id": attestation_id,
-            "authorized_by": authorized_by,
-            "evidence_hash": evidence_hash,
-            "cost_data": cost_data,
-        })
-        return True
+        # No trusted issuer key, signature, or canonical binding to the entire
+        # economic payload is supplied by this interface. IDs and hashes alone
+        # cannot authenticate costs, even when explicitly allowlisted.
+        return False
 
 
 def _decode_ed25519_pubkey(val: str | bytes | None) -> bytes | None:

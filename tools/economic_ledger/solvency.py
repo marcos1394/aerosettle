@@ -416,6 +416,12 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
 
     # In production mode, strictly require authentic evidence lineage for revenue and costs
     if not is_explicit_test_mode:
+        # CON-25 had format-only production verifiers that could already have
+        # persisted productive labels. Those labels alone cannot prove origin.
+        # Keep prior SQLite rows closed until CON-34 can revalidate their sources.
+        if any(r["evidence_lineage"] in ("LIVE_RPC", "EXTERNAL_ATTESTED")
+               for r in revenue + expenses):
+            excluded.append("productive_economic_origin_verification_unavailable")
         for r in revenue:
             if "evidence_lineage" in r.keys():
                 lin = r["evidence_lineage"]
@@ -539,6 +545,7 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
         "revenue_coverage_expired", "opex_coverage_expired",
         "missing_revenue_evidence_lineage", "synthetic_or_unverified_revenue_lineage",
         "missing_cost_evidence_lineage", "synthetic_or_unverified_cost_lineage",
+        "productive_economic_origin_verification_unavailable",
     )):
         status = "INSUFFICIENT_DATA"
     elif not revenue_complete or not expense_complete:
@@ -597,12 +604,17 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
         provenance = "SYNTHETIC_TEST"
     elif "HISTORICAL_FIXTURE" in all_lineages:
         provenance = "HISTORICAL_FIXTURE"
-    elif "LIVE_RPC" in all_lineages and all(s in ("LIVE_RPC", "EXTERNAL_ATTESTED") for s in all_lineages):
-        if "EXTERNAL_ATTESTED" in all_lineages or (expenses and all(s == "EXTERNAL_ATTESTED" for s in exp_lineages)):
+    elif (status == "VALID" and revenue and expenses and
+          all(s == "LIVE_RPC" for s in rev_lineages) and
+          all(s in ("LIVE_RPC", "EXTERNAL_ATTESTED") for s in exp_lineages) and
+          "LIVE_RPC" in all_lineages and
+          all(s in ("LIVE_RPC", "EXTERNAL_ATTESTED") for s in all_lineages)):
+        if "EXTERNAL_ATTESTED" in exp_lineages:
             provenance = "LIVE_RPC_AND_EXTERNAL_ATTESTED"
         else:
             provenance = "LIVE_RPC"
-    elif all_lineages and all(s == "EXTERNAL_ATTESTED" for s in all_lineages):
+    elif (status == "VALID" and revenue and expenses and all_lineages and
+          all(s == "EXTERNAL_ATTESTED" for s in all_lineages)):
         provenance = "EXTERNAL_ATTESTED"
     else:
         provenance = "HISTORICAL_UNVERIFIED"

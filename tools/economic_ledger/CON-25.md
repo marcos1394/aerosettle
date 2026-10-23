@@ -36,7 +36,9 @@ La procedencia nunca depende de clases Python en memoria ni se infiere ciegament
 - Cada movimiento y cada costo almacena de forma inmutable su `evidence_lineage` en columnas dedicadas (`economic_movements.evidence_lineage` y `agent_costs.evidence_lineage`) y dentro de `metadata_json`.
 - En modo productivo, una evaluación falla cerrado a `INSUFFICIENT_DATA` si cualquiera de sus ingresos o costos subyacentes tiene linaje sintético (`SYNTHETIC_TEST`), de fixture (`HISTORICAL_FIXTURE`), o no verificado (`HISTORICAL_UNVERIFIED`). Ni siquiera una firma Ed25519 válida sobre la cobertura puede promover fixtures económicos a evidencia productiva.
 - En modo de prueba explícito (`IsolatedTestCoverageVerifier`), las evaluaciones matemáticas son admisibles pero preservan de forma estricta e inmutable `provenance = "SYNTHETIC_TEST"`.
-- Con verificadores productivos auténticos (`ProductionReconciliationVerifier` y `ProductionAttestationVerifier`), los registros adquieren `LIVE_RPC` y `EXTERNAL_ATTESTED`, alcanzando la procedencia plena `LIVE_RPC_AND_EXTERNAL_ATTESTED`.
+- `ProductionReconciliationVerifier` y `ProductionAttestationVerifier` permanecen cerrados: los identificadores, listas de permitidos y hashes no constituyen prueba de origen. Hasta conectar validación de transacciones SPL finalizadas por Solana RPC y atestaciones criptográficas del payload económico completo, ninguno puede certificar registros ni asignar `LIVE_RPC` o `EXTERNAL_ATTESTED`.
+- Una firma Ed25519 válida de cobertura autentica la cobertura y su digest, pero no certifica por sí misma ingresos ni gastos subyacentes. La evaluación solo puede declarar procedencia productiva con registros económicos elegibles que ya tengan linaje auténtico en ambos lados.
+- Los linajes productivos que pudieron quedar persistidos antes de este cierre no son prueba suficiente de origen: la evaluación los deja en `INSUFFICIENT_DATA` hasta que CON-34 pueda revalidar sus fuentes. No se alteran migraciones ni filas históricas.
 - `agent_solvency_assessments` almacena `provenance_type` en columna dedicada y dentro de `result_json`.
 
 ### 4. Migraciones 007 y 008
