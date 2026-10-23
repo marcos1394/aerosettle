@@ -431,7 +431,7 @@ export const CAPABILITY_MARKET = Array.from({ length: 16 }, (_, index) => {
 
 const STORAGE_KEY = 'conatus.snapshot';
 const listeners = new Set<() => void>();
-const envDisabled = import.meta.env.VITE_CONATUS_SNAPSHOT === 'off';
+const envDisabled = import.meta.env?.VITE_CONATUS_SNAPSHOT === 'off';
 function readSnapshot() {
   if (envDisabled) return false;
   try {

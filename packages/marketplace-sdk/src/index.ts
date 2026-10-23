@@ -162,7 +162,7 @@ export interface EconomicMovement {
   genesis_hash: string;
   program_id: string;
   token_mint: string;
-  amount_base_units: number;
+  amount_base_units: number | null;
   amount_str: string;
   nature: MovementNature;
   status: MovementStatus;
@@ -180,16 +180,16 @@ export interface EconomicMovement {
 export interface BalanceReport {
   agent_account: string;
   network: string;
-  genesis_hash?: string;
-  program_id?: string;
+  genesis_hash: string;
+  program_id: string;
   token_mint: string;
-  reconciled_balance: number;
-  provisional_balance: number;
-  reserved_balance: number;
+  reconciled_balance: number | null;
+  provisional_balance: number | null;
+  reserved_balance: number | null;
   reconciled_balance_str: string;
   provisional_balance_str: string;
   reserved_balance_str: string;
-  total_effective_balance: number;
+  total_effective_balance: number | null;
   total_effective_balance_str: string;
   movement_count: number;
 }
@@ -204,10 +204,10 @@ export interface AgentCost {
   cost_nature: CostNature;
   economic_period: string;
   network: string;
-  genesis_hash?: string;
-  program_id?: string;
+  genesis_hash: string;
+  program_id: string;
   token_mint: string;
-  amount_base_units: number;
+  amount_base_units: number | null;
   amount_str: string;
   status: MovementStatus;
   provenance_source: ProvenanceSource;
@@ -231,12 +231,12 @@ export interface AgentReserve {
   owner_pubkey: string;
   reserve_type: ReserveType;
   network: string;
-  genesis_hash?: string;
-  program_id?: string;
+  genesis_hash: string;
+  program_id: string;
   token_mint: string;
-  target_amount_base_units: number;
+  target_amount_base_units: number | null;
   target_amount_str: string;
-  current_reserved_base_units: number;
+  current_reserved_base_units: number | null;
   current_reserved_str: string;
   status: ReserveStatus;
   created_at: number;
@@ -262,17 +262,17 @@ export interface ReserveTransaction {
 export interface AgentEconomicSummary {
   agent_account: string;
   network: string;
-  genesis_hash?: string;
-  program_id?: string;
+  genesis_hash: string;
+  program_id: string;
   token_mint: string;
-  total_income_reconciled: number;
-  total_income_provisional: number;
-  total_expenses_realized: number;
-  total_obligations_accrued: number;
-  total_estimated_costs: number;
-  total_capital_reserved: number;
-  available_balance: number;
-  total_effective_balance: number;
+  total_income_reconciled: number | null;
+  total_income_provisional: number | null;
+  total_expenses_realized: number | null;
+  total_obligations_accrued: number | null;
+  total_estimated_costs: number | null;
+  total_capital_reserved: number | null;
+  available_balance: number | null;
+  total_effective_balance: number | null;
   total_income_reconciled_str: string;
   total_income_provisional_str: string;
   total_expenses_realized_str: string;
@@ -391,6 +391,12 @@ export interface EconomicMovementFilters extends Paging {
   toTs?: number;
 }
 
+export interface PrivateEconomicRequestOptions {
+  ownerPubkey?: string;
+  authHeaders?: Record<string, string>;
+  signal?: AbortSignal;
+}
+
 export interface RecordMovementInput {
   idempotency_key: string;
   agent_account: string;
@@ -490,6 +496,21 @@ const u64 = (value: unknown, name: string): U64String => {
   return s;
 };
 
+function exactLegacyAmount(row: Record<string, unknown>, numberKey: string, stringKey: string, signed = false): void {
+  const exact = signed ? nonempty(row[stringKey], stringKey) : u64(row[stringKey], stringKey);
+  if (signed && !/^-?(0|[1-9][0-9]*)$/.test(exact)) fail(`Invalid ${stringKey}`);
+  const legacy = row[numberKey];
+  if (typeof legacy !== 'number')
+    fail(`Invalid ${numberKey}`);
+  if (!Number.isFinite(legacy) || !Number.isInteger(legacy))
+    fail(`Invalid ${numberKey}`);
+  if (!Number.isSafeInteger(legacy)) {
+    row[numberKey] = null;
+  } else if (BigInt(legacy as number) !== BigInt(exact)) {
+    fail(`Mismatched ${numberKey} and ${stringKey}`);
+  }
+}
+
 const object = (
   value: unknown,
   name: string
@@ -539,8 +560,7 @@ function economicMovement(raw: unknown): EconomicMovement {
   nonempty(m.genesis_hash, 'genesis_hash');
   nonempty(m.program_id, 'program_id');
   nonempty(m.token_mint, 'token_mint');
-  integer(m.amount_base_units, 'amount_base_units');
-  nonempty(m.amount_str, 'amount_str');
+  exactLegacyAmount(m, 'amount_base_units', 'amount_str');
   nonempty(m.nature, 'nature');
   nonempty(m.status, 'status');
   nonempty(m.provenance_source, 'provenance_source');
@@ -555,15 +575,11 @@ function balanceReport(raw: unknown): BalanceReport {
 
   nonempty(b.agent_account, 'agent_account');
   nonempty(b.network, 'network');
+  nonempty(b.genesis_hash, 'genesis_hash');
+  nonempty(b.program_id, 'program_id');
   nonempty(b.token_mint, 'token_mint');
-  integer(b.reconciled_balance, 'reconciled_balance');
-  integer(b.provisional_balance, 'provisional_balance');
-  integer(b.reserved_balance, 'reserved_balance');
-  nonempty(b.reconciled_balance_str, 'reconciled_balance_str');
-  nonempty(b.provisional_balance_str, 'provisional_balance_str');
-  nonempty(b.reserved_balance_str, 'reserved_balance_str');
-  integer(b.total_effective_balance, 'total_effective_balance');
-  nonempty(b.total_effective_balance_str, 'total_effective_balance_str');
+  for (const name of ['reconciled_balance', 'provisional_balance', 'reserved_balance', 'total_effective_balance'])
+    exactLegacyAmount(b, name, `${name}_str`, true);
   integer(b.movement_count, 'movement_count');
 
   return b as unknown as BalanceReport;
@@ -579,9 +595,10 @@ function agentCost(raw: unknown): AgentCost {
   nonempty(c.cost_nature, 'cost_nature');
   nonempty(c.economic_period, 'economic_period');
   nonempty(c.network, 'network');
+  nonempty(c.genesis_hash, 'genesis_hash');
+  nonempty(c.program_id, 'program_id');
   nonempty(c.token_mint, 'token_mint');
-  integer(c.amount_base_units, 'amount_base_units');
-  nonempty(c.amount_str, 'amount_str');
+  exactLegacyAmount(c, 'amount_base_units', 'amount_str');
   nonempty(c.status, 'status');
   nonempty(c.provenance_source, 'provenance_source');
   integer(c.created_at, 'created_at');
@@ -597,9 +614,11 @@ function agentReserve(raw: unknown): AgentReserve {
   nonempty(r.agent_account, 'agent_account');
   nonempty(r.reserve_type, 'reserve_type');
   nonempty(r.network, 'network');
+  nonempty(r.genesis_hash, 'genesis_hash');
+  nonempty(r.program_id, 'program_id');
   nonempty(r.token_mint, 'token_mint');
-  integer(r.target_amount_base_units, 'target_amount_base_units');
-  integer(r.current_reserved_base_units, 'current_reserved_base_units');
+  exactLegacyAmount(r, 'target_amount_base_units', 'target_amount_str');
+  exactLegacyAmount(r, 'current_reserved_base_units', 'current_reserved_str');
   nonempty(r.status, 'status');
   integer(r.created_at, 'created_at');
   integer(r.updated_at, 'updated_at');
@@ -610,15 +629,13 @@ function agentEconomicSummary(raw: unknown): AgentEconomicSummary {
   const s = object(raw, 'economic summary');
   nonempty(s.agent_account, 'agent_account');
   nonempty(s.network, 'network');
+  nonempty(s.genesis_hash, 'genesis_hash');
+  nonempty(s.program_id, 'program_id');
   nonempty(s.token_mint, 'token_mint');
-  integer(s.total_income_reconciled, 'total_income_reconciled');
-  integer(s.total_income_provisional, 'total_income_provisional');
-  integer(s.total_expenses_realized, 'total_expenses_realized');
-  integer(s.total_obligations_accrued, 'total_obligations_accrued');
-  integer(s.total_estimated_costs, 'total_estimated_costs');
-  integer(s.total_capital_reserved, 'total_capital_reserved');
-  integer(s.available_balance, 'available_balance');
-  integer(s.total_effective_balance, 'total_effective_balance');
+  for (const name of ['total_income_reconciled', 'total_income_provisional',
+    'total_expenses_realized', 'total_obligations_accrued', 'total_estimated_costs',
+    'total_capital_reserved', 'available_balance', 'total_effective_balance'])
+    exactLegacyAmount(s, name, `${name}_str`, name === 'available_balance' || name === 'total_effective_balance');
   return s as unknown as AgentEconomicSummary;
 }
 
@@ -1160,7 +1177,7 @@ export class MarketplaceClient {
   async listEconomicMovements(
     account: string,
     filters: EconomicMovementFilters = {},
-    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+    options: PrivateEconomicRequestOptions = {}
   ): Promise<Page<EconomicMovement>> {
     const p = new URLSearchParams();
     if (filters.nature) p.set('nature', filters.nature);
@@ -1171,7 +1188,7 @@ export class MarketplaceClient {
     if (filters.toTs !== undefined) p.set('to_ts', String(filters.toTs));
     paging(p, filters);
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...options.authHeaders };
     if (options.ownerPubkey) {
       headers['X-Owner-Pubkey'] = options.ownerPubkey;
     }
@@ -1190,7 +1207,7 @@ export class MarketplaceClient {
   async getAgentBalances(
     account: string,
     filters: { mint?: string; network?: string; genesis?: string; program_id?: string } = {},
-    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+    options: PrivateEconomicRequestOptions = {}
   ): Promise<Detail<BalanceReport[]>> {
     const p = new URLSearchParams();
     if (filters.mint) p.set('mint', filters.mint);
@@ -1198,7 +1215,7 @@ export class MarketplaceClient {
     if (filters.genesis) p.set('genesis', filters.genesis);
     if (filters.program_id) p.set('program_id', filters.program_id);
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...options.authHeaders };
     if (options.ownerPubkey) {
       headers['X-Owner-Pubkey'] = options.ownerPubkey;
     }
@@ -1284,7 +1301,7 @@ export class MarketplaceClient {
   async listAgentCosts(
     account: string,
     filters: CostFilters = {},
-    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+    options: PrivateEconomicRequestOptions = {}
   ): Promise<Page<AgentCost>> {
     const p = new URLSearchParams();
     if (filters.category) p.set('category', filters.category);
@@ -1300,7 +1317,7 @@ export class MarketplaceClient {
     if (filters.toTs !== undefined) p.set('to_ts', String(filters.toTs));
     paging(p, filters);
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...options.authHeaders };
     if (options.ownerPubkey) {
       headers['X-Owner-Pubkey'] = options.ownerPubkey;
     }
@@ -1339,7 +1356,7 @@ export class MarketplaceClient {
   async listAgentReserves(
     account: string,
     filters: ReserveFilters = {},
-    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+    options: PrivateEconomicRequestOptions = {}
   ): Promise<Detail<AgentReserve[]>> {
     const p = new URLSearchParams();
     if (filters.reserve_type) p.set('reserve_type', filters.reserve_type);
@@ -1349,7 +1366,7 @@ export class MarketplaceClient {
     if (filters.genesis) p.set('genesis', filters.genesis);
     if (filters.program_id) p.set('program_id', filters.program_id);
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...options.authHeaders };
     if (options.ownerPubkey) {
       headers['X-Owner-Pubkey'] = options.ownerPubkey;
     }
@@ -1388,7 +1405,7 @@ export class MarketplaceClient {
   async getAgentEconomicSummary(
     account: string,
     filters: EconomicSummaryFilters = {},
-    options: { ownerPubkey?: string; signal?: AbortSignal } = {}
+    options: PrivateEconomicRequestOptions = {}
   ): Promise<Detail<AgentEconomicSummary[]>> {
     const p = new URLSearchParams();
     if (filters.mint) p.set('mint', filters.mint);
@@ -1397,7 +1414,7 @@ export class MarketplaceClient {
     if (filters.program_id) p.set('program_id', filters.program_id);
     if (filters.period) p.set('period', filters.period);
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...options.authHeaders };
     if (options.ownerPubkey) {
       headers['X-Owner-Pubkey'] = options.ownerPubkey;
     }

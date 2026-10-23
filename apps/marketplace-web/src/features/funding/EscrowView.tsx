@@ -28,7 +28,8 @@ export default function EscrowView({ workOrderPda }: { workOrderPda: string }) {
     );
     if (order.status !== 'Draft' && order.escrow_vault !== vault.toBase58())
       throw new Error('Escrow registrado incompatible con su PDA.');
-    const info = await connection.getAccountInfo(vault, 'confirmed');
+    const rpc = await connection.getAccountInfoAndContext(vault, 'confirmed');
+    const info = rpc.value;
     let balance: string | null = null;
     if (info) {
       if (
@@ -46,7 +47,8 @@ export default function EscrowView({ workOrderPda }: { workOrderPda: string }) {
       ['Open', 'Claimed', 'Submitted', 'Verified'].includes(order.status!)
     )
       throw new Error('Orden financiada sin vault verificable.');
-    return { vault: vault.toBase58(), balance, exists: !!info };
+    return { vault: vault.toBase58(), balance, exists: !!info, slot: rpc.context.slot,
+      mint: order.token_mint, status: order.status };
   });
   return (
     <section className="panel">
@@ -71,6 +73,10 @@ export default function EscrowView({ workOrderPda }: { workOrderPda: string }) {
                   ? t('Cuenta SPL existente')
                   : c('Account not initialized', 'Cuenta no inicializada'),
               ],
+              [c('RPC slot / commitment', 'Slot RPC / compromiso'), `${resource.data.slot} / confirmed`],
+              [c('WorkOrder state', 'Estado de WorkOrder'), resource.data.status ?? '—'],
+              [c('Escrow mint', 'Mint del escrow'), resource.data.mint
+                ? <CopyAddress value={resource.data.mint} /> : '—'],
               [
                 c(
                   `Escrow balance (${SETTLEMENT_SYMBOL} base units)`,
