@@ -11,6 +11,14 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+import sys
+if str(ROOT_DIR / "tools" / "discovery") not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR / "tools" / "discovery"))
+
+import agent_discovery as discovery
+from cryptography.hazmat.primitives.asymmetric import ed25519 as crypto_ed25519
+from cryptography.exceptions import InvalidSignature
 from .models import (
     AgentCost,
     AgentEconomicSummary,
@@ -20,6 +28,7 @@ from .models import (
     CostNature,
     EconomicMovement,
     EntryType,
+    EvidenceLineage,
     IdempotencyConflictError,
     JournalEntry,
     LedgerLeg,
@@ -48,6 +57,11 @@ DEFAULT_PROGRAM_ID = "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
 DEFAULT_TRUSTED_RECONCILER_AUTHORITIES: frozenset[str] = frozenset({
     "conatus:protocol:reconciler:v1",
     "conatus:internal:settlement-validator:v1",
+})
+
+DEFAULT_TRUSTED_COVERAGE_AUTHORITIES: frozenset[str] = frozenset({
+    "conatus:coverage:authority:v1",
+    "conatus:protocol:solvency-verifier:v1",
 })
 
 
@@ -136,6 +150,7 @@ class IsolatedTestReconcilerVerifier:
     This test verifier allows whitelisting valid test transactions/signatures and explicitly
     rejects fictitious, unverified, or dummy signatures.
     """
+    provenance_type: str = EvidenceLineage.SYNTHETIC_TEST.value
 
     def __init__(
         self,
@@ -188,6 +203,44 @@ class IsolatedTestReconcilerVerifier:
         return True
 
 
+class ProductionReconciliationVerifier:
+    """Closed until CON-23 RPC/SPL verification is wired to this verifier (CON-34)."""
+    provenance_type: str = EvidenceLineage.LIVE_RPC.value
+
+    def __init__(
+        self,
+        trusted_authorities: Optional[set[str] | list[str]] = None,
+        allowed_signatures: Optional[set[str] | list[str]] = None,
+    ) -> None:
+        self.trusted_authorities = (
+            set(trusted_authorities)
+            if trusted_authorities is not None
+            else set(DEFAULT_TRUSTED_RECONCILER_AUTHORITIES)
+        )
+        self.allowed_signatures = set(allowed_signatures) if allowed_signatures is not None else None
+        self.verified_calls: list[dict[str, Any]] = []
+
+    def allow_signature(self, signature: str) -> None:
+        if self.allowed_signatures is None:
+            self.allowed_signatures = set()
+        self.allowed_signatures.add(signature)
+
+    def verify_reconciliation(
+        self,
+        *,
+        movement_id: str,
+        evidence_hash: str,
+        authorized_by: str,
+        slot: int,
+        tx_signature: str,
+        movement: Optional[EconomicMovement] = None,
+    ) -> bool:
+        # An authority name, signature shape, or local allowlist cannot prove that
+        # CON-23 observed a finalized SPL transaction over RPC. No such source is
+        # connected here yet, so this production verifier cannot promote lineage.
+        return False
+
+
 @runtime_checkable
 class AttestationVerifier(Protocol):
     """Protocol for authenticating and verifying cryptographic cost attestations."""
@@ -210,6 +263,7 @@ class IsolatedTestAttestationVerifier:
     pending an authentic cryptographic attestation verifier. This verifier enables testing
     authorized vs unauthorized authorities and genuine vs forged/invented attestations.
     """
+    provenance_type: str = EvidenceLineage.SYNTHETIC_TEST.value
 
     def __init__(
         self,
@@ -269,6 +323,472 @@ class IsolatedTestAttestationVerifier:
             "cost_data": cost_data,
         })
         return True
+
+
+class ProductionAttestationVerifier:
+    """Closed until issuer signatures over complete costs can be verified."""
+    provenance_type: str = EvidenceLineage.EXTERNAL_ATTESTED.value
+
+    def __init__(
+        self,
+        trusted_authorities: Optional[set[str] | list[str]] = None,
+        allowed_attestations: Optional[set[str] | list[str]] = None,
+    ) -> None:
+        self.trusted_authorities = (
+            set(trusted_authorities)
+            if trusted_authorities is not None
+            else {"conatus:trusted:oracle:v1", "conatus:protocol:cost-verifier:v1"}
+        )
+        self.allowed_attestations = set(allowed_attestations) if allowed_attestations is not None else None
+        self.verified_calls: list[dict[str, Any]] = []
+
+    def allow_attestation(self, attestation_id: str) -> None:
+        if self.allowed_attestations is None:
+            self.allowed_attestations = set()
+        self.allowed_attestations.add(attestation_id)
+
+    def verify_attestation(
+        self,
+        *,
+        attestation_id: str,
+        authorized_by: Optional[str] = None,
+        evidence_hash: Optional[str] = None,
+        cost_data: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        # No trusted issuer key, signature, or canonical binding to the entire
+        # economic payload is supplied by this interface. IDs and hashes alone
+        # cannot authenticate costs, even when explicitly allowlisted.
+        return False
+
+
+def _decode_ed25519_pubkey(val: str | bytes | None) -> bytes | None:
+    if not val:
+        return None
+    if isinstance(val, bytes):
+        return val if len(val) == 32 else None
+    if not isinstance(val, str):
+        return None
+    val = val.strip()
+    if len(val) == 64:
+        try:
+            raw = bytes.fromhex(val)
+            if len(raw) == 32:
+                return raw
+        except ValueError:
+            pass
+    try:
+        raw = discovery.b58decode(val)
+        if len(raw) == 32:
+            return raw
+    except Exception:
+        pass
+    return None
+
+
+def _decode_ed25519_sig(val: str | bytes | None) -> bytes | None:
+    if not val:
+        return None
+    if isinstance(val, bytes):
+        return val if len(val) == 64 else None
+    if not isinstance(val, str):
+        return None
+    val = val.strip()
+    if len(val) == 128:
+        try:
+            raw = bytes.fromhex(val)
+            if len(raw) == 64:
+                return raw
+        except ValueError:
+            pass
+    try:
+        raw = discovery.b58decode(val)
+        if len(raw) == 64:
+            return raw
+    except Exception:
+        pass
+    return None
+
+
+def verify_ed25519_signature(signature: bytes, message: bytes, public_key: bytes) -> bool:
+    """Cryptographic verification of an Ed25519 signature against message and public key.
+
+    Uses RFC 8032 standard verification via cryptography library. Fails closed on any inconsistency.
+    """
+    if not isinstance(signature, (bytes, bytearray)) or len(signature) != 64:
+        return False
+    if not isinstance(public_key, (bytes, bytearray)) or len(public_key) != 32:
+        return False
+    if not isinstance(message, (bytes, bytearray)):
+        return False
+    try:
+        pub = crypto_ed25519.Ed25519PublicKey.from_public_bytes(bytes(public_key))
+        pub.verify(bytes(signature), bytes(message))
+        return True
+    except (InvalidSignature, ValueError, TypeError, Exception):
+        return False
+
+
+def sign_coverage_attestation(secret_key: bytes, canonical_message: bytes) -> tuple[str, str]:
+    """Produces (base58_signature, base58_public_key) for an authentic coverage attestation."""
+    if len(secret_key) < 32:
+        raise ValueError("Secret key seed must be at least 32 bytes")
+    seed = secret_key[:32]
+    priv = crypto_ed25519.Ed25519PrivateKey.from_private_bytes(seed)
+    pub_bytes = priv.public_key().public_bytes_raw()
+    sig_bytes = priv.sign(canonical_message)
+    return discovery.b58encode(sig_bytes), discovery.b58encode(pub_bytes)
+
+
+def canonical_coverage_message(
+    *,
+    agent_account: str,
+    network: str,
+    genesis_hash: str,
+    program_id: str,
+    token_mint: str,
+    side: str,
+    window_start: int,
+    window_end: int,
+    data_digest: str,
+    evidence_hash: str,
+    verifier_id: str,
+    provenance_type: str,
+    expires_at: Optional[int] = None,
+) -> bytes:
+    """Canonical deterministic serialized message for coverage attestations."""
+    payload = {
+        "domain": "conatus:solvency-coverage-attestation:v1",
+        "agent_account": agent_account,
+        "network": network,
+        "genesis_hash": genesis_hash,
+        "program_id": program_id,
+        "token_mint": token_mint,
+        "side": side,
+        "window_start": window_start,
+        "window_end": window_end,
+        "data_digest": data_digest,
+        "evidence_hash": evidence_hash,
+        "verifier_id": verifier_id,
+        "provenance_type": provenance_type,
+        "expires_at": expires_at,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+@runtime_checkable
+class CoverageVerifier(Protocol):
+    """Protocol for authenticating and verifying solvency coverage completeness attestations."""
+
+    def verify_coverage(
+        self,
+        *,
+        agent_account: str,
+        network: str,
+        genesis_hash: str,
+        program_id: str,
+        token_mint: str,
+        side: str,
+        window_start: int,
+        window_end: int,
+        data_digest: str,
+        evidence_hash: str,
+        verifier_id: str,
+        provenance_type: str,
+        signature: Optional[str] = None,
+        authority_pubkey: Optional[str] = None,
+        expires_at: Optional[int] = None,
+        verified_at: Optional[int] = None,
+        now: Optional[int] = None,
+    ) -> bool:
+        ...
+
+
+class IsolatedTestCoverageVerifier:
+    """Isolated test coverage verifier for automated testing environments.
+
+    In production, coverage completeness requires an authentic cryptographically attested verifier.
+    This test verifier isolates synthetic tests and rejects fictitious, unverified, or dummy inputs.
+    """
+    is_test_mode: bool = True
+    provenance_type: str = EvidenceLineage.SYNTHETIC_TEST.value
+
+    def __init__(
+        self,
+        trusted_authorities: Optional[set[str] | list[str]] = None,
+        trusted_public_keys: Optional[dict[str, str]] = None,
+        revoked_authorities: Optional[set[str] | list[str]] = None,
+        *,
+        allowed_authorities: Optional[set[str] | list[str]] = None,
+        allowed_signatures: Optional[set[str] | list[str]] = None,
+        reject_fictitious: bool = True,
+        default_provenance_type: str = "SYNTHETIC_TEST",
+        default_ttl_seconds: Optional[int] = None,
+        verify_crypto_if_key_available: bool = True,
+    ) -> None:
+        self.trusted_authorities = (
+            set(trusted_authorities)
+            if trusted_authorities is not None
+            else {"test:coverage", "conatus:coverage:authority:v1", "conatus:protocol:solvency-verifier:v1"}
+        )
+        self.trusted_public_keys = dict(trusted_public_keys or {})
+        self.revoked_authorities = set(revoked_authorities or ())
+        self.allowed_authorities = (
+            set(allowed_authorities) if allowed_authorities is not None else None
+        )
+        self.allowed_signatures = (
+            set(allowed_signatures) if allowed_signatures is not None else None
+        )
+        self.reject_fictitious = reject_fictitious
+        self.default_provenance_type = default_provenance_type
+        self.default_ttl_seconds = default_ttl_seconds
+        self.verify_crypto_if_key_available = verify_crypto_if_key_available
+        self.verified_calls: list[dict[str, Any]] = []
+
+    def revoke_authority(self, authority_id: str) -> None:
+        self.revoked_authorities.add(authority_id)
+
+    def is_authority_revoked(self, authority_id: str) -> bool:
+        return authority_id in self.revoked_authorities
+
+    def allow_authority(self, authority_id: str, public_key: Optional[str] = None) -> None:
+        self.trusted_authorities.add(authority_id)
+        if public_key:
+            self.trusted_public_keys[authority_id] = public_key
+
+    def allow_signature(self, signature: str) -> None:
+        if self.allowed_signatures is None:
+            self.allowed_signatures = set()
+        self.allowed_signatures.add(signature)
+
+    def verify_coverage(
+        self,
+        *,
+        agent_account: str,
+        network: str,
+        genesis_hash: str,
+        program_id: str,
+        token_mint: str,
+        side: str,
+        window_start: int,
+        window_end: int,
+        data_digest: str,
+        evidence_hash: str,
+        verifier_id: str,
+        provenance_type: str,
+        signature: Optional[str] = None,
+        authority_pubkey: Optional[str] = None,
+        expires_at: Optional[int] = None,
+        verified_at: Optional[int] = None,
+        now: Optional[int] = None,
+    ) -> bool:
+        if not verifier_id or verifier_id not in self.trusted_authorities:
+            return False
+
+        if verifier_id in self.revoked_authorities:
+            return False
+
+        if self.allowed_authorities is not None and verifier_id not in self.allowed_authorities:
+            return False
+
+        v_lower = verifier_id.lower()
+        if self.reject_fictitious:
+            if (
+                v_lower.startswith("fake")
+                or v_lower.startswith("fictitious")
+                or v_lower.startswith("bad")
+                or "fake" in v_lower
+                or "fictitious" in v_lower
+                or "dummy" in v_lower
+                or "mock_bad" in v_lower
+            ):
+                return False
+
+        if not data_digest or not evidence_hash:
+            return False
+
+        current_ts = int(time.time()) if now is None else now
+        if expires_at is not None and current_ts > expires_at:
+            return False
+        if self.default_ttl_seconds is not None and verified_at is not None and expires_at is None:
+            if current_ts > verified_at + self.default_ttl_seconds:
+                return False
+
+        if self.allowed_signatures is not None:
+            if not signature or signature not in self.allowed_signatures:
+                return False
+
+        if self.verify_crypto_if_key_available and verifier_id in self.trusted_public_keys:
+            trusted_pk_str = self.trusted_public_keys[verifier_id]
+            trusted_pk_bytes = _decode_ed25519_pubkey(trusted_pk_str)
+            if not trusted_pk_bytes:
+                return False
+            if authority_pubkey:
+                claimed_pk = _decode_ed25519_pubkey(authority_pubkey)
+                if claimed_pk != trusted_pk_bytes:
+                    return False
+            if not signature:
+                return False
+            sig_bytes = _decode_ed25519_sig(signature)
+            if not sig_bytes:
+                return False
+            msg = canonical_coverage_message(
+                agent_account=agent_account,
+                network=network,
+                genesis_hash=genesis_hash,
+                program_id=program_id,
+                token_mint=token_mint,
+                side=side,
+                window_start=window_start,
+                window_end=window_end,
+                data_digest=data_digest,
+                evidence_hash=evidence_hash,
+                verifier_id=verifier_id,
+                provenance_type=provenance_type,
+                expires_at=expires_at,
+            )
+            if not verify_ed25519_signature(sig_bytes, msg, trusted_pk_bytes):
+                return False
+
+        self.verified_calls.append({
+            "agent_account": agent_account,
+            "network": network,
+            "genesis_hash": genesis_hash,
+            "program_id": program_id,
+            "token_mint": token_mint,
+            "side": side,
+            "window_start": window_start,
+            "window_end": window_end,
+            "data_digest": data_digest,
+            "evidence_hash": evidence_hash,
+            "verifier_id": verifier_id,
+            "provenance_type": provenance_type,
+            "signature": signature,
+            "authority_pubkey": authority_pubkey,
+            "expires_at": expires_at,
+            "verified_at": verified_at,
+        })
+        return True
+
+
+class ProductionCoverageVerifier:
+    """Production coverage verifier enforcing authorized authorities, Ed25519 signatures, expiration and revocation."""
+    is_test_mode: bool = False
+    provenance_type: str = EvidenceLineage.LIVE_RPC.value
+
+    def __init__(
+        self,
+        trusted_authorities: Optional[set[str] | list[str]] = None,
+        trusted_public_keys: Optional[dict[str, str]] = None,
+        revoked_authorities: Optional[set[str] | list[str]] = None,
+        default_ttl_seconds: Optional[int] = None,
+    ) -> None:
+        self.trusted_authorities = (
+            set(trusted_authorities)
+            if trusted_authorities is not None
+            else set(DEFAULT_TRUSTED_COVERAGE_AUTHORITIES)
+        )
+        self.trusted_public_keys = dict(trusted_public_keys or {})
+        self.revoked_authorities = set(revoked_authorities or ())
+        self.default_ttl_seconds = default_ttl_seconds
+
+    def revoke_authority(self, authority_id: str) -> None:
+        """Revoke a previously trusted authority."""
+        self.revoked_authorities.add(authority_id)
+
+    def is_authority_revoked(self, authority_id: str) -> bool:
+        return authority_id in self.revoked_authorities
+
+    def register_authority(self, authority_id: str, public_key: str) -> None:
+        """Register an enabled productive authority with its Ed25519 public key."""
+        self.trusted_authorities.add(authority_id)
+        self.trusted_public_keys[authority_id] = public_key
+
+    def verify_coverage(
+        self,
+        *,
+        agent_account: str,
+        network: str,
+        genesis_hash: str,
+        program_id: str,
+        token_mint: str,
+        side: str,
+        window_start: int,
+        window_end: int,
+        data_digest: str,
+        evidence_hash: str,
+        verifier_id: str,
+        provenance_type: str,
+        signature: Optional[str] = None,
+        authority_pubkey: Optional[str] = None,
+        expires_at: Optional[int] = None,
+        verified_at: Optional[int] = None,
+        now: Optional[int] = None,
+    ) -> bool:
+        # 1. Authority must be registered and not revoked
+        if not verifier_id or verifier_id not in self.trusted_authorities:
+            return False
+
+        if verifier_id in self.revoked_authorities:
+            return False
+
+        # 2. Every enabled production authority must have a trusted Ed25519 public key
+        if verifier_id not in self.trusted_public_keys:
+            return False
+
+        trusted_pk_str = self.trusted_public_keys[verifier_id]
+        trusted_pk_bytes = _decode_ed25519_pubkey(trusted_pk_str)
+        if not trusted_pk_bytes:
+            return False
+
+        if authority_pubkey:
+            claimed_pk_bytes = _decode_ed25519_pubkey(authority_pubkey)
+            if claimed_pk_bytes != trusted_pk_bytes:
+                return False
+
+        # 3. Production verifier strictly rejects synthetic test provenance or fixtures
+        if provenance_type not in ("LIVE_RPC", "EXTERNAL_ATTESTED"):
+            return False
+
+        # 4. Verifiable context must be present and well-formed
+        if not data_digest or not evidence_hash or not agent_account:
+            return False
+        if side not in ("REVENUE", "OPEX"):
+            return False
+        if not (0 <= window_start < window_end):
+            return False
+
+        # 5. Expiration and freshness checks
+        current_ts = int(time.time()) if now is None else now
+        if expires_at is not None and current_ts > expires_at:
+            return False
+        if self.default_ttl_seconds is not None and verified_at is not None and expires_at is None:
+            if current_ts > verified_at + self.default_ttl_seconds:
+                return False
+
+        # 6. Ed25519 signature decoding and verification against canonical coverage message
+        if not signature:
+            return False
+        sig_bytes = _decode_ed25519_sig(signature)
+        if not sig_bytes or len(sig_bytes) != 64:
+            return False
+
+        msg = canonical_coverage_message(
+            agent_account=agent_account,
+            network=network,
+            genesis_hash=genesis_hash,
+            program_id=program_id,
+            token_mint=token_mint,
+            side=side,
+            window_start=window_start,
+            window_end=window_end,
+            data_digest=data_digest,
+            evidence_hash=evidence_hash,
+            verifier_id=verifier_id,
+            provenance_type=provenance_type,
+            expires_at=expires_at,
+        )
+
+        return verify_ed25519_signature(sig_bytes, msg, trusted_pk_bytes)
 
 
 class ExactSum:
@@ -401,6 +921,8 @@ class EconomicLedger:
         trusted_reconciler_authorities: Optional[set[str] | frozenset[str]] = None,
         reconciliation_verifier: Optional[ReconciliationVerifier] = None,
         attestation_verifier: Optional[AttestationVerifier] = None,
+        coverage_verifier: Optional[CoverageVerifier] = None,
+        trusted_coverage_authorities: Optional[set[str] | frozenset[str]] = None,
     ):
         if str(db_path) != ":memory:":
             self.db_path = Path(db_path)
@@ -433,6 +955,26 @@ class EconomicLedger:
         )
         self._reconciliation_verifier = reconciliation_verifier
         self._attestation_verifier = attestation_verifier
+
+        # Configure coverage verifier and trusted authorities
+        if trusted_coverage_authorities is not None:
+            self._trusted_coverage_authorities = set(trusted_coverage_authorities)
+        elif coverage_verifier is not None:
+            self._trusted_coverage_authorities = (
+                set(coverage_verifier.trusted_authorities)
+                if hasattr(coverage_verifier, "trusted_authorities")
+                else set(DEFAULT_TRUSTED_COVERAGE_AUTHORITIES)
+            )
+        else:
+            self._trusted_coverage_authorities = set()
+
+        if coverage_verifier is not None:
+            self._coverage_verifier = coverage_verifier
+        else:
+            self._coverage_verifier = ProductionCoverageVerifier(
+                trusted_authorities=self._trusted_coverage_authorities,
+                trusted_public_keys={},
+            )
 
         # Run versioned schema migrations
         run_migrations(self._conn)
@@ -478,6 +1020,8 @@ class EconomicLedger:
         custom_journal_legs: Optional[list[dict[str, Any]]] = None,
         cursor: Optional[sqlite3.Cursor] = None,
         _reclassification_context: Optional[dict[str, Any]] = None,
+        _verified_cost_context: Optional[dict[str, Any]] = None,
+        evidence_lineage: Optional[EvidenceLineage | str] = None,
     ) -> EconomicMovement:
         """Idempotently records an economic movement with balanced double-entry accounting."""
         if not idempotency_key or not idempotency_key.strip():
@@ -501,6 +1045,44 @@ class EconomicLedger:
         amount_int = validate_base_units(amount_base_units, allow_zero=allow_zero)
         amount_str = str(amount_int)
 
+        # Determine and validate persistent evidence lineage
+        lineage_candidate: Optional[str] = None
+        if evidence_lineage is not None:
+            lineage_val = evidence_lineage.value if isinstance(evidence_lineage, EvidenceLineage) else str(evidence_lineage)
+            if lineage_val not in [e.value for e in EvidenceLineage]:
+                raise LedgerValidationError(f"Invalid evidence lineage: {lineage_val}")
+            lineage_candidate = lineage_val
+        elif metadata and "evidence_lineage" in metadata:
+            lineage_val = str(metadata["evidence_lineage"])
+            if lineage_val not in [e.value for e in EvidenceLineage]:
+                raise LedgerValidationError(f"Invalid evidence lineage: {lineage_val}")
+            lineage_candidate = lineage_val
+
+        # Anti-forgery checks on lineage
+        if lineage_candidate in (EvidenceLineage.LIVE_RPC.value, "LIVE_RPC"):
+            if source_enum == ProvenanceSource.MANUAL_ENTRY:
+                raise LedgerValidationError("Cannot claim LIVE_RPC lineage on MANUAL_ENTRY movements")
+            # Cannot claim LIVE_RPC without verified reconciliation
+            if status_enum != MovementStatus.RECONCILED and reversal_of_movement_id is None:
+                raise LedgerValidationError("Cannot claim LIVE_RPC evidence lineage without verified on-chain reconciliation")
+        elif lineage_candidate in (EvidenceLineage.EXTERNAL_ATTESTED.value, "EXTERNAL_ATTESTED"):
+            if source_enum == ProvenanceSource.MANUAL_ENTRY:
+                raise LedgerValidationError("Cannot claim EXTERNAL_ATTESTED lineage on MANUAL_ENTRY movements")
+            if _verified_cost_context is None and status_enum != MovementStatus.RECONCILED and reversal_of_movement_id is None:
+                raise LedgerValidationError("Cannot claim EXTERNAL_ATTESTED evidence lineage without verified attestation")
+
+        if _verified_cost_context is not None:
+            final_lineage = _verified_cost_context.get("evidence_lineage", EvidenceLineage.EXTERNAL_ATTESTED.value)
+        elif reversal_of_movement_id is not None:
+            orig_mov = self.get_movement(reversal_of_movement_id)
+            final_lineage = orig_mov.evidence_lineage if orig_mov else (lineage_candidate or EvidenceLineage.HISTORICAL_UNVERIFIED.value)
+        elif _reclassification_context is not None:
+            final_lineage = lineage_candidate or EvidenceLineage.LIVE_RPC.value
+        elif lineage_candidate is not None:
+            final_lineage = lineage_candidate
+        else:
+            final_lineage = EvidenceLineage.HISTORICAL_UNVERIFIED.value
+
         # Conservative Reconciliation Gate for CON-22 & CON-24:
         # 1. Direct assignment of RECONCILED is strictly prohibited for external/arbitrary callers;
         #    initial economic movements must start as PROVISIONAL, and transition to RECONCILED
@@ -512,6 +1094,34 @@ class EconomicLedger:
         if status_enum == MovementStatus.RECONCILED:
             if reversal_of_movement_id is not None:
                 pass  # System reversal
+            elif _verified_cost_context is not None:
+                cost_ctx = _verified_cost_context
+                if (source_enum != ProvenanceSource.EXTERNAL_VERIFIED
+                    or nature_enum not in (MovementNature.EXPENSE, MovementNature.PROVISION)
+                    or not attestation_id or not evidence_hash or not self._attestation_verifier
+                    or not cost_ctx.get("cost_id") or not cost_ctx.get("category")
+                    or cost_ctx.get("cost_nature") not in (CostNature.REALIZED.value, CostNature.ACCRUED_LIABILITY.value)
+                    or not custom_journal_legs or len(custom_journal_legs) != 2
+                    or metadata is None or metadata.get("cost_id") != cost_ctx["cost_id"]):
+                    raise LedgerValidationError("Verified cost reclassification requires authentic cost evidence")
+                debit = next((leg for leg in custom_journal_legs if leg.get("entry_type") == EntryType.DEBIT.value), None)
+                credit = next((leg for leg in custom_journal_legs if leg.get("entry_type") == EntryType.CREDIT.value), None)
+                expected_credit = ("LIABILITY:ACCRUED_EXPENSES",) if cost_ctx["cost_nature"] == CostNature.ACCRUED_LIABILITY.value else ("ASSET:TREASURY",)
+                if (not debit or not credit or debit.get("account_name") != f"EXPENSE:{cost_ctx['category']}"
+                    or (cost_ctx["cost_nature"] == CostNature.ACCRUED_LIABILITY.value and nature_enum != MovementNature.PROVISION)
+                    or (cost_ctx["cost_nature"] == CostNature.REALIZED.value and nature_enum != MovementNature.EXPENSE)
+                    or (credit.get("account_name") not in expected_credit
+                        and not (cost_ctx["cost_nature"] == CostNature.REALIZED.value
+                                 and str(credit.get("account_name", "")).startswith("ASSET:RESERVED:")))
+                    or int(debit.get("amount_base_units", 0)) != amount_int
+                    or int(credit.get("amount_base_units", 0)) != amount_int
+                    or not self._attestation_verifier.verify_attestation(
+                        attestation_id=attestation_id, authorized_by=cost_ctx.get("authorized_by"),
+                        evidence_hash=evidence_hash,
+                        cost_data={"agent_account": agent_account, "category": cost_ctx["category"],
+                                   "cost_nature": cost_ctx["cost_nature"], "amount_base_units": amount_int,
+                                   "network": net_val, "token_mint": mint_val})):
+                    raise LedgerValidationError("Verified cost movement failed attestation or journal validation")
             elif _reclassification_context is not None:
                 op = _reclassification_context.get("operation")
                 res_id = _reclassification_context.get("reserve_id")
@@ -605,6 +1215,7 @@ class EconomicLedger:
         movement_id = str(uuid.uuid4())
         journal_entry_id = f"je_{movement_id}"
         meta = dict(metadata) if metadata else {}
+        meta["evidence_lineage"] = final_lineage
         # Preserve immutable footprint of the initial event
         meta["initial_event"] = {
             "agent_id": agent_id,
@@ -748,9 +1359,9 @@ class EconomicLedger:
                     amount_base_units, amount_str, nature, status,
                     provenance_source, evidence_hash, attestation_id,
                     tx_signature, external_ref, registered_at, observed_at,
-                    reversal_of_movement_id, metadata_json
+                    reversal_of_movement_id, metadata_json, evidence_lineage
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 );
                 """,
                 (
@@ -779,6 +1390,7 @@ class EconomicLedger:
                     obs_time,
                     reversal_of_movement_id,
                     json.dumps(meta),
+                    final_lineage,
                 ),
             )
 
@@ -958,18 +1570,29 @@ class EconomicLedger:
 
             now = int(time.time())
             meta = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
+            rec_lineage = getattr(self._reconciliation_verifier, "provenance_type", EvidenceLineage.SYNTHETIC_TEST.value)
+            if isinstance(rec_lineage, EvidenceLineage):
+                rec_lineage = rec_lineage.value
+            meta["evidence_lineage"] = rec_lineage
             meta["reconciliation"] = {
                 "reconciled_at": now,
                 "authorized_by": auth_clean,
                 "evidence_hash": hash_clean,
                 "slot": slot,
                 "tx_signature": sig_clean,
+                "verifier_provenance_type": rec_lineage,
             }
+
+            prov_src = (
+                row["provenance_source"]
+                if row["provenance_source"] == ProvenanceSource.SETTLEMENT_EVENT.value
+                else ProvenanceSource.ONCHAIN_VERIFIED.value
+            )
 
             cursor.execute(
                 """
                 UPDATE economic_movements
-                SET status = ?, evidence_hash = ?, tx_signature = ?, metadata_json = ?
+                SET status = ?, evidence_hash = ?, tx_signature = ?, metadata_json = ?, provenance_source = ?, evidence_lineage = ?
                 WHERE movement_id = ?;
                 """,
                 (
@@ -977,6 +1600,8 @@ class EconomicLedger:
                     hash_clean,
                     sig_clean,
                     json.dumps(meta),
+                    prov_src,
+                    rec_lineage,
                     movement_id,
                 ),
             )
@@ -1706,6 +2331,7 @@ class EconomicLedger:
         from_reserve_id: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
         cursor: Optional[sqlite3.Cursor] = None,
+        evidence_lineage: Optional[EvidenceLineage | str] = None,
     ) -> AgentCost:
         """Records an agent operational cost, distinguishing realized expenses,
 
@@ -1784,6 +2410,30 @@ class EconomicLedger:
         prov_enum = prov_candidate
         stat_enum = stat_candidate
 
+        # Determine and validate persistent evidence lineage for cost
+        if prov_candidate == ProvenanceSource.EXTERNAL_VERIFIED or stat_candidate == MovementStatus.RECONCILED:
+            cost_lineage = getattr(self._attestation_verifier, "provenance_type", EvidenceLineage.EXTERNAL_ATTESTED.value)
+            if isinstance(cost_lineage, EvidenceLineage):
+                cost_lineage = cost_lineage.value
+        elif evidence_lineage is not None:
+            lin_val = evidence_lineage.value if isinstance(evidence_lineage, EvidenceLineage) else str(evidence_lineage)
+            if lin_val in (EvidenceLineage.LIVE_RPC.value, EvidenceLineage.EXTERNAL_ATTESTED.value):
+                raise LedgerValidationError("Cannot claim EXTERNAL_ATTESTED or LIVE_RPC lineage on unverified cost")
+            if lin_val not in [e.value for e in EvidenceLineage]:
+                raise LedgerValidationError(f"Invalid evidence lineage: {lin_val}")
+            cost_lineage = lin_val
+        elif metadata and "evidence_lineage" in metadata:
+            req_lineage = str(metadata["evidence_lineage"])
+            if req_lineage in (EvidenceLineage.LIVE_RPC.value, EvidenceLineage.EXTERNAL_ATTESTED.value):
+                raise LedgerValidationError("Cannot claim EXTERNAL_ATTESTED or LIVE_RPC lineage on unverified cost")
+            if req_lineage not in [e.value for e in EvidenceLineage]:
+                raise LedgerValidationError(f"Invalid evidence lineage: {req_lineage}")
+            cost_lineage = req_lineage
+        else:
+            cost_lineage = EvidenceLineage.HISTORICAL_UNVERIFIED.value
+
+        meta["evidence_lineage"] = cost_lineage
+
         manage_tx = (cursor is None)
         tx_cursor = cursor if cursor is not None else self._conn.cursor()
         if manage_tx:
@@ -1854,8 +2504,13 @@ class EconomicLedger:
                     evidence_hash=evidence_hash,
                     attestation_id=attestation_id,
                     observed_at=incurred_time,
-                    metadata={"cost_id": cost_id, "category": cat_enum.value},
+                    metadata={"cost_id": cost_id, "category": cat_enum.value, "evidence_lineage": cost_lineage},
                     custom_journal_legs=legs,
+                    evidence_lineage=cost_lineage,
+                    _verified_cost_context={"cost_id": cost_id, "category": cat_enum.value,
+                                            "cost_nature": nat_enum.value, "authorized_by": meta.get("authorized_by"),
+                                            "evidence_lineage": cost_lineage}
+                    if stat_enum == MovementStatus.RECONCILED else None,
                     cursor=tx_cursor,
                 )
                 movement_id = mov.movement_id
@@ -1924,8 +2579,13 @@ class EconomicLedger:
                         evidence_hash=evidence_hash,
                         attestation_id=attestation_id,
                         observed_at=incurred_time,
-                        metadata={"cost_id": cost_id, "from_reserve_id": from_reserve_id},
+                        metadata={"cost_id": cost_id, "from_reserve_id": from_reserve_id, "evidence_lineage": cost_lineage},
                         custom_journal_legs=legs,
+                        evidence_lineage=cost_lineage,
+                        _verified_cost_context={"cost_id": cost_id, "category": cat_enum.value,
+                                                "cost_nature": nat_enum.value, "authorized_by": meta.get("authorized_by"),
+                                                "evidence_lineage": cost_lineage}
+                        if stat_enum == MovementStatus.RECONCILED else None,
                         cursor=tx_cursor,
                     )
                     movement_id = mov.movement_id
@@ -1960,8 +2620,13 @@ class EconomicLedger:
                         evidence_hash=evidence_hash,
                         attestation_id=attestation_id,
                         observed_at=incurred_time,
-                        metadata={"cost_id": cost_id, "category": cat_enum.value},
+                        metadata={"cost_id": cost_id, "category": cat_enum.value, "evidence_lineage": cost_lineage},
                         custom_journal_legs=legs,
+                        evidence_lineage=cost_lineage,
+                        _verified_cost_context={"cost_id": cost_id, "category": cat_enum.value,
+                                                "cost_nature": nat_enum.value, "authorized_by": meta.get("authorized_by"),
+                                                "evidence_lineage": cost_lineage}
+                        if stat_enum == MovementStatus.RECONCILED else None,
                         cursor=tx_cursor,
                     )
                     movement_id = mov.movement_id
@@ -1976,8 +2641,8 @@ class EconomicLedger:
                     amount_base_units, amount_str, status, provenance_source,
                     evidence_hash, evidence_url, attestation_id, description,
                     journal_entry_id, movement_id, reversal_of_cost_id,
-                    created_at, incurred_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    created_at, incurred_at, metadata_json, evidence_lineage
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     cost_id,
@@ -2006,6 +2671,7 @@ class EconomicLedger:
                     now,
                     incurred_time,
                     json.dumps(meta),
+                    cost_lineage,
                 ),
             )
 
@@ -3290,6 +3956,12 @@ class EconomicLedger:
             except Exception:
                 meta = {}
 
+        r_lineage = (
+            row["evidence_lineage"]
+            if "evidence_lineage" in row.keys() and row["evidence_lineage"]
+            else meta.get("evidence_lineage", EvidenceLineage.HISTORICAL_UNVERIFIED.value)
+        )
+
         return EconomicMovement(
             movement_id=row["movement_id"],
             journal_entry_id=row["journal_entry_id"],
@@ -3316,6 +3988,7 @@ class EconomicLedger:
             observed_at=int(row["observed_at"]),
             reversal_of_movement_id=row["reversal_of_movement_id"],
             metadata=meta,
+            evidence_lineage=r_lineage,
         )
 
     @staticmethod
@@ -3329,6 +4002,11 @@ class EconomicLedger:
 
         r_gen = row["genesis_hash"] if "genesis_hash" in row.keys() else DEFAULT_GENESIS_HASH
         r_prog = row["program_id"] if "program_id" in row.keys() else DEFAULT_PROGRAM_ID
+        r_lineage = (
+            row["evidence_lineage"]
+            if "evidence_lineage" in row.keys() and row["evidence_lineage"]
+            else meta.get("evidence_lineage", EvidenceLineage.HISTORICAL_UNVERIFIED.value)
+        )
 
         return AgentCost(
             cost_id=row["cost_id"],
@@ -3357,6 +4035,7 @@ class EconomicLedger:
             metadata=meta,
             genesis_hash=r_gen,
             program_id=r_prog,
+            evidence_lineage=r_lineage,
         )
 
     @staticmethod

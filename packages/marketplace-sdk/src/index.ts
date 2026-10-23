@@ -316,6 +316,72 @@ export interface EconomicSummaryFilters {
   period?: string;
 }
 
+export type SolvencyCalculationStatus = 'VALID' | 'INSUFFICIENT_DATA' | 'UNDEFINED_RATIO' | 'STALE_DATA' | 'MIXED_ASSET_CONTEXT' | 'ERROR';
+export type SustainabilityClass = 'AT_RISK' | 'STABLE' | 'THRIVING' | 'UNDETERMINED';
+export interface SolvencyEvidenceReference { kind: string; id: string; evidence_hash: string }
+export interface AgentSolvencyAssessment {
+  assessment_id: string;
+  agent_account: string;
+  network: string;
+  genesis_hash: string;
+  program_id: string;
+  token_mint: string;
+  window_start: number;
+  window_end: number;
+  calculated_at: number;
+  methodology_version: string;
+  threshold_config_version: string;
+  conatus_ratio: string | null;
+  operating_margin: string | null;
+  operating_surplus_base_units_str: string | null;
+  available_liquidity_base_units_str: string | null;
+  total_reserved_base_units_str: string | null;
+  accrued_liabilities_base_units_str: string | null;
+  reserve_target_base_units_str: string | null;
+  reserve_gap_base_units_str: string | null;
+  eligible_liquid_capital_base_units_str: string | null;
+  runway_days: string | null;
+  sustainability_class: SustainabilityClass;
+  calculation_status: SolvencyCalculationStatus;
+  data_coverage_status: string;
+  input_revenue_count: number;
+  input_expense_count: number;
+  verified_revenue_base_units_str: string | null;
+  verified_opex_base_units_str: string | null;
+  exclusion_reasons: string[];
+  evidence_references: SolvencyEvidenceReference[];
+  input_hash: string;
+  provenance: string;
+  net_worth_verified_base_units_str: string | null;
+  provisional_book_value_base_units_str: string | null;
+}
+export interface MixedAssetContext {
+  calculation_status: 'MIXED_ASSET_CONTEXT';
+  sustainability_class: 'UNDETERMINED';
+  conatus_ratio: null;
+  window_start: number;
+  window_end: number;
+  contexts: Array<{ network: string; genesis_hash: string; program_id: string; token_mint: string }>;
+}
+export interface SolvencyMethodology {
+  methodology_version: string;
+  threshold_config_version: string;
+  thresholds: { stable: string; thriving: string };
+  window_semantics: string;
+  revenue_timestamp: string;
+  opex_timestamp: string;
+  zero_coverage: string;
+  ratio: string;
+  runway: string;
+  precision: string;
+  freshness_seconds: number;
+  exclusions: string[];
+}
+export interface SolvencyFilters {
+  mint?: string; network?: string; genesis?: string; program_id?: string;
+  window?: 7 | 30 | 90; fromTs?: number; toTs?: number; consolidated?: boolean;
+}
+
 export interface EconomicMovementFilters extends Paging {
   nature?: MovementNature;
   status?: MovementStatus;
@@ -554,6 +620,36 @@ function agentEconomicSummary(raw: unknown): AgentEconomicSummary {
   integer(s.available_balance, 'available_balance');
   integer(s.total_effective_balance, 'total_effective_balance');
   return s as unknown as AgentEconomicSummary;
+}
+
+function solvencyAssessment(raw: unknown): AgentSolvencyAssessment | MixedAssetContext {
+  const a = object(raw, 'solvency assessment');
+  const status = nonempty(a.calculation_status, 'calculation_status');
+  if (!['VALID', 'INSUFFICIENT_DATA', 'UNDEFINED_RATIO', 'STALE_DATA', 'MIXED_ASSET_CONTEXT', 'ERROR'].includes(status)) fail('Invalid solvency status');
+  if (status === 'MIXED_ASSET_CONTEXT') {
+    array(a.contexts, 'contexts');
+    return a as unknown as MixedAssetContext;
+  }
+  for (const key of ['assessment_id', 'agent_account', 'network', 'genesis_hash', 'program_id', 'token_mint', 'methodology_version', 'threshold_config_version', 'input_hash', 'provenance']) nonempty(a[key], key);
+  for (const key of ['window_start', 'window_end', 'calculated_at', 'input_revenue_count', 'input_expense_count']) integer(a[key], key);
+  for (const key of ['verified_revenue_base_units_str', 'verified_opex_base_units_str']) {
+    if (a[key] === null && status === 'ERROR') continue;
+    u64(a[key], key);
+  }
+  for (const key of ['reserve_target_base_units_str', 'reserve_gap_base_units_str']) if (a[key] !== null) u64(a[key], key);
+  for (const key of ['operating_surplus_base_units_str', 'available_liquidity_base_units_str', 'total_reserved_base_units_str', 'accrued_liabilities_base_units_str', 'eligible_liquid_capital_base_units_str', 'net_worth_verified_base_units_str', 'provisional_book_value_base_units_str']) {
+    if (a[key] !== null && (typeof a[key] !== 'string' || !/^-?(0|[1-9][0-9]*)$/.test(a[key] as string))) fail(`Invalid ${key}`);
+  }
+  for (const key of ['conatus_ratio', 'operating_margin', 'runway_days']) {
+    if (a[key] !== null && (typeof a[key] !== 'string' || !/^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(a[key] as string))) fail(`Invalid ${key}`);
+  }
+  if (!['AT_RISK', 'STABLE', 'THRIVING', 'UNDETERMINED'].includes(nonempty(a.sustainability_class, 'sustainability_class'))) fail('Invalid sustainability class');
+  array(a.exclusion_reasons, 'exclusion_reasons');
+  array(a.evidence_references, 'evidence_references').forEach((rawRef) => {
+    const ref = object(rawRef, 'evidence reference');
+    nonempty(ref.kind, 'evidence kind'); nonempty(ref.id, 'evidence id'); nonempty(ref.evidence_hash, 'evidence hash');
+  });
+  return a as unknown as AgentSolvencyAssessment;
 }
 
 function meta(raw: unknown): ApiMeta {
@@ -1315,6 +1411,56 @@ export class MarketplaceClient {
       ),
       raw => array(raw, 'agent economic summaries').map(agentEconomicSummary)
     );
+  }
+
+  async getAgentSolvency(
+    account: string,
+    filters: SolvencyFilters = {},
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}
+  ): Promise<Detail<Array<AgentSolvencyAssessment | MixedAssetContext>>> {
+    const p = new URLSearchParams();
+    if (filters.mint) p.set('mint', filters.mint);
+    if (filters.network) p.set('network', filters.network);
+    if (filters.genesis) p.set('genesis_hash', filters.genesis);
+    if (filters.program_id) p.set('program_id', filters.program_id);
+    if (filters.window) p.set('window', String(filters.window));
+    if (filters.fromTs !== undefined) p.set('from_ts', String(filters.fromTs));
+    if (filters.toTs !== undefined) p.set('to_ts', String(filters.toTs));
+    if (filters.consolidated !== undefined) p.set('consolidated', String(filters.consolidated));
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/solvency`, p, options.signal, options.authHeaders),
+      raw => array(raw, 'solvency assessments').map(solvencyAssessment));
+  }
+
+  async getAgentSolvencyHistory(
+    account: string,
+    filters: Pick<SolvencyFilters, 'mint' | 'network' | 'genesis' | 'program_id'> & { limit?: number } = {},
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}
+  ): Promise<Detail<AgentSolvencyAssessment[]>> {
+    const p = new URLSearchParams();
+    if (filters.mint) p.set('mint', filters.mint);
+    if (filters.network) p.set('network', filters.network);
+    if (filters.genesis) p.set('genesis_hash', filters.genesis);
+    if (filters.program_id) p.set('program_id', filters.program_id);
+    if (filters.limit !== undefined) p.set('limit', String(filters.limit));
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/solvency/history`, p, options.signal, options.authHeaders),
+      raw => array(raw, 'solvency history').map((r) => {
+        const a = solvencyAssessment(r);
+        if (a.calculation_status === 'MIXED_ASSET_CONTEXT') fail('Mixed context in history');
+        return a as AgentSolvencyAssessment;
+      }));
+  }
+
+  async getSolvencyMethodology(
+    account: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}
+  ): Promise<Detail<SolvencyMethodology>> {
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/solvency/methodology`, undefined, options.signal, options.authHeaders), raw => {
+      const m = object(raw, 'solvency methodology');
+      nonempty(m.methodology_version, 'methodology_version');
+      nonempty(m.threshold_config_version, 'threshold_config_version');
+      object(m.thresholds, 'thresholds');
+      return m as unknown as SolvencyMethodology;
+    });
   }
 
   async *iterateAgents(

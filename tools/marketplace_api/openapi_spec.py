@@ -625,6 +625,44 @@ def build():
                 "meta": ref("Meta"),
             },
         },
+        "AgentSolvencyAssessment": {
+            "type": "object",
+            "required": ["assessment_id", "agent_account", "network", "genesis_hash", "program_id", "token_mint",
+                         "window_start", "window_end", "calculated_at", "methodology_version", "threshold_config_version",
+                         "calculation_status", "data_coverage_status", "sustainability_class",
+                         "verified_revenue_base_units_str", "verified_opex_base_units_str", "evidence_references"],
+            "properties": {
+                "assessment_id": {"type": "string"}, "agent_account": ref("Pubkey"),
+                "network": {"type": "string"}, "genesis_hash": {"type": "string"},
+                "program_id": ref("Pubkey"), "token_mint": ref("Pubkey"),
+                "window_start": {"type": "integer"}, "window_end": {"type": "integer"},
+                "calculated_at": {"type": "integer"}, "methodology_version": {"type": "string"},
+                "threshold_config_version": {"type": "string"},
+                "calculation_status": {"type": "string", "enum": ["VALID", "INSUFFICIENT_DATA", "UNDEFINED_RATIO", "STALE_DATA", "MIXED_ASSET_CONTEXT", "ERROR"]},
+                "data_coverage_status": {"type": "string"},
+                "sustainability_class": {"type": "string", "enum": ["AT_RISK", "STABLE", "THRIVING", "UNDETERMINED"]},
+                **{name: {"type": ["string", "null"]} for name in (
+                    "conatus_ratio", "operating_margin", "runway_days", "operating_surplus_base_units_str",
+                    "available_liquidity_base_units_str", "total_reserved_base_units_str", "accrued_liabilities_base_units_str",
+                    "reserve_target_base_units_str", "reserve_gap_base_units_str", "eligible_liquid_capital_base_units_str",
+                    "net_worth_verified_base_units_str", "provisional_book_value_base_units_str")},
+                "verified_revenue_base_units_str": {"type": ["string", "null"], "pattern": "^[0-9]+$"},
+                "verified_opex_base_units_str": {"type": ["string", "null"], "pattern": "^[0-9]+$"},
+                "input_revenue_count": {"type": "integer"}, "input_expense_count": {"type": "integer"},
+                "exclusion_reasons": {"type": "array", "items": {"type": "string"}},
+                "evidence_references": {"type": "array", "items": {"type": "object", "required": ["kind", "id", "evidence_hash"],
+                    "properties": {"kind": {"type": "string"}, "id": {"type": "string"}, "evidence_hash": {"type": "string"}}}},
+                "input_hash": {"type": "string"}, "provenance": {"type": "string"},
+            }, "additionalProperties": True,
+        },
+        "MixedAssetContext": {"type": "object", "required": ["calculation_status", "sustainability_class", "conatus_ratio", "window_start", "window_end", "contexts"],
+            "properties": {"calculation_status": {"const": "MIXED_ASSET_CONTEXT"}, "sustainability_class": {"const": "UNDETERMINED"},
+                "conatus_ratio": {"type": "null"}, "window_start": {"type": "integer"}, "window_end": {"type": "integer"},
+                "contexts": {"type": "array", "items": {"type": "object"}}}},
+        "SolvencyListResponse": {"type": "object", "required": ["data", "meta"],
+            "properties": {"data": {"type": "array", "items": {"oneOf": [ref("AgentSolvencyAssessment"), ref("MixedAssetContext")]}}, "meta": ref("Meta")}},
+        "SolvencyMethodologyResponse": {"type": "object", "required": ["data", "meta"],
+            "properties": {"data": {"type": "object"}, "meta": ref("Meta")}},
     }
 
     def param(name, schema, description):
@@ -757,6 +795,16 @@ def build():
             {"type": "integer"},
             "Ending observation timestamp (unix seconds)",
         ),
+        "SolvencyWindow": param("window", {"type": "integer", "enum": [7, 30, 90], "default": 30}, "UTC window in exact days"),
+        "GenesisHash": param("genesis_hash", {"type": "string"}, "Network genesis hash"),
+        "ProgramId": param("program_id", ref("Pubkey"), "AeroSettle program ID"),
+        "Consolidated": param("consolidated", {"type": "boolean"}, "Request a single cross-asset assessment; mixed contexts fail closed"),
+        "EconomicSigner": {"name": "X-Signer-Pubkey", "in": "header", "required": True,
+                           "schema": ref("Pubkey"), "description": "Ed25519 owner public key"},
+        "EconomicTimestamp": {"name": "X-Timestamp", "in": "header", "required": True,
+                              "schema": {"type": "integer"}, "description": "Unix seconds within five minutes of the server clock"},
+        "EconomicSignature": {"name": "X-Signature", "in": "header", "required": True,
+                              "schema": {"type": "string"}, "description": "Base58 Ed25519 signature of conatus:economic-auth:v1:{timestamp}:{agent_id}"},
         "CostId": {
             "name": "cost_id",
             "in": "path",
@@ -950,6 +998,14 @@ def build():
             "/v1/agents/{agent_id}/economic-summary": {
                 "get": summary_page,
             },
+            "/v1/agents/{agent_id}/solvency": {"get": operation(
+                "Calculate verified per-asset solvency", ref("SolvencyListResponse"),
+                ("AgentId", "Mint", "Network", "GenesisHash", "ProgramId", "SolvencyWindow", "FromTs", "ToTs", "Consolidated", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))},
+            "/v1/agents/{agent_id}/solvency/history": {"get": operation(
+                "Read persisted solvency snapshots", ref("SolvencyListResponse"),
+                ("AgentId", "Mint", "Network", "GenesisHash", "ProgramId", "Limit", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))},
+            "/v1/agents/{agent_id}/solvency/methodology": {"get": operation(
+                "Read solvency methodology", ref("SolvencyMethodologyResponse"), ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))},
             "/v1/costs/{cost_id}": {
                 "get": operation(
                     "Get operational cost detail",

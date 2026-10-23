@@ -6,6 +6,48 @@ const AGENT = 'DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB';
 const OWNER = '8rPDpYsLZxNBm8Q8GKSKki8Ag6dodkasedhUT9x3Ec1D';
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
+test('SDK solvency preserves exact base-unit strings and signed headers', async () => {
+  let requestedUrl = '';
+  let requestedHeaders = {};
+  const assessment = {
+    assessment_id: 'a1', agent_account: AGENT, network: 'solana:localnet',
+    genesis_hash: 'HP9XKTusRPGC78EFDpR9xdEq6simL2vqyDdrMvn6Vacg',
+    program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy', token_mint: MINT,
+    window_start: 100, window_end: 200, calculated_at: 200,
+    methodology_version: 'conatus-solvency-v1', threshold_config_version: 'thresholds-v1',
+    conatus_ratio: '1.50000000', operating_margin: '0.33333333',
+    operating_surplus_base_units_str: '6000000000000000000',
+    available_liquidity_base_units_str: '6000000000000000000',
+    total_reserved_base_units_str: '0', accrued_liabilities_base_units_str: '0',
+    reserve_target_base_units_str: '0', reserve_gap_base_units_str: '0',
+    eligible_liquid_capital_base_units_str: '6000000000000000000', runway_days: '15.00000000',
+    sustainability_class: 'STABLE', calculation_status: 'VALID', data_coverage_status: 'COMPLETE',
+    input_revenue_count: 1, input_expense_count: 1,
+    verified_revenue_base_units_str: '18000000000000000000',
+    verified_opex_base_units_str: '12000000000000000000',
+    exclusion_reasons: [], evidence_references: [{ kind: 'movement', id: 'm1', evidence_hash: 'h1' }],
+    input_hash: 'hash', provenance: 'VERIFIED_LEDGER',
+    net_worth_verified_base_units_str: null, provisional_book_value_base_units_str: null,
+  };
+  const client = new MarketplaceClient({
+    baseUrl: 'http://127.0.0.1:8787',
+    fetchImpl: async (url, init) => {
+      requestedUrl = String(url); requestedHeaders = init.headers;
+      return new Response(JSON.stringify({ data: [assessment], meta: {
+        program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy', commitment: 'confirmed',
+        chain_now_unix: 200, atomic_snapshot: false, read_only: true,
+        matching_engine: 'rust-epic-3.1', rpc_context_slots: {},
+      } }), { status: 200 });
+    },
+  });
+  const response = await client.getAgentSolvency(AGENT, { window: 30, mint: MINT },
+    { authHeaders: { 'X-Signature': 'signed' } });
+  assert.equal(response.data[0].verified_revenue_base_units_str, '18000000000000000000');
+  assert.equal(response.data[0].conatus_ratio, '1.50000000');
+  assert.match(requestedUrl, /window=30/);
+  assert.equal(requestedHeaders['X-Signature'], 'signed');
+});
+
 test('SDK: listEconomicMovements sends filters and auth headers', async () => {
   let capturedUrl = '';
   let capturedHeaders = {};

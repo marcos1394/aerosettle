@@ -348,6 +348,8 @@ export default function FleetPage() {
         }
       />
 
+      <p className="hint"><ProvenanceBadge meta={PROVENANCE_SOURCES.SIMULATED_FLEET_PROJECTION()} compact /> {c('Simulated economic scenario · fleet ratio does not include verified live assessments.', 'Escenario económico simulado · el ratio de flota no incluye evaluaciones reales verificadas.')}</p>
+
       {/* Operator wallet connection / preview bar */}
       <div className="operator-banner" role="region" aria-label={c('Operator session', 'Sesión de operador')}>
         <div className="operator-banner-info">

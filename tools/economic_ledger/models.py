@@ -67,6 +67,15 @@ class ProvenanceSource(str, Enum):
     SETTLEMENT_EVENT = "SETTLEMENT_EVENT"
 
 
+class EvidenceLineage(str, Enum):
+    """Canonical 5-tier evidence lineage for financial validation."""
+    LIVE_RPC = "LIVE_RPC"
+    EXTERNAL_ATTESTED = "EXTERNAL_ATTESTED"
+    HISTORICAL_FIXTURE = "HISTORICAL_FIXTURE"
+    SYNTHETIC_TEST = "SYNTHETIC_TEST"
+    HISTORICAL_UNVERIFIED = "HISTORICAL_UNVERIFIED"
+
+
 class EntryType(str, Enum):
     DEBIT = "DEBIT"
     CREDIT = "CREDIT"
@@ -193,6 +202,7 @@ class EconomicMovement:
     external_ref: Optional[str] = None
     reversal_of_movement_id: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    evidence_lineage: str = "HISTORICAL_UNVERIFIED"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -213,6 +223,7 @@ class EconomicMovement:
             "nature": self.nature.value if isinstance(self.nature, MovementNature) else self.nature,
             "status": self.status.value if isinstance(self.status, MovementStatus) else self.status,
             "provenance_source": self.provenance_source.value if isinstance(self.provenance_source, ProvenanceSource) else self.provenance_source,
+            "evidence_lineage": self.evidence_lineage,
             "evidence_hash": self.evidence_hash,
             "attestation_id": self.attestation_id,
             "tx_signature": self.tx_signature,
@@ -292,6 +303,7 @@ class AgentCost:
     metadata: dict[str, Any] = field(default_factory=dict)
     genesis_hash: str = DEFAULT_GENESIS_HASH
     program_id: str = DEFAULT_PROGRAM_ID
+    evidence_lineage: str = "HISTORICAL_UNVERIFIED"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -311,6 +323,7 @@ class AgentCost:
             "amount_str": self.amount_str,
             "status": self.status.value if isinstance(self.status, MovementStatus) else self.status,
             "provenance_source": self.provenance_source.value if isinstance(self.provenance_source, ProvenanceSource) else self.provenance_source,
+            "evidence_lineage": self.evidence_lineage,
             "created_at": self.created_at,
             "incurred_at": self.incurred_at,
             "journal_entry_id": self.journal_entry_id,

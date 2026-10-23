@@ -20,6 +20,7 @@ import openapi_spec
 
 from tools.economic_ledger.auth import AuthError, verify_request_auth
 from tools.economic_ledger.ledger import EconomicLedger
+from tools.economic_ledger.solvency import assess_agent, assessment_history, methodology, save_assessment
 from tools.economic_ledger.models import (
     LedgerValidationError,
     MovementNature,
@@ -363,18 +364,23 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
         allowed = {"reserve_type", "status", "mint", "network", "genesis", "genesis_hash", "program_id"}
     elif entity == "agents" and len(pieces) == 4 and pieces[3] == "economic-summary":
         allowed = {"mint", "network", "period", "genesis", "genesis_hash", "program_id"}
+    elif entity == "agents" and len(pieces) in (4, 5) and pieces[3] == "solvency":
+        allowed = {"mint", "token_mint", "network", "genesis", "genesis_hash", "program_id",
+                   "window", "from_ts", "to_ts", "consolidated", "limit"}
 
     query = arguments(parts.query, allowed)
 
     if (
         entity == "marketplace" and len(pieces) != 2
-    ) or len(pieces) > 4:
+    ) or len(pieces) > 5:
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if len(pieces) == 4 and not (
         (entity == "work-orders" and pieces[3] == "matches")
-        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary"))
+        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency"))
     ):
+        raise ApiError(404, "NOT_FOUND", "Unknown route")
+    if len(pieces) == 5 and (entity != "agents" or pieces[3] != "solvency" or pieces[4] not in ("history", "methodology")):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if len(pieces) >= 3 and entity not in ("economic-movements", "costs", "reserves"):
@@ -620,6 +626,38 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                 "data": [s.to_dict() for s in summaries],
                 "meta": meta,
             }
+
+        if pieces[3:4] == ["solvency"]:
+            authorize_agent_access(agent, headers, pieces[2])
+            if len(pieces) == 5 and pieces[4] not in ("history", "methodology"):
+                raise ApiError(404, "NOT_FOUND", "Unknown solvency route")
+            ledger = get_ledger(provider)
+            scope = dict(network=query.get("network"), genesis_hash=query.get("genesis") or query.get("genesis_hash"),
+                         program_id=query.get("program_id"), token_mint=query.get("mint") or query.get("token_mint"))
+            if len(pieces) == 5 and pieces[4] == "methodology":
+                return 200, {"data": methodology(), "meta": meta}
+            if len(pieces) == 5:
+                try:
+                    limit = int(query.get("limit", "50"))
+                    data = assessment_history(ledger, pieces[2], limit=limit, **scope)
+                except (ValueError, LedgerValidationError) as exc:
+                    raise ApiError(400, "INVALID_SOLVENCY_QUERY", str(exc)) from exc
+                return 200, {"data": data, "meta": meta}
+            try:
+                window = int(query.get("window", "30"))
+                from_ts = int(query["from_ts"]) if "from_ts" in query else None
+                to_ts = int(query["to_ts"]) if "to_ts" in query else None
+                consolidated = query.get("consolidated", "false")
+                if consolidated not in ("true", "false"):
+                    raise ValueError("consolidated must be true or false")
+                data = assess_agent(ledger, pieces[2], window=window, from_ts=from_ts,
+                                    to_ts=to_ts, consolidated=consolidated == "true", **scope)
+                for assessment in data:
+                    if assessment["calculation_status"] != "MIXED_ASSET_CONTEXT":
+                        save_assessment(ledger, assessment)
+            except (ValueError, LedgerValidationError) as exc:
+                raise ApiError(400, "INVALID_SOLVENCY_QUERY", str(exc)) from exc
+            return 200, {"data": data, "meta": meta}
 
         return 200, {
             "data": projected_agent(agent),
