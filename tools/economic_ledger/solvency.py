@@ -206,6 +206,7 @@ def record_coverage(
     authority_pubkey: str | None = None,
     signature: str | None = None,
     verified_at: int | None = None,
+    expires_at: int | None = None,
 ) -> str:
     """Trusted internal ingestion only. No public HTTP write route or test bypass.
 
@@ -239,6 +240,8 @@ def record_coverage(
     if provenance_type not in valid_provenances:
         raise LedgerValidationError(f"Invalid provenance_type '{provenance_type}'; expected one of {valid_provenances}")
 
+    v_time = int(time.time()) if verified_at is None else verified_at
+
     # Authenticate and verify via CoverageVerifier
     if not eff_verifier.verify_coverage(
         agent_account=agent_account,
@@ -255,24 +258,26 @@ def record_coverage(
         provenance_type=provenance_type,
         signature=signature,
         authority_pubkey=authority_pubkey,
+        expires_at=expires_at,
+        verified_at=v_time,
     ):
         raise LedgerValidationError("Coverage verification failed")
 
     scope = dict(agent_account=agent_account, network=network, genesis_hash=genesis_hash,
                  program_id=program_id, token_mint=token_mint, side=side,
                  window_start=window_start, window_end=window_end, evidence_hash=evidence_hash,
-                 verifier_id=verifier_id, data_digest=eff_digest, provenance_type=provenance_type)
+                 verifier_id=verifier_id, data_digest=eff_digest, provenance_type=provenance_type,
+                 expires_at=expires_at)
     coverage_id = _hash(scope)
-    v_time = int(time.time()) if verified_at is None else verified_at
     ledger._conn.execute(
         """INSERT OR IGNORE INTO solvency_coverage (
             coverage_id, agent_account, network, genesis_hash, program_id, token_mint,
             side, window_start, window_end, evidence_hash, verifier_id, verified_at,
-            data_digest, provenance_type, authority_pubkey, signature
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            data_digest, provenance_type, authority_pubkey, signature, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (coverage_id, agent_account, network, genesis_hash, program_id, token_mint,
          side, window_start, window_end, evidence_hash, verifier_id, v_time,
-         eff_digest, provenance_type, authority_pubkey, signature)
+         eff_digest, provenance_type, authority_pubkey, signature, expires_at)
     )
     return coverage_id
 
@@ -369,15 +374,11 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
     """, scope + (start, end)).fetchall()
     cov_rows = ledger._conn.execute("""
         SELECT coverage_id, side, verified_at, evidence_hash, verifier_id,
-               data_digest, provenance_type, authority_pubkey, signature
+               data_digest, provenance_type, authority_pubkey, signature, expires_at
         FROM solvency_coverage
         WHERE agent_account=? AND network=? AND genesis_hash=? AND program_id=? AND token_mint=?
           AND window_start=? AND window_end=? ORDER BY verified_at DESC, rowid DESC
     """, scope + (start, end)).fetchall()
-    coverage = {}
-    for r in cov_rows:
-        if r["side"] not in coverage:
-            coverage[r["side"]] = r
 
     # Deterministic canonical data digests of the relevant economic records
     current_rev_digest, _ = calculate_side_data_digest(ledger, agent, context, "REVENUE", start, end)
@@ -407,38 +408,97 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
     if len(revenue) < len([r for r in revenue_rows if r["status"] != "REVERTED"]): excluded.append("revenue_evidence_incomplete")
     if len(expenses) < len([r for r in cost_rows if r["cost_nature"] == "REALIZED" and r["category"] != "DEPRECIATION_REPLACEMENT" and r["status"] != "REVERTED"]): excluded.append("expense_evidence_incomplete")
 
-    # Coverage trust and digest matching checks
+    # Cryptographic revalidation and selection across candidates
+    active_verifier = getattr(ledger, "_coverage_verifier", None)
     trusted_authorities = getattr(ledger, "_trusted_coverage_authorities", set())
+    if active_verifier and hasattr(active_verifier, "trusted_authorities"):
+        trusted_authorities = trusted_authorities | set(active_verifier.trusted_authorities)
+
+    coverage = {}
+    side_digest = {
+        "REVENUE": current_rev_digest,
+        "OPEX": current_opex_digest,
+    }
+
     if not trusted_authorities:
         excluded.append("no_trusted_coverage_authorities_configured")
 
-    rev_cov = coverage.get("REVENUE")
-    revenue_complete = False
-    if not rev_cov:
-        excluded.append("revenue_coverage_missing")
-    else:
-        if not trusted_authorities or rev_cov["verifier_id"] not in trusted_authorities:
-            excluded.append(f"untrusted_coverage_authority:{rev_cov['verifier_id']}")
-        if rev_cov["provenance_type"] == "HISTORICAL_UNVERIFIED" or not rev_cov["data_digest"]:
-            excluded.append("revenue_coverage_missing_verifiable_digest")
-        elif rev_cov["data_digest"] != current_rev_digest:
-            excluded.append("revenue_coverage_digest_mismatch")
-        else:
-            revenue_complete = bool(trusted_authorities and rev_cov["verifier_id"] in trusted_authorities)
+    for side in ("REVENUE", "OPEX"):
+        expected_digest = side_digest[side]
+        candidates = [r for r in cov_rows if r["side"] == side]
+        valid_selected = None
 
-    opex_cov = coverage.get("OPEX")
-    expense_complete = False
-    if not opex_cov:
-        excluded.append("opex_coverage_missing")
-    else:
-        if not trusted_authorities or opex_cov["verifier_id"] not in trusted_authorities:
-            excluded.append(f"untrusted_coverage_authority:{opex_cov['verifier_id']}")
-        if opex_cov["provenance_type"] == "HISTORICAL_UNVERIFIED" or not opex_cov["data_digest"]:
-            excluded.append("opex_coverage_missing_verifiable_digest")
-        elif opex_cov["data_digest"] != current_opex_digest:
-            excluded.append("opex_coverage_digest_mismatch")
+        if not candidates:
+            excluded.append(f"{side.lower()}_coverage_missing")
+            continue
+
+        for r in candidates:
+            # Check authority
+            if not trusted_authorities or r["verifier_id"] not in trusted_authorities:
+                continue
+            # Check revocation
+            if active_verifier and hasattr(active_verifier, "is_authority_revoked"):
+                if active_verifier.is_authority_revoked(r["verifier_id"]):
+                    continue
+            # Check digest presence & match
+            if not r["data_digest"] or r["provenance_type"] == "HISTORICAL_UNVERIFIED":
+                continue
+            if r["data_digest"] != expected_digest:
+                continue
+            # Check expiration
+            if r["expires_at"] is not None and now > r["expires_at"]:
+                continue
+
+            # Cryptographic and protocol verification against active verifier
+            if active_verifier:
+                try:
+                    is_valid = active_verifier.verify_coverage(
+                        agent_account=agent,
+                        network=net,
+                        genesis_hash=gen,
+                        program_id=prog,
+                        token_mint=mint,
+                        side=side,
+                        window_start=start,
+                        window_end=end,
+                        data_digest=r["data_digest"],
+                        evidence_hash=r["evidence_hash"],
+                        verifier_id=r["verifier_id"],
+                        provenance_type=r["provenance_type"],
+                        signature=r["signature"],
+                        authority_pubkey=r["authority_pubkey"],
+                        expires_at=r["expires_at"],
+                        verified_at=r["verified_at"],
+                        now=now,
+                    )
+                except Exception:
+                    is_valid = False
+                if not is_valid:
+                    continue
+
+            # Candidate passed all validity, freshness, revocation and crypto checks
+            valid_selected = r
+            break
+
+        if valid_selected is not None:
+            coverage[side] = valid_selected
         else:
-            expense_complete = bool(trusted_authorities and opex_cov["verifier_id"] in trusted_authorities)
+            # Diagnose reason for exclusion
+            if any(r["provenance_type"] == "HISTORICAL_UNVERIFIED" or not r["data_digest"] for r in candidates):
+                excluded.append(f"{side.lower()}_coverage_missing_verifiable_digest")
+            elif any(r["data_digest"] != expected_digest for r in candidates):
+                excluded.append(f"{side.lower()}_coverage_digest_mismatch")
+            elif any(active_verifier and hasattr(active_verifier, "is_authority_revoked") and active_verifier.is_authority_revoked(r["verifier_id"]) for r in candidates):
+                excluded.append(f"{side.lower()}_coverage_authority_revoked")
+            elif any(r["expires_at"] is not None and now > r["expires_at"] for r in candidates):
+                excluded.append(f"{side.lower()}_coverage_expired")
+            elif any(r["verifier_id"] not in trusted_authorities for r in candidates):
+                excluded.append(f"untrusted_coverage_authority:{candidates[0]['verifier_id']}")
+            else:
+                excluded.append(f"{side.lower()}_coverage_verification_failed")
+
+    revenue_complete = bool(coverage.get("REVENUE") is not None)
+    expense_complete = bool(coverage.get("OPEX") is not None)
 
     if excluded and any(x in excluded for x in (
         "provisional_revenue", "unverified_or_estimated_cost",
@@ -446,6 +506,9 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
         "revenue_coverage_digest_mismatch", "opex_coverage_digest_mismatch",
         "revenue_coverage_missing_verifiable_digest", "opex_coverage_missing_verifiable_digest",
         "no_trusted_coverage_authorities_configured",
+        "revenue_coverage_verification_failed", "opex_coverage_verification_failed",
+        "revenue_coverage_authority_revoked", "opex_coverage_authority_revoked",
+        "revenue_coverage_expired", "opex_coverage_expired",
     )):
         status = "INSUFFICIENT_DATA"
     elif not revenue_complete or not expense_complete:
@@ -501,7 +564,7 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
         provenance = "SYNTHETIC_TEST"
     elif "HISTORICAL_FIXTURE" in all_markers:
         provenance = "HISTORICAL_FIXTURE"
-    elif "LIVE_RPC" in all_markers and all(s in ("LIVE_RPC", "EXTERNAL_VERIFIED", "EXTERNAL_ATTESTED", "ONCHAIN_VERIFIED", "SETTLEMENT_EVENT") for s in all_markers):
+    elif ("LIVE_RPC" in all_markers or "ONCHAIN_VERIFIED" in all_markers or "SETTLEMENT_EVENT" in all_markers) and all(s in ("LIVE_RPC", "EXTERNAL_VERIFIED", "EXTERNAL_ATTESTED", "ONCHAIN_VERIFIED", "SETTLEMENT_EVENT") for s in all_markers):
         if any(s in ("EXTERNAL_VERIFIED", "EXTERNAL_ATTESTED") for s in all_markers):
             provenance = "LIVE_RPC_AND_EXTERNAL_ATTESTED"
         else:

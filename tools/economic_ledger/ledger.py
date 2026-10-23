@@ -11,6 +11,13 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+import sys
+if str(ROOT_DIR / "tools" / "discovery") not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR / "tools" / "discovery"))
+
+import agent_discovery as discovery
+from . import ed25519
 from .models import (
     AgentCost,
     AgentEconomicSummary,
@@ -276,6 +283,77 @@ class IsolatedTestAttestationVerifier:
         return True
 
 
+def _decode_ed25519_pubkey(val: str | bytes | None) -> bytes | None:
+    if not val:
+        return None
+    if isinstance(val, bytes):
+        return val if len(val) == 32 else None
+    if not isinstance(val, str):
+        return None
+    val = val.strip()
+    if len(val) == 64:
+        try:
+            raw = bytes.fromhex(val)
+            if len(raw) == 32:
+                return raw
+        except ValueError:
+            pass
+    try:
+        raw = discovery.b58decode(val)
+        if len(raw) == 32:
+            return raw
+    except Exception:
+        pass
+    return None
+
+
+def _decode_ed25519_sig(val: str | bytes | None) -> bytes | None:
+    if not val:
+        return None
+    if isinstance(val, bytes):
+        return val if len(val) == 64 else None
+    if not isinstance(val, str):
+        return None
+    val = val.strip()
+    if len(val) == 128:
+        try:
+            raw = bytes.fromhex(val)
+            if len(raw) == 64:
+                return raw
+        except ValueError:
+            pass
+    try:
+        raw = discovery.b58decode(val)
+        if len(raw) == 64:
+            return raw
+    except Exception:
+        pass
+    return None
+
+
+def verify_ed25519_signature(signature: bytes, message: bytes, public_key: bytes) -> bool:
+    """Cryptographic verification of an Ed25519 signature against message and public key.
+
+    Uses RFC 8032 standard verification. Fails closed on any inconsistency.
+    """
+    if len(signature) != 64 or len(public_key) != 32:
+        return False
+    try:
+        return ed25519.verify(signature, message, public_key)
+    except Exception:
+        return False
+
+
+def sign_coverage_attestation(secret_key: bytes, canonical_message: bytes) -> tuple[str, str]:
+    """Produces (base58_signature, base58_public_key) for an authentic coverage attestation."""
+    if len(secret_key) < 32:
+        raise ValueError("Secret key seed must be at least 32 bytes")
+    seed = secret_key[:32]
+    pub_bytes = ed25519.public_key_from_secret(seed)
+    sig_bytes = ed25519.sign(canonical_message, seed, pub_bytes)
+    return discovery.b58encode(sig_bytes), discovery.b58encode(pub_bytes)
+
+
 def canonical_coverage_message(
     *,
     agent_account: str,
@@ -290,6 +368,7 @@ def canonical_coverage_message(
     evidence_hash: str,
     verifier_id: str,
     provenance_type: str,
+    expires_at: Optional[int] = None,
 ) -> bytes:
     """Canonical deterministic serialized message for coverage attestations."""
     payload = {
@@ -306,6 +385,7 @@ def canonical_coverage_message(
         "evidence_hash": evidence_hash,
         "verifier_id": verifier_id,
         "provenance_type": provenance_type,
+        "expires_at": expires_at,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -331,6 +411,9 @@ class CoverageVerifier(Protocol):
         provenance_type: str,
         signature: Optional[str] = None,
         authority_pubkey: Optional[str] = None,
+        expires_at: Optional[int] = None,
+        verified_at: Optional[int] = None,
+        now: Optional[int] = None,
     ) -> bool:
         ...
 
@@ -345,17 +428,23 @@ class IsolatedTestCoverageVerifier:
     def __init__(
         self,
         trusted_authorities: Optional[set[str] | list[str]] = None,
+        trusted_public_keys: Optional[dict[str, str]] = None,
+        revoked_authorities: Optional[set[str] | list[str]] = None,
         *,
         allowed_authorities: Optional[set[str] | list[str]] = None,
         allowed_signatures: Optional[set[str] | list[str]] = None,
         reject_fictitious: bool = True,
         default_provenance_type: str = "SYNTHETIC_TEST",
+        default_ttl_seconds: Optional[int] = None,
+        verify_crypto_if_key_available: bool = True,
     ) -> None:
         self.trusted_authorities = (
             set(trusted_authorities)
             if trusted_authorities is not None
             else {"test:coverage", "conatus:coverage:authority:v1", "conatus:protocol:solvency-verifier:v1"}
         )
+        self.trusted_public_keys = dict(trusted_public_keys or {})
+        self.revoked_authorities = set(revoked_authorities or ())
         self.allowed_authorities = (
             set(allowed_authorities) if allowed_authorities is not None else None
         )
@@ -364,10 +453,20 @@ class IsolatedTestCoverageVerifier:
         )
         self.reject_fictitious = reject_fictitious
         self.default_provenance_type = default_provenance_type
+        self.default_ttl_seconds = default_ttl_seconds
+        self.verify_crypto_if_key_available = verify_crypto_if_key_available
         self.verified_calls: list[dict[str, Any]] = []
 
-    def allow_authority(self, authority_id: str) -> None:
+    def revoke_authority(self, authority_id: str) -> None:
+        self.revoked_authorities.add(authority_id)
+
+    def is_authority_revoked(self, authority_id: str) -> bool:
+        return authority_id in self.revoked_authorities
+
+    def allow_authority(self, authority_id: str, public_key: Optional[str] = None) -> None:
         self.trusted_authorities.add(authority_id)
+        if public_key:
+            self.trusted_public_keys[authority_id] = public_key
 
     def allow_signature(self, signature: str) -> None:
         if self.allowed_signatures is None:
@@ -391,8 +490,14 @@ class IsolatedTestCoverageVerifier:
         provenance_type: str,
         signature: Optional[str] = None,
         authority_pubkey: Optional[str] = None,
+        expires_at: Optional[int] = None,
+        verified_at: Optional[int] = None,
+        now: Optional[int] = None,
     ) -> bool:
         if not verifier_id or verifier_id not in self.trusted_authorities:
+            return False
+
+        if verifier_id in self.revoked_authorities:
             return False
 
         if self.allowed_authorities is not None and verifier_id not in self.allowed_authorities:
@@ -411,12 +516,51 @@ class IsolatedTestCoverageVerifier:
             ):
                 return False
 
+        if not data_digest or not evidence_hash:
+            return False
+
+        current_ts = int(time.time()) if now is None else now
+        if expires_at is not None and current_ts > expires_at:
+            return False
+        if self.default_ttl_seconds is not None and verified_at is not None and expires_at is None:
+            if current_ts > verified_at + self.default_ttl_seconds:
+                return False
+
         if self.allowed_signatures is not None:
             if not signature or signature not in self.allowed_signatures:
                 return False
 
-        if not data_digest or not evidence_hash:
-            return False
+        if self.verify_crypto_if_key_available and verifier_id in self.trusted_public_keys:
+            trusted_pk_str = self.trusted_public_keys[verifier_id]
+            trusted_pk_bytes = _decode_ed25519_pubkey(trusted_pk_str)
+            if not trusted_pk_bytes:
+                return False
+            if authority_pubkey:
+                claimed_pk = _decode_ed25519_pubkey(authority_pubkey)
+                if claimed_pk != trusted_pk_bytes:
+                    return False
+            if not signature:
+                return False
+            sig_bytes = _decode_ed25519_sig(signature)
+            if not sig_bytes:
+                return False
+            msg = canonical_coverage_message(
+                agent_account=agent_account,
+                network=network,
+                genesis_hash=genesis_hash,
+                program_id=program_id,
+                token_mint=token_mint,
+                side=side,
+                window_start=window_start,
+                window_end=window_end,
+                data_digest=data_digest,
+                evidence_hash=evidence_hash,
+                verifier_id=verifier_id,
+                provenance_type=provenance_type,
+                expires_at=expires_at,
+            )
+            if not verify_ed25519_signature(sig_bytes, msg, trusted_pk_bytes):
+                return False
 
         self.verified_calls.append({
             "agent_account": agent_account,
@@ -433,17 +577,21 @@ class IsolatedTestCoverageVerifier:
             "provenance_type": provenance_type,
             "signature": signature,
             "authority_pubkey": authority_pubkey,
+            "expires_at": expires_at,
+            "verified_at": verified_at,
         })
         return True
 
 
 class ProductionCoverageVerifier:
-    """Production coverage verifier enforcing authorized authorities and authentic attestations."""
+    """Production coverage verifier enforcing authorized authorities, Ed25519 signatures, expiration and revocation."""
 
     def __init__(
         self,
         trusted_authorities: Optional[set[str] | list[str]] = None,
         trusted_public_keys: Optional[dict[str, str]] = None,
+        revoked_authorities: Optional[set[str] | list[str]] = None,
+        default_ttl_seconds: Optional[int] = None,
     ) -> None:
         self.trusted_authorities = (
             set(trusted_authorities)
@@ -451,6 +599,20 @@ class ProductionCoverageVerifier:
             else set(DEFAULT_TRUSTED_COVERAGE_AUTHORITIES)
         )
         self.trusted_public_keys = dict(trusted_public_keys or {})
+        self.revoked_authorities = set(revoked_authorities or ())
+        self.default_ttl_seconds = default_ttl_seconds
+
+    def revoke_authority(self, authority_id: str) -> None:
+        """Revoke a previously trusted authority."""
+        self.revoked_authorities.add(authority_id)
+
+    def is_authority_revoked(self, authority_id: str) -> bool:
+        return authority_id in self.revoked_authorities
+
+    def register_authority(self, authority_id: str, public_key: str) -> None:
+        """Register an enabled productive authority with its Ed25519 public key."""
+        self.trusted_authorities.add(authority_id)
+        self.trusted_public_keys[authority_id] = public_key
 
     def verify_coverage(
         self,
@@ -469,27 +631,75 @@ class ProductionCoverageVerifier:
         provenance_type: str,
         signature: Optional[str] = None,
         authority_pubkey: Optional[str] = None,
+        expires_at: Optional[int] = None,
+        verified_at: Optional[int] = None,
+        now: Optional[int] = None,
     ) -> bool:
-        if verifier_id not in self.trusted_authorities:
+        # 1. Authority must be registered and not revoked
+        if not verifier_id or verifier_id not in self.trusted_authorities:
             return False
 
-        # Production verifier strictly rejects synthetic test provenance
+        if verifier_id in self.revoked_authorities:
+            return False
+
+        # 2. Every enabled production authority must have a trusted Ed25519 public key
+        if verifier_id not in self.trusted_public_keys:
+            return False
+
+        trusted_pk_str = self.trusted_public_keys[verifier_id]
+        trusted_pk_bytes = _decode_ed25519_pubkey(trusted_pk_str)
+        if not trusted_pk_bytes:
+            return False
+
+        if authority_pubkey:
+            claimed_pk_bytes = _decode_ed25519_pubkey(authority_pubkey)
+            if claimed_pk_bytes != trusted_pk_bytes:
+                return False
+
+        # 3. Production verifier strictly rejects synthetic test provenance or fixtures
         if provenance_type not in ("LIVE_RPC", "EXTERNAL_ATTESTED"):
             return False
 
-        if not data_digest or not evidence_hash:
+        # 4. Verifiable context must be present and well-formed
+        if not data_digest or not evidence_hash or not agent_account:
+            return False
+        if side not in ("REVENUE", "OPEX"):
+            return False
+        if not (0 <= window_start < window_end):
             return False
 
-        if verifier_id in self.trusted_public_keys:
-            if not signature:
-                return False
-            expected_pubkey = self.trusted_public_keys[verifier_id]
-            if authority_pubkey and authority_pubkey != expected_pubkey:
-                return False
-            if len(signature) < 32:
+        # 5. Expiration and freshness checks
+        current_ts = int(time.time()) if now is None else now
+        if expires_at is not None and current_ts > expires_at:
+            return False
+        if self.default_ttl_seconds is not None and verified_at is not None and expires_at is None:
+            if current_ts > verified_at + self.default_ttl_seconds:
                 return False
 
-        return True
+        # 6. Ed25519 signature decoding and verification against canonical coverage message
+        if not signature:
+            return False
+        sig_bytes = _decode_ed25519_sig(signature)
+        if not sig_bytes or len(sig_bytes) != 64:
+            return False
+
+        msg = canonical_coverage_message(
+            agent_account=agent_account,
+            network=network,
+            genesis_hash=genesis_hash,
+            program_id=program_id,
+            token_mint=token_mint,
+            side=side,
+            window_start=window_start,
+            window_end=window_end,
+            data_digest=data_digest,
+            evidence_hash=evidence_hash,
+            verifier_id=verifier_id,
+            provenance_type=provenance_type,
+            expires_at=expires_at,
+        )
+
+        return verify_ed25519_signature(sig_bytes, msg, trusted_pk_bytes)
 
 
 class ExactSum:
@@ -658,7 +868,6 @@ class EconomicLedger:
         self._attestation_verifier = attestation_verifier
 
         # Configure coverage verifier and trusted authorities
-        self._coverage_verifier = coverage_verifier
         if trusted_coverage_authorities is not None:
             self._trusted_coverage_authorities = set(trusted_coverage_authorities)
         elif coverage_verifier is not None:
@@ -669,6 +878,14 @@ class EconomicLedger:
             )
         else:
             self._trusted_coverage_authorities = set()
+
+        if coverage_verifier is not None:
+            self._coverage_verifier = coverage_verifier
+        else:
+            self._coverage_verifier = ProductionCoverageVerifier(
+                trusted_authorities=self._trusted_coverage_authorities,
+                trusted_public_keys={},
+            )
 
         # Run versioned schema migrations
         run_migrations(self._conn)
@@ -1231,10 +1448,16 @@ class EconomicLedger:
                 "tx_signature": sig_clean,
             }
 
+            prov_src = (
+                row["provenance_source"]
+                if row["provenance_source"] == ProvenanceSource.SETTLEMENT_EVENT.value
+                else ProvenanceSource.ONCHAIN_VERIFIED.value
+            )
+
             cursor.execute(
                 """
                 UPDATE economic_movements
-                SET status = ?, evidence_hash = ?, tx_signature = ?, metadata_json = ?
+                SET status = ?, evidence_hash = ?, tx_signature = ?, metadata_json = ?, provenance_source = ?
                 WHERE movement_id = ?;
                 """,
                 (
@@ -1242,6 +1465,7 @@ class EconomicLedger:
                     hash_clean,
                     sig_clean,
                     json.dumps(meta),
+                    prov_src,
                     movement_id,
                 ),
             )

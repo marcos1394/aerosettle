@@ -23,12 +23,12 @@ Para afirmar cobertura completa, **ambos lados** requieren una atestación indep
 - Las coberturas con cero eventos tienen un digest canónico reproducible sobre una lista vacía; cualquier movimiento posterior invalida dicha cobertura.
 - Los snapshots guardados en `agent_solvency_assessments` son inmutables (`INSERT OR IGNORE`) y nunca se sobrescriben.
 
-### 2. Frontera de confianza y Verificador de Cobertura
-- Se formaliza el protocolo `CoverageVerifier` y la serialización canónica `canonical_coverage_message()`.
-- Se rechazan callables o lambdas arbitrarios como prueba de cobertura.
-- Si no existe una autoridad confiable configurada en el ledger (`_trusted_coverage_authorities`), las evaluaciones arrojan `INSUFFICIENT_DATA`.
-- `IsolatedTestCoverageVerifier` aísla los entornos de prueba, validando firmas/autoridades y rechazando identificadores ficticios (`bad`, `fake`, `fictitious`, `dummy`).
-- `ProductionCoverageVerifier` rechaza estrictamente la procedencia sintética (`SYNTHETIC_TEST`) en flujos de producción.
+### 2. Frontera de confianza y Verificación Criptográfica Productiva (Gate 1 & Gate 2)
+- **Verificación Criptográfica Ed25519 Auténtica**: `ProductionCoverageVerifier` exige una clave pública Ed25519 confiable registrada para cada autoridad habilitada. Decodifica y verifica matemáticamente la firma Ed25519 contra los bytes serializados de `canonical_coverage_message()`, usando el módulo RFC 8032 mantenido (`ed25519.py`).
+- **Vinculación Canónica y Separación de Dominio**: El mensaje firmado vincula deterministamente `"domain": "conatus:solvency-coverage-attestation:v1"`, agente, contexto monetario (`network`, `genesis_hash`, `program_id`, `token_mint`), ventana UTC `[window_start, window_end)`, lado (`REVENUE`/`OPEX`), `data_digest`, `evidence_hash`, `verifier_id`, `provenance_type` y `expires_at`.
+- **Caducidad y Política de Revocación**: Las coberturas expiran matemáticamente si `now > expires_at` o por TTL configurable. Las autoridades pueden ser revocadas explícitamente (`revoke_authority`); cualquier cobertura asociada a una autoridad revocada o expirada falla cerrado.
+- **Revalidación y Selección Multicandidato**: Durante `assess_agent()`, no se asume validez de coberturas por el mero hecho de residir en la base de datos. Se revalidan criptográficamente contra el verificador activo. Ante múltiples registros para una misma ventana, se itera y selecciona únicamente una cobertura auténtica, no expirada, no revocada y con digest coincidente, sin depender ciegamente del orden temporal de inserción.
+- **Fail-Closed y Protección contra Promoción Sintética**: `ProductionCoverageVerifier` rechaza tajantemente `SYNTHETIC_TEST` e `HISTORICAL_FIXTURE`. Cerrar y reabrir la base SQLite sin inyectar verificadores de prueba activa por defecto el verificador productivo sin claves confiables, retornando `INSUFFICIENT_DATA` ante cualquier intento de simular verificación productiva.
 
 ### 3. Procedencia persistente entre reinicios
 La procedencia nunca depende de clases Python en memoria:

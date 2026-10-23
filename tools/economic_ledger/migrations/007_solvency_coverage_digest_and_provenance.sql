@@ -4,6 +4,7 @@ ALTER TABLE solvency_coverage ADD COLUMN data_digest TEXT NOT NULL DEFAULT '';
 ALTER TABLE solvency_coverage ADD COLUMN provenance_type TEXT NOT NULL DEFAULT 'HISTORICAL_UNVERIFIED';
 ALTER TABLE solvency_coverage ADD COLUMN authority_pubkey TEXT;
 ALTER TABLE solvency_coverage ADD COLUMN signature TEXT;
+ALTER TABLE solvency_coverage ADD COLUMN expires_at INTEGER;
 
 ALTER TABLE agent_solvency_assessments ADD COLUMN provenance_type TEXT NOT NULL DEFAULT 'HISTORICAL_UNVERIFIED';
 

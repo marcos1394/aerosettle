@@ -7,12 +7,22 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import sys
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR / "tools" / "discovery") not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR / "tools" / "discovery"))
+
+import agent_discovery as discovery
+
 from tools.economic_ledger.ledger import (
     EconomicLedger,
     IsolatedTestAttestationVerifier,
     IsolatedTestCoverageVerifier,
     IsolatedTestReconcilerVerifier,
     ProductionCoverageVerifier,
+    canonical_coverage_message,
+    sign_coverage_attestation,
+    verify_ed25519_signature,
 )
 from tools.economic_ledger.models import LedgerValidationError
 from tools.economic_ledger.solvency import (
@@ -524,6 +534,393 @@ class SolvencyCoverageHardeningTests(unittest.TestCase):
             self.assertIn("revenue_coverage_missing_verifiable_digest", res["exclusion_reasons"])
 
         legacy_dir.cleanup()
+
+
+
+class SolvencyCryptographicCoverageAuthenticityTests(unittest.TestCase):
+    """Gates 1 & 2: Cryptographic Ed25519 verification, canonical message binding, revocation, and candidate selection."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.seed_1 = b"sec-key-cov-auth-1-seed-32bytes!"
+        self.seed_2 = b"sec-key-cov-auth-2-seed-32bytes!"
+        from tools.economic_ledger import ed25519
+        self.pk_1_bytes = ed25519.public_key_from_secret(self.seed_1[:32])
+        self.pk_2_bytes = ed25519.public_key_from_secret(self.seed_2[:32])
+        self.pub_1_b58 = discovery.b58encode(self.pk_1_bytes)
+        self.pub_2_b58 = discovery.b58encode(self.pk_2_bytes)
+        self.auth_1 = "conatus:coverage:authority:v1"
+        self.auth_2 = "conatus:protocol:solvency-verifier:v1"
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def _sign(self, seed: bytes, *, side: str, digest: str, expires_at: int | None = None, auth: str | None = None, prov: str = "EXTERNAL_ATTESTED", evidence_hash: str = HASH):
+        auth_id = auth or self.auth_1
+        msg = canonical_coverage_message(
+            agent_account=AGENT,
+            network=NETWORK,
+            genesis_hash=GENESIS,
+            program_id=PROGRAM,
+            token_mint=MINT,
+            side=side,
+            window_start=START,
+            window_end=NOW,
+            data_digest=digest,
+            evidence_hash=evidence_hash,
+            verifier_id=auth_id,
+            provenance_type=prov,
+            expires_at=expires_at,
+        )
+        sig_b58, pub_b58 = sign_coverage_attestation(seed, msg)
+        return sig_b58, pub_b58, msg
+
+    def test_gate1_valid_ed25519_signature_verifies(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        sig_b58, pub_b58, _ = self._sign(self.seed_1, side="REVENUE", digest="d1234567890abcdef")
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="d1234567890abcdef", evidence_hash=HASH, verifier_id=self.auth_1,
+            provenance_type="EXTERNAL_ATTESTED", signature=sig_b58, authority_pubkey=pub_b58,
+        )
+        self.assertTrue(ok)
+
+    def test_gate1_forged_signature_of_length_64_fails(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        forged_sig = discovery.b58encode(b"\xfe" * 64)
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="d1234567890abcdef", evidence_hash=HASH, verifier_id=self.auth_1,
+            provenance_type="EXTERNAL_ATTESTED", signature=forged_sig, authority_pubkey=self.pub_1_b58,
+        )
+        self.assertFalse(ok)
+
+    def test_gate1_tampered_canonical_message_fails(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        sig_b58, pub_b58, _ = self._sign(self.seed_1, side="REVENUE", digest="original_digest_val")
+        # Attempt to verify with modified data_digest
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="tampered_digest_val", evidence_hash=HASH, verifier_id=self.auth_1,
+            provenance_type="EXTERNAL_ATTESTED", signature=sig_b58, authority_pubkey=pub_b58,
+        )
+        self.assertFalse(ok)
+
+    def test_gate1_wrong_public_key_fails(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_2_b58},  # key 2 registered
+        )
+        sig_b58, pub_b58, _ = self._sign(self.seed_1, side="REVENUE", digest="d123")  # signed with key 1
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="d123", evidence_hash=HASH, verifier_id=self.auth_1,
+            provenance_type="EXTERNAL_ATTESTED", signature=sig_b58, authority_pubkey=pub_b58,
+        )
+        self.assertFalse(ok)
+
+    def test_gate1_unregistered_authority_fails(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        sig_b58, pub_b58, _ = self._sign(self.seed_1, side="REVENUE", digest="d123", auth="unregistered:auth")
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="d123", evidence_hash=HASH, verifier_id="unregistered:auth",
+            provenance_type="EXTERNAL_ATTESTED", signature=sig_b58, authority_pubkey=pub_b58,
+        )
+        self.assertFalse(ok)
+
+    def test_gate1_revoked_authority_fails(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        verifier.revoke_authority(self.auth_1)
+        self.assertTrue(verifier.is_authority_revoked(self.auth_1))
+        sig_b58, pub_b58, _ = self._sign(self.seed_1, side="REVENUE", digest="d123")
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="d123", evidence_hash=HASH, verifier_id=self.auth_1,
+            provenance_type="EXTERNAL_ATTESTED", signature=sig_b58, authority_pubkey=pub_b58,
+        )
+        self.assertFalse(ok)
+
+    def test_gate1_expired_coverage_fails(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        exp_time = NOW - 100
+        sig_b58, pub_b58, _ = self._sign(self.seed_1, side="REVENUE", digest="d123", expires_at=exp_time)
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="d123", evidence_hash=HASH, verifier_id=self.auth_1,
+            provenance_type="EXTERNAL_ATTESTED", signature=sig_b58, authority_pubkey=pub_b58,
+            expires_at=exp_time, now=NOW,
+        )
+        self.assertFalse(ok)
+
+    def test_gate1_expired_by_ttl_fails(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+            default_ttl_seconds=86400,
+        )
+        sig_b58, pub_b58, _ = self._sign(self.seed_1, side="REVENUE", digest="d123", expires_at=None)
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="d123", evidence_hash=HASH, verifier_id=self.auth_1,
+            provenance_type="EXTERNAL_ATTESTED", signature=sig_b58, authority_pubkey=pub_b58,
+            verified_at=NOW - 90000, expires_at=None, now=NOW,
+        )
+        self.assertFalse(ok)
+
+    def test_gate1_strictly_rejects_synthetic_or_fixture_in_production(self):
+        verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        sig_b58, pub_b58, _ = self._sign(self.seed_1, side="REVENUE", digest="d123", prov="SYNTHETIC_TEST")
+        ok = verifier.verify_coverage(
+            agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS, program_id=PROGRAM,
+            token_mint=MINT, side="REVENUE", window_start=START, window_end=NOW,
+            data_digest="d123", evidence_hash=HASH, verifier_id=self.auth_1,
+            provenance_type="SYNTHETIC_TEST", signature=sig_b58, authority_pubkey=pub_b58,
+        )
+        self.assertFalse(ok)
+
+    def test_gate2_sqlite_restart_with_authentic_ed25519_coverage(self):
+        db_path = Path(self.temp.name) / "prod_crypto_restart.db"
+        prod_verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        with EconomicLedger(
+            db_path,
+            reconciliation_verifier=IsolatedTestReconcilerVerifier(),
+            attestation_verifier=IsolatedTestAttestationVerifier(),
+            coverage_verifier=prod_verifier,
+        ) as led:
+            m = led.record_movement(
+                idempotency_key="inc-prod-1", agent_id="11" * 32, agent_account=AGENT,
+                owner_pubkey=OWNER, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, amount_base_units=400, nature="INCOME",
+                status="PROVISIONAL", tx_signature="sig-prod-1", observed_at=NOW - 100,
+            )
+            led.reconcile_movement(m.movement_id, evidence_hash=HASH,
+                authorized_by="conatus:protocol:reconciler:v1", slot=1000, tx_signature="sig-prod-1")
+            led.record_cost(
+                idempotency_key="cst-prod-1", agent_id="11" * 32, agent_account=AGENT,
+                owner_pubkey=OWNER, category="CONNECTIVITY_COMPUTE", cost_nature="REALIZED",
+                economic_period="2033-05", amount_base_units=100, network=NETWORK,
+                genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, incurred_at=NOW - 90,
+                status="RECONCILED", provenance_source="EXTERNAL_VERIFIED",
+                attestation_id="attest-prod-1", evidence_hash=HASH,
+                metadata={"authorized_by": "conatus:trusted:oracle:v1"},
+            )
+
+            # Compute digests
+            rev_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "REVENUE", START, NOW)
+            opex_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "OPEX", START, NOW)
+
+            rev_sig, rev_pk, _ = self._sign(self.seed_1, side="REVENUE", digest=rev_digest, prov="EXTERNAL_ATTESTED")
+            opex_sig, opex_pk, _ = self._sign(self.seed_1, side="OPEX", digest=opex_digest, prov="EXTERNAL_ATTESTED")
+
+            record_coverage(
+                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
+                window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
+                verifier=prod_verifier, provenance_type="EXTERNAL_ATTESTED",
+                signature=rev_sig, authority_pubkey=rev_pk, verified_at=NOW,
+            )
+            record_coverage(
+                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, side="OPEX", window_start=START,
+                window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
+                verifier=prod_verifier, provenance_type="EXTERNAL_ATTESTED",
+                signature=opex_sig, authority_pubkey=opex_pk, verified_at=NOW,
+            )
+
+        # 1. Reopen SQLite database in production with configured trusted authority public key
+        reopened_verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        with EconomicLedger(db_path, coverage_verifier=reopened_verifier) as led_prod:
+            res = assess_agent(led_prod, AGENT, network=NETWORK, genesis_hash=GENESIS,
+                               program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
+            self.assertEqual(res["calculation_status"], "VALID")
+            self.assertIn(res["provenance"], ("EXTERNAL_ATTESTED", "LIVE_RPC_AND_EXTERNAL_ATTESTED"))
+            self.assertEqual(res["conatus_ratio"], "4.00000000")
+
+        # 2. Reopen without trusted keys: fails closed to INSUFFICIENT_DATA
+        with EconomicLedger(db_path) as led_unconfigured:
+            res_unconf = assess_agent(led_unconfigured, AGENT, network=NETWORK, genesis_hash=GENESIS,
+                                      program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
+            self.assertEqual(res_unconf["calculation_status"], "INSUFFICIENT_DATA")
+
+    def test_gate2_multiple_coverages_skips_tampered_and_selects_authentic(self):
+        db_path = Path(self.temp.name) / "multi_candidates.db"
+        prod_verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1},
+            trusted_public_keys={self.auth_1: self.pub_1_b58},
+        )
+        test_verifier = IsolatedTestCoverageVerifier()
+        with EconomicLedger(
+            db_path,
+            reconciliation_verifier=IsolatedTestReconcilerVerifier(),
+            attestation_verifier=IsolatedTestAttestationVerifier(),
+            coverage_verifier=test_verifier,
+        ) as led:
+            m = led.record_movement(
+                idempotency_key="inc-multi-1", agent_id="11" * 32, agent_account=AGENT,
+                owner_pubkey=OWNER, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, amount_base_units=300, nature="INCOME",
+                status="PROVISIONAL", tx_signature="sig-multi-100", observed_at=NOW - 100,
+            )
+            led.reconcile_movement(m.movement_id, evidence_hash=HASH,
+                authorized_by="conatus:protocol:reconciler:v1", slot=1000, tx_signature="sig-multi-100")
+            led.record_cost(
+                idempotency_key="cst-multi-1", agent_id="11" * 32, agent_account=AGENT,
+                owner_pubkey=OWNER, category="ENERGY_FUEL", cost_nature="REALIZED",
+                economic_period="2033-05", amount_base_units=100, network=NETWORK,
+                genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, incurred_at=NOW - 90,
+                status="RECONCILED", provenance_source="EXTERNAL_VERIFIED",
+                attestation_id="attest-multi-1", evidence_hash=HASH,
+                metadata={"authorized_by": "conatus:trusted:oracle:v1"},
+            )
+
+            rev_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "REVENUE", START, NOW)
+            opex_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "OPEX", START, NOW)
+
+            # Insert authentic coverage (rowid 1)
+            rev_sig, rev_pk, _ = self._sign(self.seed_1, side="REVENUE", digest=rev_digest, evidence_hash="hash-authentic-1")
+            record_coverage(
+                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
+                window_end=NOW, evidence_hash="hash-authentic-1", verifier_id=self.auth_1,
+                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                signature=rev_sig, authority_pubkey=rev_pk, verified_at=NOW - 50,
+            )
+            # Insert newer tampered/forged coverage for the same window (rowid 2)
+            forged_sig = discovery.b58encode(b"\x99" * 64)
+            record_coverage(
+                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
+                window_end=NOW, evidence_hash="hash-forged-2", verifier_id=self.auth_1,
+                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                signature=forged_sig, authority_pubkey=rev_pk, verified_at=NOW - 10,
+            )
+
+            # OPEX authentic coverage
+            opex_sig, opex_pk, _ = self._sign(self.seed_1, side="OPEX", digest=opex_digest, evidence_hash=HASH)
+            record_coverage(
+                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, side="OPEX", window_start=START,
+                window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_1,
+                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                signature=opex_sig, authority_pubkey=opex_pk, verified_at=NOW,
+            )
+
+        # Reopen with ProductionCoverageVerifier
+        with EconomicLedger(db_path, coverage_verifier=prod_verifier) as led_prod:
+            res = assess_agent(led_prod, AGENT, network=NETWORK, genesis_hash=GENESIS,
+                               program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
+            # Must successfully select the authentic coverage and discard the forged newer one
+            self.assertEqual(res["calculation_status"], "VALID")
+            self.assertEqual(res["conatus_ratio"], "3.00000000")
+
+    def test_gate2_multiple_coverages_skips_revoked_authority_candidate(self):
+        db_path = Path(self.temp.name) / "multi_revoked.db"
+        prod_verifier = ProductionCoverageVerifier(
+            trusted_authorities={self.auth_1, self.auth_2},
+            trusted_public_keys={self.auth_1: self.pub_1_b58, self.auth_2: self.pub_2_b58},
+        )
+        test_verifier = IsolatedTestCoverageVerifier()
+        with EconomicLedger(
+            db_path,
+            reconciliation_verifier=IsolatedTestReconcilerVerifier(),
+            attestation_verifier=IsolatedTestAttestationVerifier(),
+            coverage_verifier=test_verifier,
+        ) as led:
+            m = led.record_movement(
+                idempotency_key="inc-rev-1", agent_id="11" * 32, agent_account=AGENT,
+                owner_pubkey=OWNER, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, amount_base_units=200, nature="INCOME",
+                status="PROVISIONAL", tx_signature="sig-rev-100", observed_at=NOW - 100,
+            )
+            led.reconcile_movement(m.movement_id, evidence_hash=HASH,
+                authorized_by="conatus:protocol:reconciler:v1", slot=1000, tx_signature="sig-rev-100")
+            led.record_cost(
+                idempotency_key="cst-rev-1", agent_id="11" * 32, agent_account=AGENT,
+                owner_pubkey=OWNER, category="INSURANCE", cost_nature="REALIZED",
+                economic_period="2033-05", amount_base_units=100, network=NETWORK,
+                genesis_hash=GENESIS, program_id=PROGRAM, token_mint=MINT, incurred_at=NOW - 90,
+                status="RECONCILED", provenance_source="EXTERNAL_VERIFIED",
+                attestation_id="attest-rev-1", evidence_hash=HASH,
+                metadata={"authorized_by": "conatus:trusted:oracle:v1"},
+            )
+
+            rev_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "REVENUE", START, NOW)
+            opex_digest, _ = calculate_side_data_digest(led, AGENT, (NETWORK, GENESIS, PROGRAM, MINT), "OPEX", START, NOW)
+
+            # Insert Coverage signed by Authority 1 (which will be revoked)
+            rev_sig_1, rev_pk_1, _ = self._sign(self.seed_1, side="REVENUE", digest=rev_digest, auth=self.auth_1, evidence_hash="hash-auth1")
+            record_coverage(
+                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
+                window_end=NOW, evidence_hash="hash-auth1", verifier_id=self.auth_1,
+                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                signature=rev_sig_1, authority_pubkey=rev_pk_1, verified_at=NOW - 10,
+            )
+            # Insert Coverage signed by Authority 2 (which remains trusted)
+            rev_sig_2, rev_pk_2, _ = self._sign(self.seed_2, side="REVENUE", digest=rev_digest, auth=self.auth_2, evidence_hash="hash-auth2")
+            record_coverage(
+                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, side="REVENUE", window_start=START,
+                window_end=NOW, evidence_hash="hash-auth2", verifier_id=self.auth_2,
+                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                signature=rev_sig_2, authority_pubkey=rev_pk_2, verified_at=NOW - 20,
+            )
+
+            # OPEX signed by Authority 2
+            opex_sig, opex_pk, _ = self._sign(self.seed_2, side="OPEX", digest=opex_digest, auth=self.auth_2, evidence_hash=HASH)
+            record_coverage(
+                led, agent_account=AGENT, network=NETWORK, genesis_hash=GENESIS,
+                program_id=PROGRAM, token_mint=MINT, side="OPEX", window_start=START,
+                window_end=NOW, evidence_hash=HASH, verifier_id=self.auth_2,
+                verifier=test_verifier, provenance_type="EXTERNAL_ATTESTED",
+                signature=opex_sig, authority_pubkey=opex_pk, verified_at=NOW,
+            )
+
+        # Revoke Authority 1
+        prod_verifier.revoke_authority(self.auth_1)
+
+        with EconomicLedger(db_path, coverage_verifier=prod_verifier) as led_prod:
+            res = assess_agent(led_prod, AGENT, network=NETWORK, genesis_hash=GENESIS,
+                               program_id=PROGRAM, token_mint=MINT, now=NOW)[0]
+            # Must skip the candidate from revoked Authority 1 and select the authentic one from Authority 2
+            self.assertEqual(res["calculation_status"], "VALID")
+            self.assertEqual(res["conatus_ratio"], "2.00000000")
 
 
 if __name__ == "__main__":
