@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "discovery"))
 
 import agent_discovery as discovery
-from . import ed25519
+from cryptography.hazmat.primitives.asymmetric import ed25519 as crypto_ed25519
 
 MAX_TIMESTAMP_DRIFT_SECONDS = 300  # 5 minutes freshness window
 
@@ -34,10 +34,12 @@ def create_auth_headers(
 ) -> dict[str, str]:
     """Helper to generate authentic Ed25519 authentication headers for testing/clients."""
     ts = int(time.time()) if timestamp is None else timestamp
-    pubkey_bytes = ed25519.public_key_from_secret(secret_key)
+    seed = secret_key[:32]
+    priv = crypto_ed25519.Ed25519PrivateKey.from_private_bytes(seed)
+    pubkey_bytes = priv.public_key().public_bytes_raw()
     pubkey_b58 = discovery.b58encode(pubkey_bytes)
     msg = canonical_challenge(ts, agent_account)
-    sig_bytes = ed25519.sign(msg, secret_key, pubkey_bytes)
+    sig_bytes = priv.sign(msg)
     sig_b58 = discovery.b58encode(sig_bytes)
 
     return {
@@ -99,7 +101,10 @@ def verify_request_auth(
 
     # 3. Cryptographically verify signature against canonical message
     challenge = canonical_challenge(ts, agent_account)
-    if not ed25519.verify(sig_bytes, challenge, pubkey_bytes):
+    try:
+        pub = crypto_ed25519.Ed25519PublicKey.from_public_bytes(pubkey_bytes)
+        pub.verify(sig_bytes, challenge)
+    except Exception:
         raise AuthError(401, "INVALID_SIGNATURE", "Cryptographic Ed25519 signature verification failed")
 
     # 4. Check that the verified signer is authorized as the agent owner

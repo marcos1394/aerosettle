@@ -20,10 +20,11 @@ from .ledger import (
     EconomicLedger,
     IsolatedTestAttestationVerifier,
     IsolatedTestReconcilerVerifier,
+    IsolatedTestCoverageVerifier,
     CoverageVerifier,
     DEFAULT_TRUSTED_COVERAGE_AUTHORITIES,
 )
-from .models import LedgerValidationError
+from .models import EvidenceLineage, LedgerValidationError
 
 METHODOLOGY_VERSION = "conatus-solvency-v1"
 DEFAULT_THRESHOLDS = {"version": "conatus-thresholds-v1", "stable": "1", "thriving": "1.6"}
@@ -362,13 +363,14 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
     scope = (agent, net, gen, prog, mint)
     revenue_rows = ledger._conn.execute("""
         SELECT movement_id, amount_base_units, observed_at, registered_at, status,
-               provenance_source, evidence_hash, metadata_json FROM economic_movements
+               provenance_source, evidence_hash, metadata_json, evidence_lineage FROM economic_movements
         WHERE agent_account=? AND network=? AND genesis_hash=? AND program_id=? AND token_mint=?
           AND nature='INCOME' AND observed_at>=? AND observed_at<? ORDER BY movement_id
     """, scope + (start, end)).fetchall()
     cost_rows = ledger._conn.execute("""
         SELECT cost_id, movement_id, amount_base_units, incurred_at, created_at, category,
-               cost_nature, status, provenance_source, evidence_hash, attestation_id
+               cost_nature, status, provenance_source, evidence_hash, attestation_id,
+               metadata_json, evidence_lineage
         FROM agent_costs WHERE agent_account=? AND network=? AND genesis_hash=? AND program_id=?
           AND token_mint=? AND incurred_at>=? AND incurred_at<? ORDER BY cost_id
     """, scope + (start, end)).fetchall()
@@ -410,6 +412,32 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
 
     # Cryptographic revalidation and selection across candidates
     active_verifier = getattr(ledger, "_coverage_verifier", None)
+    is_explicit_test_mode = getattr(active_verifier, "is_test_mode", False) or isinstance(active_verifier, IsolatedTestCoverageVerifier)
+
+    # In production mode, strictly require authentic evidence lineage for revenue and costs
+    if not is_explicit_test_mode:
+        for r in revenue:
+            if "evidence_lineage" in r.keys():
+                lin = r["evidence_lineage"]
+            else:
+                lin = json.loads(r["metadata_json"] or "{}").get("evidence_lineage")
+
+            if not lin or not str(lin).strip():
+                excluded.append("missing_revenue_evidence_lineage")
+            elif lin in ("SYNTHETIC_TEST", "HISTORICAL_FIXTURE", "HISTORICAL_UNVERIFIED"):
+                excluded.append("synthetic_or_unverified_revenue_lineage")
+
+        for r in expenses:
+            if "evidence_lineage" in r.keys():
+                lin = r["evidence_lineage"]
+            else:
+                lin = json.loads(r["metadata_json"] or "{}").get("evidence_lineage")
+
+            if not lin or not str(lin).strip():
+                excluded.append("missing_cost_evidence_lineage")
+            elif lin in ("SYNTHETIC_TEST", "HISTORICAL_FIXTURE", "HISTORICAL_UNVERIFIED"):
+                excluded.append("synthetic_or_unverified_cost_lineage")
+
     trusted_authorities = getattr(ledger, "_trusted_coverage_authorities", set())
     if active_verifier and hasattr(active_verifier, "trusted_authorities"):
         trusted_authorities = trusted_authorities | set(active_verifier.trusted_authorities)
@@ -509,6 +537,8 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
         "revenue_coverage_verification_failed", "opex_coverage_verification_failed",
         "revenue_coverage_authority_revoked", "opex_coverage_authority_revoked",
         "revenue_coverage_expired", "opex_coverage_expired",
+        "missing_revenue_evidence_lineage", "synthetic_or_unverified_revenue_lineage",
+        "missing_cost_evidence_lineage", "synthetic_or_unverified_cost_lineage",
     )):
         status = "INSUFFICIENT_DATA"
     elif not revenue_complete or not expense_complete:
@@ -549,27 +579,30 @@ def _assess_context(ledger: EconomicLedger, agent: str, context: tuple[str, str,
 
     # Persistent provenance determination independent of in-memory classes
     cov_provenances = {r["provenance_type"] for r in active_covs}
-    movement_sources = set()
-    for r in revenue:
-        source = r["provenance_source"]
-        meta_src = json.loads(r["metadata_json"] or "{}").get("evidence_source")
-        if meta_src:
-            movement_sources.add(meta_src)
-        else:
-            movement_sources.add(source)
-    expense_sources = {r["provenance_source"] for r in expenses}
-    all_markers = cov_provenances | movement_sources | expense_sources
+    rev_lineages = {
+        r["evidence_lineage"]
+        if "evidence_lineage" in r.keys() and r["evidence_lineage"]
+        else json.loads(r["metadata_json"] or "{}").get("evidence_lineage", "HISTORICAL_UNVERIFIED")
+        for r in revenue
+    }
+    exp_lineages = {
+        r["evidence_lineage"]
+        if "evidence_lineage" in r.keys() and r["evidence_lineage"]
+        else json.loads(r["metadata_json"] or "{}").get("evidence_lineage", "HISTORICAL_UNVERIFIED")
+        for r in expenses
+    }
+    all_lineages = cov_provenances | rev_lineages | exp_lineages
 
-    if "SYNTHETIC_TEST" in all_markers or "TEST_VERIFIER_FIXTURE" in all_markers:
+    if is_explicit_test_mode or "SYNTHETIC_TEST" in all_lineages or "TEST_VERIFIER_FIXTURE" in all_lineages:
         provenance = "SYNTHETIC_TEST"
-    elif "HISTORICAL_FIXTURE" in all_markers:
+    elif "HISTORICAL_FIXTURE" in all_lineages:
         provenance = "HISTORICAL_FIXTURE"
-    elif ("LIVE_RPC" in all_markers or "ONCHAIN_VERIFIED" in all_markers or "SETTLEMENT_EVENT" in all_markers) and all(s in ("LIVE_RPC", "EXTERNAL_VERIFIED", "EXTERNAL_ATTESTED", "ONCHAIN_VERIFIED", "SETTLEMENT_EVENT") for s in all_markers):
-        if any(s in ("EXTERNAL_VERIFIED", "EXTERNAL_ATTESTED") for s in all_markers):
+    elif "LIVE_RPC" in all_lineages and all(s in ("LIVE_RPC", "EXTERNAL_ATTESTED") for s in all_lineages):
+        if "EXTERNAL_ATTESTED" in all_lineages or (expenses and all(s == "EXTERNAL_ATTESTED" for s in exp_lineages)):
             provenance = "LIVE_RPC_AND_EXTERNAL_ATTESTED"
         else:
             provenance = "LIVE_RPC"
-    elif all_markers and all(s in ("EXTERNAL_VERIFIED", "EXTERNAL_ATTESTED") for s in all_markers):
+    elif all_lineages and all(s == "EXTERNAL_ATTESTED" for s in all_lineages):
         provenance = "EXTERNAL_ATTESTED"
     else:
         provenance = "HISTORICAL_UNVERIFIED"

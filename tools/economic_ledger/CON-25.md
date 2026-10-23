@@ -24,20 +24,24 @@ Para afirmar cobertura completa, **ambos lados** requieren una atestación indep
 - Los snapshots guardados en `agent_solvency_assessments` son inmutables (`INSERT OR IGNORE`) y nunca se sobrescriben.
 
 ### 2. Frontera de confianza y Verificación Criptográfica Productiva (Gate 1 & Gate 2)
-- **Verificación Criptográfica Ed25519 Auténtica**: `ProductionCoverageVerifier` exige una clave pública Ed25519 confiable registrada para cada autoridad habilitada. Decodifica y verifica matemáticamente la firma Ed25519 contra los bytes serializados de `canonical_coverage_message()`, usando el módulo RFC 8032 mantenido (`ed25519.py`).
+- **Verificación Criptográfica Ed25519 Estándar y Mantenida**: Reemplazo de operaciones manuales sobre curvas elípticas en código de producción por la biblioteca estándar `cryptography.hazmat.primitives.asymmetric.ed25519` (RFC 8032). `ProductionCoverageVerifier` exige una clave pública Ed25519 confiable registrada para cada autoridad habilitada. Decodifica y verifica matemáticamente la firma Ed25519 contra los bytes serializados de `canonical_coverage_message()`. Cero operaciones manuales sobre curvas en producción.
 - **Vinculación Canónica y Separación de Dominio**: El mensaje firmado vincula deterministamente `"domain": "conatus:solvency-coverage-attestation:v1"`, agente, contexto monetario (`network`, `genesis_hash`, `program_id`, `token_mint`), ventana UTC `[window_start, window_end)`, lado (`REVENUE`/`OPEX`), `data_digest`, `evidence_hash`, `verifier_id`, `provenance_type` y `expires_at`.
 - **Caducidad y Política de Revocación**: Las coberturas expiran matemáticamente si `now > expires_at` o por TTL configurable. Las autoridades pueden ser revocadas explícitamente (`revoke_authority`); cualquier cobertura asociada a una autoridad revocada o expirada falla cerrado.
 - **Revalidación y Selección Multicandidato**: Durante `assess_agent()`, no se asume validez de coberturas por el mero hecho de residir en la base de datos. Se revalidan criptográficamente contra el verificador activo. Ante múltiples registros para una misma ventana, se itera y selecciona únicamente una cobertura auténtica, no expirada, no revocada y con digest coincidente, sin depender ciegamente del orden temporal de inserción.
 - **Fail-Closed y Protección contra Promoción Sintética**: `ProductionCoverageVerifier` rechaza tajantemente `SYNTHETIC_TEST` e `HISTORICAL_FIXTURE`. Cerrar y reabrir la base SQLite sin inyectar verificadores de prueba activa por defecto el verificador productivo sin claves confiables, retornando `INSUFFICIENT_DATA` ante cualquier intento de simular verificación productiva.
 
-### 3. Procedencia persistente entre reinicios
-La procedencia nunca depende de clases Python en memoria:
-- Cada registro de cobertura persiste su `provenance_type` (`LIVE_RPC`, `EXTERNAL_ATTESTED`, `HISTORICAL_FIXTURE`, `SYNTHETIC_TEST`) en la columna SQLite `solvency_coverage.provenance_type`.
+### 3. Procedencia persistente y linaje de evidencia inmutable
+La procedencia nunca depende de clases Python en memoria ni se infiere ciegamente de `provenance_source=ONCHAIN_VERIFIED`:
+- **Taxonomía Canónica de 5 Niveles**: Se distingue explícitamente `LIVE_RPC`, `EXTERNAL_ATTESTED`, `HISTORICAL_FIXTURE`, `SYNTHETIC_TEST` e `HISTORICAL_UNVERIFIED`.
+- Cada movimiento y cada costo almacena de forma inmutable su `evidence_lineage` en columnas dedicadas (`economic_movements.evidence_lineage` y `agent_costs.evidence_lineage`) y dentro de `metadata_json`.
+- En modo productivo, una evaluación falla cerrado a `INSUFFICIENT_DATA` si cualquiera de sus ingresos o costos subyacentes tiene linaje sintético (`SYNTHETIC_TEST`), de fixture (`HISTORICAL_FIXTURE`), o no verificado (`HISTORICAL_UNVERIFIED`). Ni siquiera una firma Ed25519 válida sobre la cobertura puede promover fixtures económicos a evidencia productiva.
+- En modo de prueba explícito (`IsolatedTestCoverageVerifier`), las evaluaciones matemáticas son admisibles pero preservan de forma estricta e inmutable `provenance = "SYNTHETIC_TEST"`.
+- Con verificadores productivos auténticos (`ProductionReconciliationVerifier` y `ProductionAttestationVerifier`), los registros adquieren `LIVE_RPC` y `EXTERNAL_ATTESTED`, alcanzando la procedencia plena `LIVE_RPC_AND_EXTERNAL_ATTESTED`.
 - `agent_solvency_assessments` almacena `provenance_type` en columna dedicada y dentro de `result_json`.
-- Tras cerrar y reabrir la conexión SQLite, una cobertura creada con fixtures sintéticos conserva `SYNTHETIC_TEST` y jamás se promueve a verificación productiva (`LIVE_RPC` o `EXTERNAL_ATTESTED`).
 
-### 4. Migración 007
-`007_solvency_coverage_digest_and_provenance.sql` añade incrementalmente `data_digest`, `provenance_type`, `authority_pubkey` y `signature` a `solvency_coverage`, y `provenance_type` a `agent_solvency_assessments`. Los registros históricos sin digest verificable quedan como `HISTORICAL_UNVERIFIED` y resultan inválidos (`INSUFFICIENT_DATA`) para nuevas evaluaciones.
+### 4. Migraciones 007 y 008
+- `007_solvency_coverage_digest_and_provenance.sql`: añade incrementalmente `data_digest`, `provenance_type`, `authority_pubkey` y `signature` a `solvency_coverage`, y `provenance_type` a `agent_solvency_assessments`. Los registros históricos sin digest verificable quedan como `HISTORICAL_UNVERIFIED`.
+- `008_evidence_lineage_and_authentic_provenance.sql`: añade la columna inmutable `evidence_lineage TEXT NOT NULL DEFAULT 'HISTORICAL_UNVERIFIED'` a `economic_movements` y `agent_costs`, backfilleando linajes históricos desde `metadata_json`.
 
 ## Ejemplos con verificadores de prueba
 

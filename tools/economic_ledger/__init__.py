@@ -3,7 +3,12 @@ from . import auth, ed25519
 from .ledger import (
     DEFAULT_TRUSTED_RECONCILER_AUTHORITIES,
     EconomicLedger,
+    IsolatedTestAttestationVerifier,
+    IsolatedTestCoverageVerifier,
     IsolatedTestReconcilerVerifier,
+    ProductionAttestationVerifier,
+    ProductionCoverageVerifier,
+    ProductionReconciliationVerifier,
     ReconciliationVerifier,
 )
 from .models import (
@@ -17,6 +22,7 @@ from .models import (
     CostNature,
     EconomicMovement,
     EntryType,
+    EvidenceLineage,
     IdempotencyConflictError,
     JournalEntry,
     LedgerLeg,
@@ -96,6 +102,12 @@ __all__ = [
     "run_migrations",
     "auth",
     "ed25519",
+    "EvidenceLineage",
+    "ProductionReconciliationVerifier",
+    "ProductionAttestationVerifier",
+    "ProductionCoverageVerifier",
+    "IsolatedTestCoverageVerifier",
+    "IsolatedTestAttestationVerifier",
     "ReconciliationVerifier",
     "IsolatedTestReconcilerVerifier",
     "SplSettlementReconciler",
