@@ -183,6 +183,20 @@ class BudgetPolicyStore:
     def _policy_row(self, account: str):
         return self.conn.execute("SELECT * FROM agent_budget_policies WHERE agent_account = ?", (account,)).fetchone()
 
+    def _require_identity(self, agent: dict[str, Any], policy: Any, actor: str | None = None) -> None:
+        """Keep every version scoped to the exact registered AgentAccount identity."""
+        if policy is None or not all((
+            policy["agent_account"] == agent.get("agent_account"),
+            policy["agent_id"] == agent.get("agent_id"),
+            policy["owner_pubkey"] == agent.get("owner"),
+            actor is None or actor == policy["owner_pubkey"],
+            bool(policy["network"] and policy["genesis_hash"] and policy["program_id"]),
+            policy["policy_id"] == self.policy_id(
+                policy["agent_account"], policy["network"],
+                policy["genesis_hash"], policy["program_id"]),
+        )):
+            raise PolicyError(404, "POLICY_NOT_FOUND", "Policy not found for current AgentAccount identity")
+
     def _version(self, policy_id: str, version: int) -> dict[str, Any]:
         p = self.conn.execute("SELECT * FROM agent_budget_policies WHERE policy_id = ?", (policy_id,)).fetchone()
         v = self.conn.execute("SELECT * FROM agent_budget_policy_versions WHERE policy_id = ? AND version = ?",
@@ -216,19 +230,13 @@ class BudgetPolicyStore:
     def current(self, agent: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             p = self._policy_row(agent["agent_account"])
-            if p is None:
-                raise PolicyError(404, "POLICY_NOT_FOUND", "Agent budget policy not found")
-            if p["owner_pubkey"] != agent.get("owner"):
-                raise PolicyError(403, "OWNER_CHANGED", "Policy owner differs from current AgentAccount owner")
+            self._require_identity(agent, p)
             return self._version(p["policy_id"], p["current_version"])
 
     def history(self, agent: dict[str, Any]) -> list[dict[str, Any]]:
         with self._lock:
             p = self._policy_row(agent["agent_account"])
-            if p is None:
-                raise PolicyError(404, "POLICY_NOT_FOUND", "Agent budget policy not found")
-            if p["owner_pubkey"] != agent.get("owner"):
-                raise PolicyError(403, "OWNER_CHANGED", "Policy owner differs from current AgentAccount owner")
+            self._require_identity(agent, p)
             rows = self.conn.execute("SELECT version FROM agent_budget_policy_versions WHERE policy_id = ? ORDER BY version DESC",
                                      (p["policy_id"],)).fetchall()
             return [self._version(p["policy_id"], r["version"]) for r in rows]
@@ -236,8 +244,7 @@ class BudgetPolicyStore:
     def version(self, agent: dict[str, Any], version: int) -> dict[str, Any]:
         with self._lock:
             p = self._policy_row(agent["agent_account"])
-            if p is None or p["owner_pubkey"] != agent.get("owner"):
-                raise PolicyError(404, "POLICY_NOT_FOUND", "Policy not found for current owner")
+            self._require_identity(agent, p)
             return self._version(p["policy_id"], version)
 
     def mutate(self, agent: dict[str, Any], action: str, body: dict[str, Any],
@@ -250,10 +257,18 @@ class BudgetPolicyStore:
         with self._lock:
             self.conn.execute("BEGIN IMMEDIATE")
             try:
+                p = self._policy_row(agent["agent_account"])
+                if p is not None:
+                    self._require_identity(agent, p, actor)
                 previous = self.conn.execute(
                     "SELECT policy_id, version, request_hash FROM agent_budget_policy_versions WHERE idempotency_key = ?",
                     (idem,)).fetchone()
                 if previous:
+                    if (p is None or previous["policy_id"] != p["policy_id"] or
+                            (config is not None and
+                             (config["network"], config["genesis_hash"], config["program_id"]) !=
+                             (p["network"], p["genesis_hash"], p["program_id"]))):
+                        raise PolicyError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key is not valid for this policy")
                     if previous["request_hash"] != request_hash:
                         raise PolicyError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key reused with different request")
                     prior_version = self._version(previous["policy_id"], previous["version"])
@@ -261,7 +276,6 @@ class BudgetPolicyStore:
                     return prior_version, False
                 if self.conn.execute("SELECT 1 FROM agent_budget_policy_versions WHERE nonce = ?", (nonce,)).fetchone():
                     raise PolicyError(409, "NONCE_REPLAY", "Mutation nonce was already used")
-                p = self._policy_row(agent["agent_account"])
                 if action == "CREATE":
                     if p or expected != 0:
                         raise PolicyError(409, "VERSION_CONFLICT", "Policy already exists or expected version is not zero")
@@ -276,8 +290,6 @@ class BudgetPolicyStore:
                 else:
                     if p is None:
                         raise PolicyError(404, "POLICY_NOT_FOUND", "Policy not found")
-                    if p["owner_pubkey"] != actor or p["agent_id"] != agent["agent_id"]:
-                        raise PolicyError(403, "OWNER_CHANGED", "Agent identity or owner has changed")
                     policy_id, current_version = p["policy_id"], p["current_version"]
                     if expected != current_version:
                         raise PolicyError(409, "VERSION_CONFLICT", "Current policy version has changed")

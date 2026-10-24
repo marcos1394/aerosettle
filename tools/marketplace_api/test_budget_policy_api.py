@@ -1,4 +1,5 @@
 """CON-27 Marketplace policy routes retain owner-only access."""
+import copy
 import json
 import threading
 import unittest
@@ -93,6 +94,38 @@ class BudgetPolicyApiTests(unittest.TestCase):
                 server.policy_mutation_route("POST", PATH, self.provider, headers(value), value)
         self.assertEqual(changed.exception.status, 403)
         self.assertEqual(self.provider.ledger._conn.execute("SELECT count(*) FROM agent_budget_policies").fetchone()[0], 0)
+
+    def test_historical_routes_close_after_owner_or_agent_id_change(self):
+        value = body()
+        _, created = server.policy_mutation_route("POST", PATH, self.provider, headers(value), value)
+        policy_hash = created["data"]["policy_hash"]
+        original = self.provider.snapshot
+        from tools.economic_ledger.test_budget_policies import OTHER, OTHER_SECRET
+        for changed_field, changed_value, secret in (
+            ("owner", OTHER, OTHER_SECRET),
+            ("agent_id", "22" * 32, OWNER_DRONE_SECRET),
+        ):
+            def changed_snapshot():
+                snapshot = copy.deepcopy(original())
+                snapshot["agents"] = [
+                    {**agent, changed_field: changed_value} if agent["agent_account"] == DRONE else agent
+                    for agent in snapshot["agents"]
+                ]
+                return snapshot
+            with mock.patch.object(self.provider, "snapshot", side_effect=changed_snapshot):
+                auth = create_auth_headers(secret, DRONE)
+                for path in (PATH, PATH + "/history", PATH + "/1"):
+                    with self.assertRaises(server.ApiError) as denied:
+                        server.route(path, self.provider, auth)
+                    self.assertEqual(denied.exception.status, 404)
+                    self.assertNotIn(policy_hash, str(denied.exception))
+                signer = OTHER if changed_field == "owner" else OWNER_DRONE
+                with self.assertRaises(server.ApiError) as denied_retry:
+                    server.policy_mutation_route(
+                        "POST", PATH, self.provider,
+                        headers(value, secret=secret, signer=signer), value)
+                self.assertEqual(denied_retry.exception.status, 404)
+                self.assertNotIn(policy_hash, str(denied_retry.exception))
 
     def test_http_signed_mutation_and_accounting_write_boundary(self):
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.handler_for(self.provider))

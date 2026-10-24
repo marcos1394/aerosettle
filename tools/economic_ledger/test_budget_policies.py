@@ -167,6 +167,71 @@ class BudgetPolicyTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.ledger._conn.execute("DELETE FROM agent_budget_policies WHERE agent_account = ?", (AGENT,))
 
+    def test_identity_change_closes_reads_and_old_idempotent_retry(self):
+        first = body()
+        original = self.apply("CREATE", first)
+        self.apply("ACTIVATE", body("ACTIVATE", 1, "00000002"))
+        for changed, actor in (
+            ({**AGENT_RECORD, "owner": OTHER}, OTHER),
+            ({**AGENT_RECORD, "agent_id": "22" * 32}, OWNER),
+        ):
+            for read in (
+                lambda: self.store.current(changed),
+                lambda: self.store.history(changed),
+                lambda: self.store.version(changed, 1),
+            ):
+                with self.assertRaises(PolicyError) as denied:
+                    read()
+                self.assertEqual((denied.exception.status, denied.exception.code), (404, "POLICY_NOT_FOUND"))
+                self.assertNotIn(original["policy_hash"], str(denied.exception))
+                self.assertNotIn(original["policy_id"], str(denied.exception))
+            with self.assertRaises(PolicyError) as denied:
+                self.store.mutate(changed, "CREATE", first, actor)
+            self.assertEqual((denied.exception.status, denied.exception.code), (404, "POLICY_NOT_FOUND"))
+            self.assertNotIn(original["policy_hash"], str(denied.exception))
+        self.assertEqual(len(self.store.history(AGENT_RECORD)), 2)
+        retry, created = self.store.mutate(AGENT_RECORD, "CREATE", first, OWNER)
+        self.assertFalse(created)
+        self.assertEqual(retry["policy_hash"], original["policy_hash"])
+        self.assertEqual(retry["version"], 1)
+        self.assertEqual(len(self.store.history(AGENT_RECORD)), 2)
+
+    def test_other_agent_never_receives_a_foreign_policy_version(self):
+        first = body()
+        first_policy = self.apply("CREATE", first)
+        second_agent = {**AGENT_RECORD, "agent_account": MINT_TWO, "agent_id": "33" * 32}
+        second_body = body("CREATE", 0, "00000002")
+        second_policy = self.store.mutate(second_agent, "CREATE", second_body, OWNER)[0]
+        self.assertNotEqual(first_policy["policy_id"], second_policy["policy_id"])
+        self.assertEqual(self.store.current(second_agent)["policy_id"], second_policy["policy_id"])
+        self.assertEqual(self.store.history(second_agent)[0]["policy_id"], second_policy["policy_id"])
+        self.assertEqual(self.store.version(second_agent, 1)["policy_id"], second_policy["policy_id"])
+        with self.assertRaises(PolicyError) as denied:
+            self.store.mutate(second_agent, "CREATE", first, OWNER)
+        self.assertEqual((denied.exception.status, denied.exception.code), (409, "IDEMPOTENCY_CONFLICT"))
+        self.assertNotIn(first_policy["policy_hash"], str(denied.exception))
+        self.assertNotIn(first_policy["policy_id"], str(denied.exception))
+        self.assertEqual(len(self.store.history(second_agent)), 1)
+
+    def test_policy_id_and_context_must_match_immutable_identity(self):
+        first = body()
+        self.apply("CREATE", first)
+        original_row = dict(self.store._policy_row(AGENT))
+        for changed in (
+            {**original_row, "policy_id": "bp_" + "0" * 32},
+            {**original_row, "program_id": OTHER},
+        ):
+            with mock.patch.object(self.store, "_policy_row", return_value=changed):
+                for read in (
+                    lambda: self.store.current(AGENT_RECORD),
+                    lambda: self.store.history(AGENT_RECORD),
+                    lambda: self.store.version(AGENT_RECORD, 1),
+                    lambda: self.store.mutate(AGENT_RECORD, "CREATE", first, OWNER),
+                ):
+                    with self.assertRaises(PolicyError) as denied:
+                        read()
+                    self.assertEqual((denied.exception.status, denied.exception.code), (404, "POLICY_NOT_FOUND"))
+
     def test_signature_binds_body_method_path_owner_and_freshness(self):
         value = body()
         path = f"/v1/agents/{AGENT}/budget-policy"
