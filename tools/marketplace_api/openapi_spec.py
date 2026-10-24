@@ -78,6 +78,21 @@ def spending_write():
     return result
 
 
+def approval_write(summary, with_id=False):
+    result = operation(summary, ref("SpendingApprovalResponse"),
+                       (("AgentId", "ApprovalId") if with_id else ("AgentId",)) +
+                       ("EconomicSigner", "EconomicTimestamp", "EconomicSignature"))
+    result["requestBody"] = {"required": True, "content": {"application/json": {"schema": ref("SpendingApprovalMutation")}}}
+    result["responses"].update({
+        "201": response(ref("SpendingApprovalResponse"), "Owner review opened"),
+        "401": response(ref("Error"), "Invalid or expired owner signature"),
+        "403": response(ref("Error"), "Signer is not current AgentAccount owner"),
+        "409": response(ref("Error"), "Identity, policy, idempotency, or concurrent state conflict"),
+        "422": response(ref("Error"), "Forbidden approval transition or denied decision"),
+    })
+    return result
+
+
 def build():
     uint64 = {
         "type": "string",
@@ -196,6 +211,57 @@ def build():
             }, "additionalProperties": True},
         "SpendingDecisionResponse": {"type": "object", "properties": {"data": ref("SpendingDecision"), "meta": ref("Meta")}},
         "SpendingDecisionListResponse": {"type": "object", "properties": {"data": {"type": "array", "items": ref("SpendingDecision")}, "meta": ref("Meta")}},
+        "SpendingApprovalMutation": {
+            "type": "object", "additionalProperties": False,
+            "required": ["agent_account", "agent_id", "owner_pubkey", "proposal_id", "proposal_hash",
+                         "decision_id", "decision_hash", "policy_id", "policy_version", "policy_hash",
+                         "network", "genesis_hash", "program_id", "token_mint", "recipient_pubkey",
+                         "amount_base_units_str", "economic_snapshot_hash", "action", "issued_at",
+                         "expires_at", "nonce", "idempotency_key", "reason"],
+            "properties": {
+                "agent_account": ref("Pubkey"), "agent_id": {"type": "string"},
+                "owner_pubkey": ref("Pubkey"), "proposal_id": {"type": "string"},
+                "proposal_hash": {"type": "string"}, "decision_id": {"type": "string"},
+                "decision_hash": {"type": "string"}, "policy_id": {"type": "string"},
+                "policy_version": {"type": "integer"}, "policy_hash": {"type": "string"},
+                "network": {"type": "string"}, "genesis_hash": ref("Pubkey"),
+                "program_id": ref("Pubkey"), "token_mint": ref("Pubkey"),
+                "recipient_pubkey": ref("Pubkey"), "amount_base_units_str": ref("Uint64"),
+                "economic_snapshot_hash": {"type": "string"},
+                "action": {"type": "string", "enum": ["OPEN", "APPROVE", "REJECT", "REVOKE"]},
+                "issued_at": {"type": "integer"}, "expires_at": {"type": "integer"},
+                "nonce": {"type": "string"}, "idempotency_key": {"type": "string"},
+                "reason": {"type": "string", "maxLength": 500},
+            },
+        },
+        "SpendingApproval": {"type": "object", "required": ["approval_id", "proposal_id", "decision_id",
+            "approval_status", "effective_status", "financial_eligibility", "is_executable"],
+            "properties": {
+                "approval_id": {"type": "string"}, "proposal_id": {"type": "string"},
+                "decision_id": {"type": "string"}, "agent_account": ref("Pubkey"),
+                "owner_pubkey": ref("Pubkey"), "amount_base_units_str": ref("Uint64"),
+                "approval_status": {"type": "string"}, "effective_status": {"type": "string"},
+                "financial_eligibility": {"type": "string"},
+                "is_currently_applicable": {"type": "boolean"}, "is_executable": {"const": False},
+            }, "additionalProperties": True},
+        "SpendingApprovalEvent": {"type": "object", "properties": {
+            "event_id": {"type": "string"}, "approval_id": {"type": "string"},
+            "action": {"type": "string"}, "actor_pubkey": ref("Pubkey"),
+            "signature": {"type": "string"}, "signature_message_hash": {"type": "string"},
+            "signature_message": {"type": "string"}, "signed_body_json": {"type": "string"},
+            "event_hash": {"type": "string"}, "previous_event_hash": {"type": ["string", "null"]},
+        }, "additionalProperties": True},
+        "SpendingApprovalContext": {"type": "object", "properties": {
+            "approval_id": {"type": "string"}, "proposal": ref("SpendingProposal"),
+            "decision": ref("SpendingDecision"), "proposal_hash": {"type": "string"},
+            "decision_hash": {"type": "string"},
+        }, "additionalProperties": True},
+        "SpendingApprovalResponse": {"type": "object", "properties": {"data": ref("SpendingApproval"), "meta": ref("Meta")}},
+        "SpendingApprovalListResponse": {"type": "object", "properties": {
+            "data": {"type": "array", "items": ref("SpendingApproval")}, "meta": ref("Meta")}},
+        "SpendingApprovalHistoryResponse": {"type": "object", "properties": {
+            "data": {"type": "array", "items": ref("SpendingApprovalEvent")}, "meta": ref("Meta")}},
+        "SpendingApprovalContextResponse": {"type": "object", "properties": {"data": ref("SpendingApprovalContext"), "meta": ref("Meta")}},
         "Agent": {
             "type": "object",
             "required": [
@@ -811,6 +877,10 @@ def build():
             "required": True,
             "schema": ref("Pubkey"),
         },
+        "ApprovalId": {"name": "approval_id", "in": "path", "required": True,
+                       "schema": {"type": "string", "pattern": "^sa_[0-9a-f]{32}$"}},
+        "DecisionId": {"name": "decision_id", "in": "path", "required": True,
+                       "schema": {"type": "string", "pattern": "^sd_[0-9a-f]{32}$"}},
         "WorkOrderId": {
             "name": "work_order_id",
             "in": "path",
@@ -1161,6 +1231,33 @@ def build():
             "/v1/agents/{agent_id}/spending-evaluations/{decision_id}": {
                 "get": operation("Read a private historical spending decision", ref("SpendingDecisionResponse"),
                                  ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+            },
+            "/v1/agents/{agent_id}/spending-approvals": {
+                "get": operation("List private owner consent reviews", ref("SpendingApprovalListResponse"),
+                                 ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+                "post": approval_write("Open an owner consent review without executing payment"),
+            },
+            "/v1/agents/{agent_id}/spending-approvals/context/{decision_id}": {
+                "get": operation("Read the exact stored proposal and decision context for owner signing",
+                                 ref("SpendingApprovalContextResponse"),
+                                 ("AgentId", "DecisionId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+            },
+            "/v1/agents/{agent_id}/spending-approvals/{approval_id}": {
+                "get": operation("Read a private owner consent review", ref("SpendingApprovalResponse"),
+                                 ("AgentId", "ApprovalId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+            },
+            "/v1/agents/{agent_id}/spending-approvals/{approval_id}/history": {
+                "get": operation("Read immutable signed approval events", ref("SpendingApprovalHistoryResponse"),
+                                 ("AgentId", "ApprovalId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+            },
+            "/v1/agents/{agent_id}/spending-approvals/{approval_id}/approve": {
+                "post": approval_write("Record owner approval without executing payment", True),
+            },
+            "/v1/agents/{agent_id}/spending-approvals/{approval_id}/reject": {
+                "post": approval_write("Reject an owner consent review", True),
+            },
+            "/v1/agents/{agent_id}/spending-approvals/{approval_id}/revoke": {
+                "post": approval_write("Revoke a prior owner approval", True),
             },
             "/v1/agents/{agent_id}/solvency": {"get": operation(
                 "Calculate verified per-asset solvency", ref("SolvencyListResponse"),

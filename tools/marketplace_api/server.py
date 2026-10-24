@@ -27,6 +27,9 @@ from tools.economic_ledger.ledger import EconomicLedger
 from tools.economic_ledger.spending_decisions import (
     DecisionError, SpendingDecisionStore, SpendingProposal, verify_evaluation,
 )
+from tools.economic_ledger.spending_approvals import (
+    ApprovalError, SpendingApprovalStore, validate_mutation, verify_approval,
+)
 from tools.economic_ledger.solvency import assess_agent, assessment_history, methodology, save_assessment
 from tools.economic_ledger.models import (
     LedgerValidationError,
@@ -63,6 +66,16 @@ def get_spending_store(provider=None) -> SpendingDecisionStore:
         if not hasattr(ledger, "_spending_decision_store"):
             ledger._spending_decision_store = SpendingDecisionStore(ledger, policy_store)
     return ledger._spending_decision_store
+
+
+def get_approval_store(provider=None) -> SpendingApprovalStore:
+    ledger = get_ledger(provider)
+    policy_store = get_policy_store(provider)
+    spending_store = get_spending_store(provider)
+    with _POLICY_STORE_INIT_LOCK:
+        if not hasattr(ledger, "_spending_approval_store"):
+            ledger._spending_approval_store = SpendingApprovalStore(ledger, policy_store, spending_store)
+    return ledger._spending_approval_store
 
 
 def authorize_agent_access(agent: dict, headers: dict | None, agent_account: str | None = None) -> str:
@@ -409,17 +422,20 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
 
     if (
         entity == "marketplace" and len(pieces) != 2
-    ) or len(pieces) > 5:
+    ) or len(pieces) > 6:
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if len(pieces) == 4 and not (
         (entity == "work-orders" and pieces[3] == "matches")
-        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy", "spending-evaluations"))
+        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy", "spending-evaluations", "spending-approvals"))
     ):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
     if len(pieces) == 5 and (entity != "agents" or
        (pieces[3] == "solvency" and pieces[4] not in ("history", "methodology")) or
-       pieces[3] not in ("solvency", "budget-policy", "spending-evaluations")):
+       pieces[3] not in ("solvency", "budget-policy", "spending-evaluations", "spending-approvals")):
+        raise ApiError(404, "NOT_FOUND", "Unknown route")
+    if len(pieces) == 6 and (entity != "agents" or pieces[3] != "spending-approvals" or
+                             pieces[5] != "history" and pieces[4] != "context"):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if len(pieces) >= 3 and entity not in ("economic-movements", "costs", "reserves"):
@@ -548,6 +564,22 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
             try:
                 data = store.list(agent) if len(pieces) == 4 else store.get(agent, pieces[4])
             except DecisionError as exc:
+                raise ApiError(exc.status, exc.code, str(exc)) from exc
+            return 200, {"data": data, "meta": meta}
+
+        if len(pieces) >= 4 and pieces[3] == "spending-approvals":
+            authorize_agent_access(agent, headers, pieces[2])
+            store = get_approval_store(provider)
+            try:
+                if len(pieces) == 4:
+                    data = store.list(agent)
+                elif len(pieces) == 5:
+                    data = store.get(agent, pieces[4])
+                elif pieces[4] == "context":
+                    data = store.context(agent, pieces[5])
+                else:
+                    data = store.history(agent, pieces[4])
+            except ApprovalError as exc:
                 raise ApiError(exc.status, exc.code, str(exc)) from exc
             return 200, {"data": data, "meta": meta}
 
@@ -945,6 +977,46 @@ def spending_evaluation_route(method: str, url: str, provider, headers, body: di
     return (201 if created else 200), {"data": data, "meta": out_meta}
 
 
+def spending_approval_route(method: str, url: str, provider, headers, body: dict) -> tuple[int, dict]:
+    parts = urlsplit(url)
+    pieces = [part for part in parts.path.split("/") if part]
+    if method != "POST" or parts.query or parts.fragment or pieces[:2] != ["v1", "agents"] or len(pieces) not in (4, 6):
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Only signed owner approval actions are supported")
+    if pieces[3] != "spending-approvals":
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Unsupported approval route")
+    action = "OPEN" if len(pieces) == 4 else {"approve": "APPROVE", "reject": "REJECT", "revoke": "REVOKE"}.get(pieces[5])
+    if action is None:
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Unsupported approval action")
+    require_pubkey(pieces[2])
+    snapshot = provider.snapshot()
+    agent = next((item for item in snapshot["agents"] if item["agent_account"] == pieces[2]), None)
+    if agent is None:
+        raise ApiError(404, "AGENT_NOT_FOUND", "Agent not registered in current snapshot")
+    try:
+        validate_mutation(body, action)
+        actor, signature, message_hash = verify_approval(agent, method, parts.path, body, headers)
+        latest = provider.snapshot()
+        latest_agent = next((item for item in latest["agents"] if item["agent_account"] == pieces[2]), None)
+        if (latest_agent is None or latest_agent.get("owner") != actor or
+                latest_agent.get("agent_id") != agent.get("agent_id")):
+            raise ApprovalError(403, "OWNER_CHANGED", "Agent identity changed before approval")
+        def current_agent():
+            fresh = provider.snapshot()
+            return next((item for item in fresh["agents"] if item["agent_account"] == pieces[2]), None)
+        store = get_approval_store(provider)
+        if len(pieces) == 6:
+            expected = store.context(agent, body["decision_id"])["approval_id"]
+            if pieces[4] != expected:
+                raise ApprovalError(404, "APPROVAL_NOT_FOUND", "Approval not found")
+        data, created = store.mutate(agent, action, body, actor, signature, message_hash,
+                                     identity_supplier=current_agent)
+    except ApprovalError as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
+    out_meta = metadata(latest)
+    out_meta["read_only"] = False
+    return (201 if created and action == "OPEN" else 200), {"data": data, "meta": out_meta}
+
+
 class LiveProvider:
     def __init__(
         self,
@@ -1098,7 +1170,9 @@ def handler_for(provider):
                            and route_parts[3] == "budget-policy")
             evaluation_path = (method == "POST" and len(route_parts) == 4 and
                                route_parts[:2] == ["v1", "agents"] and route_parts[3] == "spending-evaluations")
-            if not policy_path and not evaluation_path:
+            approval_path = (method == "POST" and len(route_parts) in (4, 6) and
+                             route_parts[:2] == ["v1", "agents"] and route_parts[3] == "spending-approvals")
+            if not policy_path and not evaluation_path and not approval_path:
                 self.unsupported()
                 return
             try:
@@ -1121,6 +1195,8 @@ def handler_for(provider):
                     raise ApiError(400, "INVALID_BODY", "Expected JSON object")
                 if evaluation_path:
                     status, response = spending_evaluation_route(method, self.path, provider, self.headers, body)
+                elif approval_path:
+                    status, response = spending_approval_route(method, self.path, provider, self.headers, body)
                 else:
                     status, response = policy_mutation_route(method, self.path, provider, self.headers, body)
                 self.respond(status, response)
