@@ -31,6 +31,9 @@ from tools.economic_ledger.spending_approvals import (
     ApprovalError, SpendingApprovalStore, validate_mutation, verify_approval,
 )
 from tools.economic_ledger.solvency import assess_agent, assessment_history, methodology, save_assessment
+from tools.economic_ledger.investible_surplus import (
+    SurplusError, assess_agent_surplus, methodology as surplus_methodology,
+)
 from tools.economic_ledger.models import (
     LedgerValidationError,
     MovementNature,
@@ -417,6 +420,8 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
     elif entity == "agents" and len(pieces) in (4, 5) and pieces[3] == "solvency":
         allowed = {"mint", "token_mint", "network", "genesis", "genesis_hash", "program_id",
                    "window", "from_ts", "to_ts", "consolidated", "limit"}
+    elif entity == "agents" and len(pieces) == 4 and pieces[3] == "investible-surplus":
+        allowed = {"network", "genesis_hash", "program_id", "token_mint", "scenario", "horizon_days"}
 
     query = arguments(parts.query, allowed)
 
@@ -427,12 +432,13 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
 
     if len(pieces) == 4 and not (
         (entity == "work-orders" and pieces[3] == "matches")
-        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy", "spending-evaluations", "spending-approvals"))
+        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy", "spending-evaluations", "spending-approvals", "investible-surplus"))
     ):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
     if len(pieces) == 5 and (entity != "agents" or
        (pieces[3] == "solvency" and pieces[4] not in ("history", "methodology")) or
-       pieces[3] not in ("solvency", "budget-policy", "spending-evaluations", "spending-approvals")):
+       (pieces[3] == "investible-surplus" and pieces[4] != "methodology") or
+       pieces[3] not in ("solvency", "budget-policy", "spending-evaluations", "spending-approvals", "investible-surplus")):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
     if len(pieces) == 6 and (entity != "agents" or pieces[3] != "spending-approvals" or
                              pieces[5] != "history" and pieces[4] != "context"):
@@ -582,6 +588,31 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
             except ApprovalError as exc:
                 raise ApiError(exc.status, exc.code, str(exc)) from exc
             return 200, {"data": data, "meta": meta}
+
+        if pieces[3:4] == ["investible-surplus"]:
+            authorize_agent_access(agent, headers, pieces[2])
+            if len(pieces) == 5:
+                return 200, {"data": surplus_methodology(), "meta": meta}
+            needed = ("network", "genesis_hash", "program_id", "token_mint")
+            if any(not query.get(key) for key in needed):
+                raise ApiError(400, "INCOMPLETE_CONTEXT", "Explicit network, genesis, program and mint are required")
+            scenario = query.get("scenario", "BASE")
+            horizon = query.get("horizon_days", "30")
+            if scenario not in ("BASE", "CONSERVATIVE", "STRESS") or horizon not in ("7", "30", "90"):
+                raise ApiError(400, "INVALID_SCENARIO", "Expected BASE, CONSERVATIVE or STRESS and 7, 30 or 90 days")
+            try:
+                result = assess_agent_surplus(get_ledger(provider), get_policy_store(provider), agent,
+                    network=query["network"], genesis_hash=query["genesis_hash"],
+                    program_id=query["program_id"], token_mint=query["token_mint"],
+                    scenario=scenario, horizon_days=int(horizon))
+            except SurplusError as exc:
+                raise ApiError(exc.status, exc.code, str(exc)) from exc
+            latest_agent = next((item for item in provider.snapshot()["agents"]
+                                 if item["agent_account"] == pieces[2]), None)
+            if latest_agent is None or any(latest_agent.get(key) != agent.get(key)
+                                           for key in ("agent_account", "agent_id", "owner")):
+                raise ApiError(409, "IDENTITY_CHANGED", "Agent identity changed during assessment")
+            return 200, {"data": result, "meta": meta}
 
         if len(pieces) >= 4 and pieces[3] == "budget-policy":
             authorize_agent_access(agent, headers, pieces[2])

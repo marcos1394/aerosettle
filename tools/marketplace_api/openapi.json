@@ -2720,6 +2720,146 @@
         }
       }
     },
+    "/v1/agents/{agent_id}/investible-surplus": {
+      "get": {
+        "summary": "Assess advisory investible surplus for one exact monetary context",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/SurplusNetwork"
+          },
+          {
+            "$ref": "#/components/parameters/SurplusGenesis"
+          },
+          {
+            "$ref": "#/components/parameters/SurplusProgram"
+          },
+          {
+            "$ref": "#/components/parameters/SurplusMint"
+          },
+          {
+            "$ref": "#/components/parameters/SurplusScenario"
+          },
+          {
+            "$ref": "#/components/parameters/SurplusHorizon"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestibleSurplusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/investible-surplus/methodology": {
+      "get": {
+        "summary": "Read conservative surplus methodology and scenario assumptions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestibleSurplusMethodologyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/costs/{cost_id}": {
       "get": {
         "summary": "Get operational cost detail",
@@ -5252,6 +5392,163 @@
             "$ref": "#/components/schemas/Meta"
           }
         }
+      },
+      "InvestibleSurplusAssessment": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "assessment_id",
+          "methodology_version",
+          "agent_account",
+          "agent_id",
+          "owner_pubkey",
+          "network",
+          "genesis_hash",
+          "program_id",
+          "token_mint",
+          "scenario",
+          "continuity_horizon_days",
+          "calculation_status",
+          "provenance",
+          "estimated_investible_surplus_base_units_str",
+          "verified_investible_surplus_base_units_str",
+          "deductions",
+          "economic_snapshot_hash",
+          "assessment_hash",
+          "is_executable"
+        ],
+        "properties": {
+          "assessment_id": {
+            "type": "string"
+          },
+          "methodology_version": {
+            "type": "string"
+          },
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "owner_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "scenario": {
+            "type": "string",
+            "enum": [
+              "BASE",
+              "CONSERVATIVE",
+              "STRESS"
+            ]
+          },
+          "continuity_horizon_days": {
+            "type": "integer",
+            "enum": [
+              7,
+              30,
+              90
+            ]
+          },
+          "calculation_status": {
+            "type": "string",
+            "enum": [
+              "VERIFIED",
+              "ESTIMATED",
+              "INSUFFICIENT_DATA",
+              "STALE_DATA"
+            ]
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "treasury_available_base_units_str": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Uint64"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimated_investible_surplus_base_units_str": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Uint64"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verified_investible_surplus_base_units_str": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Uint64"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deductions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "economic_snapshot_hash": {
+            "type": "string"
+          },
+          "assessment_hash": {
+            "type": "string"
+          },
+          "is_executable": {
+            "const": false
+          }
+        }
+      },
+      "InvestibleSurplusResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/InvestibleSurplusAssessment"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "InvestibleSurplusMethodologyResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
       }
     },
     "parameters": {
@@ -5279,6 +5576,66 @@
         "schema": {
           "type": "string",
           "pattern": "^sd_[0-9a-f]{32}$"
+        }
+      },
+      "SurplusNetwork": {
+        "name": "network",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "SurplusGenesis": {
+        "name": "genesis_hash",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Pubkey"
+        }
+      },
+      "SurplusProgram": {
+        "name": "program_id",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Pubkey"
+        }
+      },
+      "SurplusMint": {
+        "name": "token_mint",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Pubkey"
+        }
+      },
+      "SurplusScenario": {
+        "name": "scenario",
+        "in": "query",
+        "required": false,
+        "description": "Explicit sensitivity scenario; defaults to BASE",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "BASE",
+            "CONSERVATIVE",
+            "STRESS"
+          ]
+        }
+      },
+      "SurplusHorizon": {
+        "name": "horizon_days",
+        "in": "query",
+        "required": false,
+        "description": "Operational continuity horizon; defaults to 30 days",
+        "schema": {
+          "type": "integer",
+          "enum": [
+            7,
+            30,
+            90
+          ]
         }
       },
       "WorkOrderId": {

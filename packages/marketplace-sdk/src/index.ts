@@ -382,6 +382,49 @@ export interface SolvencyFilters {
   window?: 7 | 30 | 90; fromTs?: number; toTs?: number; consolidated?: boolean;
 }
 
+export type InvestibleSurplusScenario = 'BASE' | 'CONSERVATIVE' | 'STRESS';
+export type InvestibleSurplusStatus = 'VERIFIED' | 'ESTIMATED' | 'INSUFFICIENT_DATA' | 'STALE_DATA';
+export interface InvestibleSurplusComponent {
+  component: string;
+  amount_base_units_str: U64String | null;
+  source: string;
+  reference_ids: string[];
+  already_reflected_in_treasury: boolean;
+  applied_to_surplus: boolean;
+  reason: string;
+}
+export interface InvestibleSurplusAssessment {
+  assessment_id: string; assessment_version: number; methodology_version: string;
+  agent_account: string; agent_id: string; owner_pubkey: string;
+  network: string; genesis_hash: string; program_id: string; token_mint: string;
+  assessed_at: number; data_as_of: number | null; window_start: number | null; window_end: number | null;
+  scenario: InvestibleSurplusScenario; continuity_horizon_days: 7 | 30 | 90;
+  scenario_assumptions: { opex_multiplier_bps: number; liquidity_haircut_bps: number;
+    additional_liability_buffer_base_units_str: U64String; continuity_horizon_days: number;
+    opex_window_estimation_assumed: boolean };
+  treasury_available_base_units_str: U64String | null;
+  restricted_capital_base_units_str: U64String;
+  accounting_reserved_base_units_str: U64String | null;
+  accrued_obligations_base_units_str: U64String | null;
+  unfunded_policy_reserve_base_units_str: U64String | null;
+  pending_commitments_base_units_str: U64String | null;
+  operational_buffer_base_units_str: U64String | null;
+  liquidity_haircut_base_units_str: U64String | null;
+  estimated_investible_surplus_base_units_str: U64String | null;
+  verified_investible_surplus_base_units_str: U64String | null;
+  calculation_status: InvestibleSurplusStatus; provenance: string;
+  exclusion_reasons: string[]; evidence_references: string[]; deductions: InvestibleSurplusComponent[];
+  solvency_context: { assessment_id: string | null; calculation_status: string;
+    conatus_ratio: string | null; operating_margin: string | null;
+    runway_days: string | null; provenance: string } | null;
+  policy_id: string; policy_version: number; policy_hash: string;
+  economic_snapshot_hash: string; assessment_hash: string; is_executable: false;
+}
+export interface InvestibleSurplusFilters {
+  network: string; genesis_hash: string; program_id: string; token_mint: string;
+  scenario?: InvestibleSurplusScenario; horizon_days?: 7 | 30 | 90;
+}
+
 export interface EconomicMovementFilters extends Paging {
   nature?: MovementNature;
   status?: MovementStatus;
@@ -880,6 +923,49 @@ function solvencyAssessment(raw: unknown): AgentSolvencyAssessment | MixedAssetC
     nonempty(ref.kind, 'evidence kind'); nonempty(ref.id, 'evidence id'); nonempty(ref.evidence_hash, 'evidence hash');
   });
   return a as unknown as AgentSolvencyAssessment;
+}
+
+function investibleSurplusAssessment(raw: unknown): InvestibleSurplusAssessment {
+  const a = object(raw, 'investible surplus assessment');
+  for (const key of ['assessment_id', 'methodology_version', 'agent_account', 'agent_id',
+    'owner_pubkey', 'network', 'genesis_hash', 'program_id', 'token_mint', 'provenance',
+    'policy_id', 'policy_hash', 'economic_snapshot_hash', 'assessment_hash']) nonempty(a[key], key);
+  for (const key of ['assessment_version', 'assessed_at', 'policy_version', 'continuity_horizon_days']) integer(a[key], key);
+  for (const key of ['data_as_of', 'window_start', 'window_end']) if (a[key] !== null) integer(a[key], key);
+  if (!['BASE', 'CONSERVATIVE', 'STRESS'].includes(nonempty(a.scenario, 'scenario')) ||
+      !['VERIFIED', 'ESTIMATED', 'INSUFFICIENT_DATA', 'STALE_DATA'].includes(nonempty(a.calculation_status, 'calculation_status')) ||
+      ![7, 30, 90].includes(a.continuity_horizon_days as number)) fail('Invalid surplus scenario or status');
+  for (const key of ['treasury_available_base_units_str', 'accounting_reserved_base_units_str',
+    'accrued_obligations_base_units_str', 'unfunded_policy_reserve_base_units_str',
+    'pending_commitments_base_units_str', 'operational_buffer_base_units_str',
+    'liquidity_haircut_base_units_str', 'estimated_investible_surplus_base_units_str',
+    'verified_investible_surplus_base_units_str']) if (a[key] !== null) u64(a[key], key);
+  u64(a.restricted_capital_base_units_str, 'restricted capital');
+  if (a.is_executable !== false ||
+      (a.calculation_status !== 'VERIFIED' && a.verified_investible_surplus_base_units_str !== null) ||
+      (['INSUFFICIENT_DATA', 'STALE_DATA'].includes(a.calculation_status as string) &&
+       a.estimated_investible_surplus_base_units_str !== null)) fail('Unverified surplus cannot be executable or confirmed');
+  const assumptions = object(a.scenario_assumptions, 'scenario assumptions');
+  integer(assumptions.opex_multiplier_bps, 'opex multiplier');
+  integer(assumptions.liquidity_haircut_bps, 'liquidity haircut');
+  u64(assumptions.additional_liability_buffer_base_units_str, 'liability buffer');
+  boolean(assumptions.opex_window_estimation_assumed, 'opex estimation assumption');
+  array(a.exclusion_reasons, 'exclusion reasons');
+  array(a.evidence_references, 'evidence references');
+  if (a.solvency_context !== null) {
+    const s = object(a.solvency_context, 'solvency context');
+    nonempty(s.calculation_status, 'solvency status');
+    nonempty(s.provenance, 'solvency provenance');
+  }
+  array(a.deductions, 'deductions').forEach((item) => {
+    const d = object(item, 'surplus deduction');
+    nonempty(d.component, 'component'); nonempty(d.source, 'source');
+    if (d.amount_base_units_str !== null) u64(d.amount_base_units_str, 'deduction amount');
+    array(d.reference_ids, 'deduction references');
+    boolean(d.already_reflected_in_treasury, 'already reflected');
+    boolean(d.applied_to_surplus, 'applied to surplus');
+  });
+  return a as unknown as InvestibleSurplusAssessment;
 }
 
 function meta(raw: unknown, expectedReadOnly = true): ApiMeta {
@@ -1851,6 +1937,32 @@ export class MarketplaceClient {
       nonempty(m.threshold_config_version, 'threshold_config_version');
       object(m.thresholds, 'thresholds');
       return m as unknown as SolvencyMethodology;
+    });
+  }
+
+  async getAgentInvestibleSurplus(account: string, filters: InvestibleSurplusFilters,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}
+  ): Promise<Detail<InvestibleSurplusAssessment>> {
+    const p = new URLSearchParams();
+    p.set('network', nonempty(filters.network, 'network'));
+    p.set('genesis_hash', pubkey(filters.genesis_hash));
+    p.set('program_id', pubkey(filters.program_id));
+    p.set('token_mint', pubkey(filters.token_mint));
+    p.set('scenario', filters.scenario ?? 'BASE');
+    p.set('horizon_days', String(filters.horizon_days ?? 30));
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/investible-surplus`, p,
+      options.signal, options.authHeaders), investibleSurplusAssessment);
+  }
+
+  async getInvestibleSurplusMethodology(account: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}
+  ): Promise<Detail<Record<string, unknown>>> {
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/investible-surplus/methodology`,
+      undefined, options.signal, options.authHeaders), raw => {
+      const value = object(raw, 'surplus methodology');
+      nonempty(value.methodology_version, 'methodology version');
+      object(value.scenarios, 'scenarios');
+      return value;
     });
   }
 
