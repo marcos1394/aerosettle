@@ -598,6 +598,911 @@
         }
       }
     },
+    "/v1/agents/{agent_id}/budget-policy": {
+      "get": {
+        "summary": "Read current owner budget policy and accounting reserve comparison",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create off-chain budget policy draft",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Policy created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid mutation signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, nonce, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid policy transition or context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetPolicyMutation"
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Create a new immutable policy configuration version",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Policy created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid mutation signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, nonce, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid policy transition or context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetPolicyMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/budget-policy/history": {
+      "get": {
+        "summary": "Read immutable policy version history",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyHistoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/budget-policy/{version}": {
+      "get": {
+        "summary": "Read a historical policy version",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/budget-policy/activate": {
+      "post": {
+        "summary": "Activate a draft policy",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Policy created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid mutation signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, nonce, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid policy transition or context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetPolicyMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/budget-policy/pause": {
+      "post": {
+        "summary": "Pause an active policy",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Policy created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid mutation signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, nonce, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid policy transition or context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetPolicyMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/budget-policy/resume": {
+      "post": {
+        "summary": "Reactivate a paused policy",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Policy created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid mutation signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, nonce, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid policy transition or context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetPolicyMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/budget-policy/revoke": {
+      "post": {
+        "summary": "Permanently revoke a policy",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Policy created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetPolicyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid mutation signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, nonce, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid policy transition or context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetPolicyMutation"
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{agent_id}/solvency": {
       "get": {
         "summary": "Calculate verified per-asset solvency",
@@ -1325,6 +2230,197 @@
         "pattern": "^(0|[1-9][0-9]*)$",
         "description": "Unsigned u64 encoded as decimal string",
         "maxLength": 20
+      },
+      "AssetBudgetRule": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token_mint",
+          "max_per_operation_base_units_str",
+          "max_daily_spend_base_units_str",
+          "minimum_reserve_base_units_str",
+          "enabled"
+        ],
+        "properties": {
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "max_per_operation_base_units_str": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "max_daily_spend_base_units_str": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "minimum_reserve_base_units_str": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BudgetPolicyMutation": {
+        "type": "object",
+        "description": "Create/update require all configuration fields; lifecycle actions require only control fields.",
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "revision_reason": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "asset_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetBudgetRule"
+            }
+          },
+          "allowed_recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pubkey"
+            }
+          },
+          "valid_from": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AgentBudgetPolicy": {
+        "type": "object",
+        "required": [
+          "policy_id",
+          "agent_account",
+          "owner_pubkey",
+          "version",
+          "status",
+          "asset_rules",
+          "allowed_recipients",
+          "policy_hash",
+          "network",
+          "genesis_hash",
+          "program_id",
+          "valid_from",
+          "expires_at"
+        ],
+        "properties": {
+          "policy_id": {
+            "type": "string"
+          },
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "owner_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "PAUSED",
+              "REVOKED"
+            ]
+          },
+          "effective_status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "PAUSED",
+              "REVOKED",
+              "EXPIRED"
+            ]
+          },
+          "asset_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetBudgetRule"
+            }
+          },
+          "allowed_recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pubkey"
+            }
+          },
+          "valid_from": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "policy_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "reserve_comparison": {
+            "type": "array",
+            "description": "Off-chain policy target compared with separate ledger records"
+          }
+        },
+        "additionalProperties": true
+      },
+      "BudgetPolicyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AgentBudgetPolicy"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "BudgetPolicyHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBudgetPolicy"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
       },
       "Agent": {
         "type": "object",

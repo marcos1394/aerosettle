@@ -54,6 +54,7 @@ import {
 } from './data';
 import '../../styles/agents.css';
 import { LiveSolvencyPanel } from './LiveSolvencyPanel';
+import { AgentBudgetPolicyPanel } from './AgentBudgetPolicyPanel';
 
 export default function AgentDetail() {
   const { agentId = '' } = useParams();
@@ -1073,6 +1074,7 @@ function LiveAgentProfile({ agentId }: { agentId: string }) {
       {agent && (
         <>
           <LiveSolvencyPanel account={agentId} owner={String(agent.owner)} />
+          <AgentBudgetPolicyPanel key={agentId} account={agentId} owner={String(agent.owner)} />
           <section className="panel">
             <div className="section-heading">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

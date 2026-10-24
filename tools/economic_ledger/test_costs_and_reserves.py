@@ -2107,7 +2107,7 @@ class AgentCostsAndReservesTests(unittest.TestCase):
 
     def test_migrations_fresh_db_and_existing_004_db(self):
         """Requirement 6: Verifies that migrations work identically on both:
-        1. A completely fresh database running 001..006 sequentially.
+        1. A completely fresh database running all current migrations sequentially.
         2. An existing database where 004 had previously run and assigned the default genesis,
            with 005 properly correcting unlinked Localnet records to PENDING_RESOLUTION.
         """
@@ -2116,9 +2116,9 @@ class AgentCostsAndReservesTests(unittest.TestCase):
         # Case 1: Fresh database
         fresh_db = Path(temp_dir.name) / "fresh.db"
         with EconomicLedger(fresh_db, reconciliation_verifier=self.test_verifier) as led_fresh:
-            # Tables exist, migrations 001..008 applied
+            # Tables exist, migrations 001..009 applied
             cur = led_fresh._conn.execute("SELECT MAX(version) FROM schema_migrations;")
-            self.assertEqual(cur.fetchone()[0], 8)
+            self.assertEqual(cur.fetchone()[0], 9)
 
         # Case 2: Existing database that previously executed 004 with default Localnet genesis
         legacy_db = Path(temp_dir.name) / "legacy_004.db"

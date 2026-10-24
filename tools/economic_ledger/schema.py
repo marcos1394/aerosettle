@@ -13,7 +13,7 @@ class MigrationError(Exception):
 
 
 def split_sql_statements(sql_text: str) -> list[str]:
-    """Splits an SQL script into executable statements, stripping line comments."""
+    """Split complete SQLite statements, including trigger bodies."""
     clean_lines = []
     for line in sql_text.splitlines():
         trimmed = line.strip()
@@ -23,10 +23,16 @@ def split_sql_statements(sql_text: str) -> list[str]:
     clean_sql = "\n".join(clean_lines)
 
     statements = []
-    for raw_stmt in clean_sql.split(";"):
-        stmt = raw_stmt.strip()
-        if stmt:
-            statements.append(stmt)
+    pending = ""
+    for char in clean_sql:
+        pending += char
+        if char == ";" and sqlite3.complete_statement(pending):
+            stmt = pending.strip()
+            if stmt:
+                statements.append(stmt)
+            pending = ""
+    if pending.strip():
+        raise MigrationError("Incomplete SQL migration statement")
     return statements
 
 

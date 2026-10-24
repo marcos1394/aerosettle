@@ -28,7 +28,7 @@ export interface ApiMeta {
   commitment: string;
   chain_now_unix: number;
   atomic_snapshot: boolean;
-  read_only: true;
+  read_only: boolean;
   matching_engine: 'rust-epic-3.1';
   rpc_context_slots: Record<string, unknown>;
 }
@@ -397,6 +397,77 @@ export interface PrivateEconomicRequestOptions {
   signal?: AbortSignal;
 }
 
+export type BudgetPolicyStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'REVOKED';
+
+export interface AssetBudgetRule {
+  token_mint: string;
+  max_per_operation_base_units_str: U64String;
+  max_daily_spend_base_units_str: U64String;
+  minimum_reserve_base_units_str: U64String;
+  enabled: boolean;
+}
+
+export interface BudgetReserveComparison {
+  token_mint: string;
+  policy_minimum_reserve_base_units_str: U64String;
+  accounting_reserved_base_units_str: U64String;
+  reserve_shortfall_base_units_str: U64String;
+  ledger_available_balance_str: string | null;
+  ledger_accrued_obligations_base_units_str: string | null;
+  policy_target_is_not_locked_funds: true;
+}
+
+export interface AgentBudgetPolicy {
+  policy_id: string;
+  agent_account: string;
+  agent_id: string;
+  owner_pubkey: string;
+  network: string;
+  genesis_hash: string;
+  program_id: string;
+  version: number;
+  status: BudgetPolicyStatus;
+  effective_status: BudgetPolicyStatus | 'EXPIRED';
+  asset_rules: AssetBudgetRule[];
+  allowed_recipients: string[];
+  valid_from: number;
+  expires_at: number;
+  created_at: number;
+  created_by: string;
+  revision_reason: string | null;
+  policy_hash: string;
+  idempotency_key: string;
+  action: 'CREATE' | 'UPDATE' | 'ACTIVATE' | 'PAUSE' | 'RESUME' | 'REVOKE';
+  is_currently_valid: boolean;
+  reserve_comparison?: BudgetReserveComparison[];
+}
+
+export type BudgetPolicyVersion = AgentBudgetPolicy;
+export type BudgetPolicyEvent = Pick<AgentBudgetPolicy, 'version' | 'action' | 'created_at' | 'created_by' | 'policy_hash'>;
+
+export interface BudgetPolicyMutationControl {
+  expected_version: number;
+  idempotency_key: string;
+  nonce: string;
+  revision_reason?: string;
+}
+
+export interface BudgetPolicyConfiguration {
+  network: string;
+  genesis_hash: string;
+  program_id: string;
+  asset_rules: AssetBudgetRule[];
+  allowed_recipients: string[];
+  valid_from: number;
+  expires_at: number;
+}
+
+export type BudgetPolicyMutationRequest = BudgetPolicyMutationControl & BudgetPolicyConfiguration;
+export interface SignedPolicyRequestOptions {
+  authHeaders: Record<string, string>;
+  signal?: AbortSignal;
+}
+
 export interface RecordMovementInput {
   idempotency_key: string;
   agent_account: string;
@@ -669,7 +740,7 @@ function solvencyAssessment(raw: unknown): AgentSolvencyAssessment | MixedAssetC
   return a as unknown as AgentSolvencyAssessment;
 }
 
-function meta(raw: unknown): ApiMeta {
+function meta(raw: unknown, expectedReadOnly = true): ApiMeta {
   const m = object(raw, 'metadata');
 
   nonempty(m.program_id, 'program_id');
@@ -678,7 +749,7 @@ function meta(raw: unknown): ApiMeta {
   boolean(m.atomic_snapshot, 'atomic_snapshot');
 
   if (
-    m.read_only !== true ||
+    m.read_only !== expectedReadOnly ||
     m.matching_engine !== 'rust-epic-3.1'
   ) {
     fail('Unexpected matching authority');
@@ -687,6 +758,63 @@ function meta(raw: unknown): ApiMeta {
   object(m.rpc_context_slots, 'rpc_context_slots');
 
   return m as unknown as ApiMeta;
+}
+
+function budgetPolicy(raw: unknown): AgentBudgetPolicy {
+  const p = object(raw, 'budget policy');
+  for (const key of ['policy_id', 'agent_account', 'agent_id', 'owner_pubkey',
+    'network', 'genesis_hash', 'program_id', 'policy_hash', 'created_by',
+    'idempotency_key', 'action']) nonempty(p[key], key);
+  const version = integer(p.version, 'version');
+  if (version < 1 || !['DRAFT', 'ACTIVE', 'PAUSED', 'REVOKED'].includes(nonempty(p.status, 'status')) ||
+    !['DRAFT', 'ACTIVE', 'PAUSED', 'REVOKED', 'EXPIRED'].includes(nonempty(p.effective_status, 'effective_status')))
+    fail('Invalid policy status or version');
+  for (const key of ['valid_from', 'expires_at', 'created_at']) integer(p[key], key);
+  boolean(p.is_currently_valid, 'is_currently_valid');
+  if (p.revision_reason !== null && p.revision_reason !== undefined && typeof p.revision_reason !== 'string')
+    fail('Invalid revision_reason');
+  for (const rawRule of array(p.asset_rules, 'asset_rules')) {
+    const rule = object(rawRule, 'asset rule');
+    nonempty(rule.token_mint, 'token_mint');
+    for (const key of ['max_per_operation_base_units_str', 'max_daily_spend_base_units_str',
+      'minimum_reserve_base_units_str']) u64(rule[key], key);
+    boolean(rule.enabled, 'enabled');
+  }
+  array(p.allowed_recipients, 'allowed_recipients').forEach((value) => nonempty(value, 'recipient'));
+  if (p.reserve_comparison !== undefined) {
+    for (const rawComparison of array(p.reserve_comparison, 'reserve_comparison')) {
+      const comparison = object(rawComparison, 'reserve comparison');
+      nonempty(comparison.token_mint, 'token_mint');
+      for (const key of ['policy_minimum_reserve_base_units_str', 'accounting_reserved_base_units_str',
+        'reserve_shortfall_base_units_str']) u64(comparison[key], key);
+      if (comparison.policy_target_is_not_locked_funds !== true) fail('Invalid reserve classification');
+    }
+  }
+  return p as unknown as AgentBudgetPolicy;
+}
+
+function budgetPolicyMutationDetail(raw: unknown): Detail<AgentBudgetPolicy> {
+  const r = object(raw, 'policy mutation response');
+  return { data: budgetPolicy(r.data), meta: meta(r.meta, false) };
+}
+
+function canonicalPolicyJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalPolicyJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().filter((key) => (value as Record<string, unknown>)[key] !== undefined)
+      .map((key) => `${JSON.stringify(key)}:${canonicalPolicyJson((value as Record<string, unknown>)[key])}`).join(',')}}`;
+  }
+  const encoded = JSON.stringify(value);
+  return encoded === undefined ? fail('Invalid policy JSON value') : encoded;
+}
+
+export async function budgetPolicyMutationMessage(method: 'POST' | 'PUT', account: string,
+  path: string, owner: string, timestamp: number, body: BudgetPolicyMutationControl): Promise<Uint8Array> {
+  if (!path.startsWith(`/v1/agents/${pubkey(account)}/budget-policy`)) throw new RangeError('Invalid policy mutation path');
+  const bytes = new TextEncoder().encode(canonicalPolicyJson(body));
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return new TextEncoder().encode(`conatus:budget-policy-mutation:v1:${timestamp}:${account}:${owner}:${method}:${path}:${hex}:${body.nonce}:${body.idempotency_key}:${body.expected_version}`);
 }
 
 function detail<T>(
@@ -848,7 +976,7 @@ export class MarketplaceClient {
   }
 
   private async exec(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT',
     path: string,
     params?: URLSearchParams,
     bodyData?: unknown,
@@ -959,6 +1087,15 @@ export class MarketplaceClient {
     headers?: Record<string, string>
   ): Promise<unknown> {
     return this.exec('POST', path, undefined, bodyData, signal, headers);
+  }
+
+  private async put(
+    path: string,
+    bodyData: unknown,
+    signal?: AbortSignal,
+    headers?: Record<string, string>
+  ): Promise<unknown> {
+    return this.exec('PUT', path, undefined, bodyData, signal, headers);
   }
 
   async health(signal?: AbortSignal): Promise<Health> {
@@ -1478,6 +1615,53 @@ export class MarketplaceClient {
       object(m.thresholds, 'thresholds');
       return m as unknown as SolvencyMethodology;
     });
+  }
+
+  async getAgentBudgetPolicy(account: string, options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<AgentBudgetPolicy>> {
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/budget-policy`, undefined, options.signal, options.authHeaders), budgetPolicy);
+  }
+
+  async listAgentBudgetPolicyHistory(account: string, options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<BudgetPolicyVersion[]>> {
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/budget-policy/history`, undefined, options.signal, options.authHeaders),
+      raw => array(raw, 'policy history').map(budgetPolicy));
+  }
+
+  async getAgentBudgetPolicyVersion(account: string, version: number, options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<BudgetPolicyVersion>> {
+    if (!Number.isSafeInteger(version) || version < 1) throw new RangeError('Invalid policy version');
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/budget-policy/${version}`, undefined, options.signal, options.authHeaders), budgetPolicy);
+  }
+
+  private policyHeaders(options: SignedPolicyRequestOptions): Record<string, string> {
+    const headers = options.authHeaders;
+    if (!headers?.['X-Signer-Pubkey'] || !headers['X-Timestamp'] || !headers['X-Signature'])
+      throw new TypeError('Signed policy mutation headers are required');
+    return headers;
+  }
+
+  async createAgentBudgetPolicy(account: string, body: BudgetPolicyMutationRequest, options: SignedPolicyRequestOptions): Promise<Detail<AgentBudgetPolicy>> {
+    return budgetPolicyMutationDetail(await this.post(`/v1/agents/${pubkey(account)}/budget-policy`, body, options.signal, this.policyHeaders(options)));
+  }
+
+  async updateAgentBudgetPolicy(account: string, body: BudgetPolicyMutationRequest, options: SignedPolicyRequestOptions): Promise<Detail<AgentBudgetPolicy>> {
+    return budgetPolicyMutationDetail(await this.put(`/v1/agents/${pubkey(account)}/budget-policy`, body, options.signal, this.policyHeaders(options)));
+  }
+
+  private async policyAction(account: string, action: 'activate' | 'pause' | 'resume' | 'revoke',
+    body: BudgetPolicyMutationControl, options: SignedPolicyRequestOptions): Promise<Detail<AgentBudgetPolicy>> {
+    return budgetPolicyMutationDetail(await this.post(`/v1/agents/${pubkey(account)}/budget-policy/${action}`, body, options.signal, this.policyHeaders(options)));
+  }
+
+  async activateAgentBudgetPolicy(account: string, body: BudgetPolicyMutationControl, options: SignedPolicyRequestOptions): Promise<Detail<AgentBudgetPolicy>> {
+    return this.policyAction(account, 'activate', body, options);
+  }
+  async pauseAgentBudgetPolicy(account: string, body: BudgetPolicyMutationControl, options: SignedPolicyRequestOptions): Promise<Detail<AgentBudgetPolicy>> {
+    return this.policyAction(account, 'pause', body, options);
+  }
+  async resumeAgentBudgetPolicy(account: string, body: BudgetPolicyMutationControl, options: SignedPolicyRequestOptions): Promise<Detail<AgentBudgetPolicy>> {
+    return this.policyAction(account, 'resume', body, options);
+  }
+  async revokeAgentBudgetPolicy(account: string, body: BudgetPolicyMutationControl, options: SignedPolicyRequestOptions): Promise<Detail<AgentBudgetPolicy>> {
+    return this.policyAction(account, 'revoke', body, options);
   }
 
   async *iterateAgents(
