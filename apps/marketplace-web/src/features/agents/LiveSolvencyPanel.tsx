@@ -8,6 +8,7 @@ import {
 import { useCopy } from '../../app/i18n';
 import { useResource } from '../../app/useResource';
 import { ProvenanceBadge } from '../../components/ui';
+import { InvestibleSurplusPanel } from './InvestibleSurplusPanel';
 
 /** Owner-authorized economic read, reused by Agent Detail, Economy, Fleet and Wallet. */
 export function LiveSolvencyPanel({ account, owner, title }: {
@@ -93,6 +94,7 @@ export function LiveSolvencyPanel({ account, owner, title }: {
         <p>{c('Historical assessments', 'Evaluaciones históricas')}: {snapshot.history.filter((item) => sameContext(item, context)).length} · {c('Recent list pages do not represent complete economic totals.', 'Las páginas recientes no representan totales económicos completos.')}</p>
         {snapshot.reserves.filter((item) => sameContext(item as typeof context, context)).map((reserve) => <p key={reserve.reserve_id}>{reserve.reserve_type} · {reserve.status} · {formatBaseUnits(reserve.current_reserved_str, context.token_mint)} · OFF-CHAIN ACCOUNTING RESERVE</p>)}
       </details>
+      <InvestibleSurplusPanel context={context} owner={owner} />
     </>}
   </section>;
 }

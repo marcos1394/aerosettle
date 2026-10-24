@@ -859,6 +859,34 @@ def build():
             "properties": {"data": {"type": "array", "items": {"oneOf": [ref("AgentSolvencyAssessment"), ref("MixedAssetContext")]}}, "meta": ref("Meta")}},
         "SolvencyMethodologyResponse": {"type": "object", "required": ["data", "meta"],
             "properties": {"data": {"type": "object"}, "meta": ref("Meta")}},
+        "InvestibleSurplusAssessment": {
+            "type": "object", "additionalProperties": True,
+            "required": ["assessment_id", "methodology_version", "agent_account", "agent_id", "owner_pubkey",
+                         "network", "genesis_hash", "program_id", "token_mint", "scenario",
+                         "continuity_horizon_days", "calculation_status", "provenance",
+                         "estimated_investible_surplus_base_units_str", "verified_investible_surplus_base_units_str",
+                         "deductions", "economic_snapshot_hash", "assessment_hash", "is_executable"],
+            "properties": {
+                "assessment_id": {"type": "string"}, "methodology_version": {"type": "string"},
+                "agent_account": ref("Pubkey"), "agent_id": {"type": "string"}, "owner_pubkey": ref("Pubkey"),
+                "network": {"type": "string"}, "genesis_hash": ref("Pubkey"),
+                "program_id": ref("Pubkey"), "token_mint": ref("Pubkey"),
+                "scenario": {"type": "string", "enum": ["BASE", "CONSERVATIVE", "STRESS"]},
+                "continuity_horizon_days": {"type": "integer", "enum": [7, 30, 90]},
+                "calculation_status": {"type": "string", "enum": ["VERIFIED", "ESTIMATED", "INSUFFICIENT_DATA", "STALE_DATA"]},
+                "provenance": {"type": "string"},
+                "treasury_available_base_units_str": {"oneOf": [ref("Uint64"), {"type": "null"}]},
+                "estimated_investible_surplus_base_units_str": {"oneOf": [ref("Uint64"), {"type": "null"}]},
+                "verified_investible_surplus_base_units_str": {"oneOf": [ref("Uint64"), {"type": "null"}]},
+                "deductions": {"type": "array", "items": {"type": "object"}},
+                "economic_snapshot_hash": {"type": "string"}, "assessment_hash": {"type": "string"},
+                "is_executable": {"const": False},
+            },
+        },
+        "InvestibleSurplusResponse": {"type": "object", "required": ["data", "meta"],
+            "properties": {"data": ref("InvestibleSurplusAssessment"), "meta": ref("Meta")}},
+        "InvestibleSurplusMethodologyResponse": {"type": "object", "required": ["data", "meta"],
+            "properties": {"data": {"type": "object"}, "meta": ref("Meta")}},
     }
 
     def param(name, schema, description):
@@ -881,6 +909,14 @@ def build():
                        "schema": {"type": "string", "pattern": "^sa_[0-9a-f]{32}$"}},
         "DecisionId": {"name": "decision_id", "in": "path", "required": True,
                        "schema": {"type": "string", "pattern": "^sd_[0-9a-f]{32}$"}},
+        "SurplusNetwork": {"name": "network", "in": "query", "required": True, "schema": {"type": "string"}},
+        "SurplusGenesis": {"name": "genesis_hash", "in": "query", "required": True, "schema": ref("Pubkey")},
+        "SurplusProgram": {"name": "program_id", "in": "query", "required": True, "schema": ref("Pubkey")},
+        "SurplusMint": {"name": "token_mint", "in": "query", "required": True, "schema": ref("Pubkey")},
+        "SurplusScenario": param("scenario", {"type": "string", "enum": ["BASE", "CONSERVATIVE", "STRESS"]},
+                                  "Explicit sensitivity scenario; defaults to BASE"),
+        "SurplusHorizon": param("horizon_days", {"type": "integer", "enum": [7, 30, 90]},
+                                 "Operational continuity horizon; defaults to 30 days"),
         "WorkOrderId": {
             "name": "work_order_id",
             "in": "path",
@@ -1267,6 +1303,13 @@ def build():
                 ("AgentId", "Mint", "Network", "GenesisHash", "ProgramId", "Limit", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))},
             "/v1/agents/{agent_id}/solvency/methodology": {"get": operation(
                 "Read solvency methodology", ref("SolvencyMethodologyResponse"), ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))},
+            "/v1/agents/{agent_id}/investible-surplus": {"get": operation(
+                "Assess advisory investible surplus for one exact monetary context", ref("InvestibleSurplusResponse"),
+                ("AgentId", "SurplusNetwork", "SurplusGenesis", "SurplusProgram", "SurplusMint",
+                 "SurplusScenario", "SurplusHorizon", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))},
+            "/v1/agents/{agent_id}/investible-surplus/methodology": {"get": operation(
+                "Read conservative surplus methodology and scenario assumptions", ref("InvestibleSurplusMethodologyResponse"),
+                ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))},
             "/v1/costs/{cost_id}": {
                 "get": operation(
                     "Get operational cost detail",
