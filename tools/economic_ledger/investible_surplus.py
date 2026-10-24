@@ -13,6 +13,8 @@ from typing import Any
 from .budget_policies import BudgetPolicyStore, PolicyError, digest
 from .ledger import EconomicLedger
 from .solvency import assess_agent as assess_solvency
+from .spending_approvals import ApprovalError, CONTEXT_FIELDS, SpendingApprovalStore, approval_id
+from .spending_decisions import SpendingDecisionStore
 
 METHODOLOGY_VERSION = "conatus:investible-surplus:v1"
 MAX_U64 = (1 << 64) - 1
@@ -44,6 +46,59 @@ def _amount(value: Any, name: str, *, optional: bool = False) -> int | None:
 
 def _ceil_div(numerator: int, denominator: int) -> int:
     return (numerator + denominator - 1) // denominator
+
+
+def _authenticated_claim_release(approvals: SpendingApprovalStore, agent: dict[str, Any],
+                                 policy: dict[str, Any], claim: Any, now: int) -> bool:
+    """Release a claim only after CON-29 authenticates its complete review history."""
+    rows = approvals.conn.execute(
+        "SELECT approval_id FROM spending_approvals WHERE decision_id=?", (claim["decision_id"],)
+    ).fetchall()
+    if not rows:
+        return False
+    try:
+        context = approvals.context(agent, claim["decision_id"])
+        expected_id = approval_id(agent["agent_account"], claim["decision_id"], agent["owner"])
+        review = approvals.get(agent, rows[0]["approval_id"], now=now)
+        events = approvals.history(agent, rows[0]["approval_id"])
+        expected_policy = (policy["policy_id"], policy["version"], policy["policy_hash"])
+        if (len(rows) != 1 or rows[0]["approval_id"] != expected_id or
+                context["approval_id"] != expected_id or
+                (context["policy_id"], context["policy_version"], context["policy_hash"]) != expected_policy or
+                context["proposal_id"] != claim["proposal_id"] or
+                context["amount_base_units_str"] != claim["amount_base_units_str"] or
+                context["decision"]["decision"] != "ALLOW" or
+                any(review.get(field) != context[field] for field in CONTEXT_FIELDS) or
+                review["approval_id"] != expected_id or not events):
+            raise ValueError("Review does not match the current claim and policy")
+        previous_action = None
+        for event in events:
+            body = json.loads(event["signed_body_json"])
+            action = event["action"]
+            if (any(body.get(field) != context[field] for field in CONTEXT_FIELDS) or
+                    body.get("expires_at") != review["expires_at"] or
+                    event["approval_id"] != expected_id or
+                    event["actor_pubkey"] != agent["owner"] or
+                    event["occurred_at"] > now or
+                    abs(event["occurred_at"] - body["issued_at"]) > 300 or
+                    any(event[field] != context[field] for field in (
+                        "proposal_id", "decision_id", "proposal_hash", "decision_hash",
+                        "policy_id", "policy_version", "policy_hash")) or
+                    (action != "OPEN" and action not in
+                        ({"APPROVE", "REJECT"} if previous_action == "OPEN" else
+                         {"REVOKE"} if previous_action == "APPROVE" else set())) or
+                    (action == "OPEN" and previous_action is not None)):
+                raise ValueError("Review event is not a valid current-owner transition")
+            previous_action = action
+        if events[0]["occurred_at"] != review["created_at"] or events[0]["action"] != "OPEN":
+            raise ValueError("Review opening event is missing")
+        if review["approval_status"] != {"OPEN": "PENDING_REVIEW", "APPROVE": "APPROVED",
+                                         "REJECT": "REJECTED", "REVOKE": "REVOKED"}[previous_action]:
+            raise ValueError("Review status disagrees with authenticated history")
+        return previous_action in ("REJECT", "REVOKE")
+    except (ApprovalError, KeyError, TypeError, ValueError) as exc:
+        raise SurplusError(409, "APPROVAL_INTEGRITY_CONFLICT",
+                           "Approval evidence cannot release a pending commitment") from exc
 
 
 def methodology() -> dict[str, Any]:
@@ -132,7 +187,7 @@ def assess_investible_surplus(
     stale = data_as_of is not None and assessed_at - data_as_of > FRESHNESS_SECONDS
     reserve_gap = max(0, required_reserve - eligible) if required_reserve is not None and eligible is not None else None
     # Reserve balances are already outside treasury. This is informational, never subtracted.
-    haircut = available * assumptions["liquidity_haircut_bps"] // 10000 if available is not None else None
+    haircut = _ceil_div(available * assumptions["liquidity_haircut_bps"], 10000) if available is not None else None
     projected = (_ceil_div(cash_opex * horizon * assumptions["opex_multiplier_bps"], days * 10000)
                  if cash_opex is not None and days else None)
     if projected is not None and projected > MAX_U64:
@@ -303,20 +358,17 @@ def assess_agent_surplus(ledger: EconomicLedger, policies: BudgetPolicyStore, ag
         (*base, current["policy_id"], current["version"], day_start, instant)).fetchall()
     valid_claims = []
     synthetic_claim = False
+    approvals = SpendingApprovalStore(ledger, policies, SpendingDecisionStore(ledger, policies))
     for row in claims:
         if row["owner_pubkey"] != agent["owner"] or row["agent_id"] != agent["agent_id"]:
-            continue
+            raise SurplusError(409, "CLAIM_INTEGRITY_CONFLICT", "Stored claim identity differs")
         try:
             decision = json.loads(row["decision_json"])
             if row["decision"] != "ALLOW" or decision["decision"] != "ALLOW":
                 raise ValueError("Claim has no ALLOW decision")
         except (ValueError, KeyError, TypeError) as exc:
             raise SurplusError(409, "CLAIM_INTEGRITY_CONFLICT", "Stored claim decision is inconsistent") from exc
-        last_approval = conn.execute(
-            "SELECT e.action FROM spending_approval_events e JOIN spending_approvals a "
-            "ON a.approval_id=e.approval_id WHERE a.decision_id=? ORDER BY e.rowid DESC LIMIT 1",
-            (row["decision_id"],)).fetchone()
-        if last_approval is None or last_approval["action"] not in ("REVOKE", "REJECT"):
+        if not _authenticated_claim_release(approvals, agent, current, row, instant):
             valid_claims.append(row)
             synthetic_claim |= decision.get("economic_evidence_status") == "SYNTHETIC_TEST"
     last_row = conn.execute(
