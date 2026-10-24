@@ -225,7 +225,9 @@ def evaluate_spending_proposal(proposal: SpendingProposal, policy: dict[str, Any
         "economic_snapshot_hash": evidence_hash,
         "evaluated_at": evaluated_at, "expires_at": expiry,
         "decision_engine_version": ENGINE_VERSION, "is_executable": False,
-        "historical": False, "is_currently_applicable": outcome == "ALLOW",
+        # Applicability depends on persisted, authentic evidence and an active
+        # administrative claim; the pure evaluator cannot establish either.
+        "historical": False, "is_currently_applicable": False,
     }
 
 
@@ -293,16 +295,28 @@ class SpendingDecisionStore:
         return economics, budget
 
     def _applicable(self, decision: dict, policy: dict | None, now: int) -> bool:
-        if decision["decision"] != "ALLOW" or policy is None or now >= decision["expires_at"]:
+        if (decision["decision"] != "ALLOW" or policy is None or now >= decision["expires_at"] or
+                decision.get("economic_evidence_status") != "VERIFIED"):
             return False
         if (decision["policy_id"], decision["policy_version"], decision["policy_hash"]) != (
                 policy["policy_id"], policy["version"], policy["policy_hash"]):
             return False
         if policy["status"] != "ACTIVE" or now < policy["valid_from"] or now >= policy["expires_at"]:
             return False
-        claim = self.conn.execute("SELECT expires_at FROM spending_budget_claims WHERE decision_id=?",
-                                  (decision["decision_id"],)).fetchone()
-        return claim is not None and now < claim["expires_at"]
+        row = self.conn.execute(
+            "SELECT c.expires_at, d.economic_snapshot_hash, d.economic_snapshot_json "
+            "FROM spending_budget_claims c JOIN spending_decisions d ON d.decision_id=c.decision_id "
+            "WHERE c.decision_id=?", (decision["decision_id"],)).fetchone()
+        if row is None or now >= row["expires_at"] or row["economic_snapshot_hash"] != decision.get("economic_snapshot_hash"):
+            return False
+        try:
+            snapshot = json.loads(row["economic_snapshot_json"])
+            return (digest(snapshot) == row["economic_snapshot_hash"] and
+                    snapshot["economics"]["status"] == "VERIFIED" and
+                    snapshot["economics"]["complete"] is True and
+                    snapshot["budget"]["complete"] is True)
+        except (KeyError, TypeError, ValueError):
+            return False
 
     def evaluate(self, agent: dict, body: dict, requester: str, now: int | None = None,
                  identity_supplier: Callable[[], dict | None] | None = None) -> tuple[dict, bool]:
@@ -392,6 +406,7 @@ class SpendingDecisionStore:
                          proposal.token_mint, policy["policy_id"], policy["version"],
                          decision["daily_window_start_utc"], proposal.amount_base_units_str,
                          decision["expires_at"]))
+                decision["is_currently_applicable"] = self._applicable(decision, policy, at)
                 self.conn.execute("COMMIT")
                 return decision, True
             except Exception:

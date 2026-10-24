@@ -19,3 +19,5 @@ El disponible contable ya excluye reservas asignadas. La capacidad segura adicio
 ## Límite de confianza
 
 La salida siempre declara `is_executable: false`. `ALLOW` significa elegibilidad consultiva bajo el snapshot, sin firma de transferencia ni consentimiento final. `REQUIRE_APPROVAL` no implementa un flujo de aprobación. La integración auténtica RPC/SPL y atestación sigue en CON-34. No hay ejecución de pagos ni cambios al ciclo WorkOrder.
+
+La aplicabilidad actual exige evidencia `VERIFIED`, snapshot persistido íntegro y completo, política vigente y claim no vencido. Los `ALLOW` de `SYNTHETIC_TEST`, `HISTORICAL_FIXTURE` y `HISTORICAL_UNVERIFIED` siguen visibles en auditoría, pero siempre se consultan como no aplicables, incluso tras reiniciar SQLite. Un claim administrativo nunca certifica procedencia económica.

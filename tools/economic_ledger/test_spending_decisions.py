@@ -196,6 +196,52 @@ class SpendingDecisionTests(unittest.TestCase):
         self.policies = BudgetPolicyStore(self.ledger)
         self.assertEqual(len(SpendingDecisionStore(self.ledger, self.policies).list(AGENT_RECORD)), 2)
 
+    def test_synthetic_allow_remains_inapplicable_after_sqlite_restart(self):
+        financial_tables = ("economic_movements", "journal_entries", "ledger_entries",
+                            "agent_costs", "agent_reserves", "reserve_transactions")
+        before = {table: self.ledger._conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                  for table in financial_tables}
+        request = proposal(self.policy)
+        simulated = SpendingDecisionStore(self.ledger, self.policies, self.synthetic_provider)
+        decision, created = simulated.evaluate(AGENT_RECORD, request, OWNER)
+        self.assertTrue(created)
+        self.assertEqual(decision["decision"], "ALLOW")
+        self.assertFalse(decision["is_executable"])
+        self.assertFalse(decision["is_currently_applicable"])
+        self.assertEqual(decision["economic_evidence_status"], "SYNTHETIC_TEST")
+        self.assertEqual(self.ledger._conn.execute(
+            "SELECT count(*) FROM spending_budget_claims WHERE decision_id=?",
+            (decision["decision_id"],)).fetchone()[0], 1)
+        self.ledger.close()
+        self.ledger = EconomicLedger(self.path)
+        self.policies = BudgetPolicyStore(self.ledger)
+        productive = SpendingDecisionStore(self.ledger, self.policies)
+        self.assertEqual(self.ledger._conn.execute(
+            "SELECT count(*) FROM spending_budget_claims WHERE decision_id=?",
+            (decision["decision_id"],)).fetchone()[0], 1)
+        before_expiry = min(int(time.time()) + 1, decision["expires_at"] - 1)
+        self.assertLess(before_expiry, decision["expires_at"])
+        self.assertFalse(productive._applicable(
+            {**decision, "is_currently_applicable": True}, self.policy, before_expiry))
+        detail = productive.get(AGENT_RECORD, decision["decision_id"], now=before_expiry)
+        history = productive.list(AGENT_RECORD, now=before_expiry)
+        retry, newly_created = productive.evaluate(AGENT_RECORD, request, OWNER, now=before_expiry)
+        self.assertFalse(newly_created)
+        self.assertEqual(len(history), 1)
+        for result in (detail, history[0], retry):
+            self.assertEqual(result["decision_id"], decision["decision_id"])
+            self.assertEqual(result["decision"], "ALLOW")
+            self.assertEqual(result["economic_evidence_status"], "SYNTHETIC_TEST")
+            self.assertFalse(result["is_executable"])
+            self.assertTrue(result["historical"])
+            self.assertFalse(result["is_currently_applicable"])
+        for lineage in ("HISTORICAL_FIXTURE", "HISTORICAL_UNVERIFIED"):
+            self.assertFalse(productive._applicable(
+                {**detail, "economic_evidence_status": lineage}, self.policy, before_expiry))
+        after = {table: self.ledger._conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                 for table in financial_tables}
+        self.assertEqual(before, after)
+
     def test_ten_concurrent_retries_and_identity_change(self):
         store = SpendingDecisionStore(self.ledger, self.policies, self.synthetic_provider)
         first = proposal(self.policy)
