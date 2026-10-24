@@ -2,8 +2,8 @@
   "openapi": "3.1.1",
   "info": {
     "title": "AeroSettle Marketplace API",
-    "version": "0.3.3",
-    "description": "Localnet read-only API. Matching is advisory; claim_work_order remains authoritative on-chain. No authentication; bind to loopback only."
+    "version": "0.4.0",
+    "description": "Localnet advisory API. Economic policy mutations and spending evaluations require Ed25519; evaluations never execute payments. Matching remains advisory and claim_work_order is authoritative on-chain."
   },
   "servers": [
     {
@@ -1503,6 +1503,257 @@
         }
       }
     },
+    "/v1/agents/{agent_id}/spending-evaluations": {
+      "get": {
+        "summary": "List private advisory spending decisions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingDecisionListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Evaluate a signed spending proposal without moving funds",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingDecisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New advisory decision recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingDecisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid evaluation signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requester is not current owner or device signing authority",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency or policy version conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid monetary context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required identity or economic source unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendingProposal"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/spending-evaluations/{decision_id}": {
+      "get": {
+        "summary": "Read a private historical spending decision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingDecisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{agent_id}/solvency": {
       "get": {
         "summary": "Calculate verified per-asset solvency",
@@ -2422,6 +2673,291 @@
           }
         }
       },
+      "SpendingProposal": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "proposal_id",
+          "idempotency_key",
+          "nonce",
+          "agent_account",
+          "agent_id",
+          "requester_pubkey",
+          "network",
+          "genesis_hash",
+          "program_id",
+          "token_mint",
+          "recipient_pubkey",
+          "amount_base_units_str",
+          "purpose",
+          "requested_at",
+          "expected_policy_id",
+          "expected_policy_version",
+          "expected_policy_hash",
+          "metadata"
+        ],
+        "properties": {
+          "proposal_id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "agent_id": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "requester_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "recipient_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "amount_base_units_str": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "requested_at": {
+            "type": "integer"
+          },
+          "expected_policy_id": {
+            "type": "string"
+          },
+          "expected_policy_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_policy_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "SpendingDecisionReason": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "SpendingBudgetSnapshot": {
+        "type": "object",
+        "properties": {
+          "daily_window_start_utc": {
+            "type": "integer"
+          },
+          "daily_window_end_utc": {
+            "type": "integer"
+          },
+          "daily_limit_base_units_str": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "daily_used_base_units_str": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "daily_committed_base_units_str": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "daily_remaining_base_units_str": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SpendingDecision": {
+        "type": "object",
+        "required": [
+          "decision_id",
+          "proposal_id",
+          "agent_account",
+          "decision",
+          "reason_codes",
+          "policy_id",
+          "policy_version",
+          "policy_hash",
+          "economic_snapshot_hash",
+          "economic_evidence_status",
+          "evaluated_at",
+          "expires_at",
+          "is_executable",
+          "is_currently_applicable"
+        ],
+        "properties": {
+          "decision_id": {
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ALLOW",
+              "DENY",
+              "REQUIRE_APPROVAL"
+            ]
+          },
+          "reason_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason_details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendingDecisionReason"
+            }
+          },
+          "policy_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "policy_version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "policy_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "requested_amount_base_units_str": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "minimum_reserve_base_units_str": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accounting_reserved_base_units_str": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "available_liquidity_base_units_str": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accrued_obligations_base_units_str": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "economic_evidence_status": {
+            "type": "string"
+          },
+          "economic_snapshot_hash": {
+            "type": "string"
+          },
+          "evaluated_at": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "decision_engine_version": {
+            "type": "string"
+          },
+          "is_executable": {
+            "const": false
+          },
+          "historical": {
+            "type": "boolean"
+          },
+          "is_currently_applicable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SpendingDecisionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SpendingDecision"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "SpendingDecisionListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendingDecision"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
       "Agent": {
         "type": "object",
         "required": [
@@ -2439,6 +2975,12 @@
           "agent_id": {
             "type": "string",
             "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "signing_authority": {
+            "$ref": "#/components/schemas/Pubkey"
           },
           "protocol_config": {
             "$ref": "#/components/schemas/Pubkey"

@@ -2118,7 +2118,7 @@ class AgentCostsAndReservesTests(unittest.TestCase):
         with EconomicLedger(fresh_db, reconciliation_verifier=self.test_verifier) as led_fresh:
             # Tables exist, migrations 001..009 applied
             cur = led_fresh._conn.execute("SELECT MAX(version) FROM schema_migrations;")
-            self.assertEqual(cur.fetchone()[0], 9)
+            self.assertEqual(cur.fetchone()[0], 10)
 
         # Case 2: Existing database that previously executed 004 with default Localnet genesis
         legacy_db = Path(temp_dir.name) / "legacy_004.db"

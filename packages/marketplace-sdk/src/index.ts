@@ -468,6 +468,66 @@ export interface SignedPolicyRequestOptions {
   signal?: AbortSignal;
 }
 
+export interface SpendingProposal {
+  proposal_id: string;
+  idempotency_key: string;
+  nonce: string;
+  agent_account: string;
+  agent_id: string;
+  requester_pubkey: string;
+  network: string;
+  genesis_hash: string;
+  program_id: string;
+  token_mint: string;
+  recipient_pubkey: string;
+  amount_base_units_str: U64String;
+  purpose: string;
+  requested_at: number;
+  expected_policy_id: string;
+  expected_policy_version: number;
+  expected_policy_hash: string;
+  metadata: Record<string, unknown>;
+}
+
+export type SpendingEvaluationRequest = SpendingProposal;
+export interface SpendingDecisionReason { code: string; }
+export interface SpendingBudgetSnapshot {
+  daily_window_start_utc: number;
+  daily_window_end_utc: number;
+  daily_limit_base_units_str: string | null;
+  daily_used_base_units_str: string | null;
+  daily_committed_base_units_str: string | null;
+  daily_remaining_base_units_str: string | null;
+}
+export interface SpendingDecision extends SpendingBudgetSnapshot {
+  decision_id: string;
+  proposal_id: string;
+  agent_account: string;
+  decision: 'ALLOW' | 'DENY' | 'REQUIRE_APPROVAL';
+  reason_codes: string[];
+  reason_details: SpendingDecisionReason[];
+  policy_id: string | null;
+  policy_version: number | null;
+  policy_hash: string | null;
+  network: string;
+  genesis_hash: string;
+  program_id: string;
+  token_mint: string;
+  requested_amount_base_units_str: U64String;
+  minimum_reserve_base_units_str: string | null;
+  accounting_reserved_base_units_str: string | null;
+  available_liquidity_base_units_str: string | null;
+  accrued_obligations_base_units_str: string | null;
+  economic_evidence_status: string;
+  economic_snapshot_hash: string;
+  evaluated_at: number;
+  expires_at: number;
+  decision_engine_version: string;
+  is_executable: false;
+  historical: boolean;
+  is_currently_applicable: boolean;
+}
+
 export interface RecordMovementInput {
   idempotency_key: string;
   agent_account: string;
@@ -815,6 +875,43 @@ export async function budgetPolicyMutationMessage(method: 'POST' | 'PUT', accoun
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   const hex = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
   return new TextEncoder().encode(`conatus:budget-policy-mutation:v1:${timestamp}:${account}:${owner}:${method}:${path}:${hex}:${body.nonce}:${body.idempotency_key}:${body.expected_version}`);
+}
+
+export async function spendingEvaluationMessage(account: string, requester: string,
+  timestamp: number, body: SpendingEvaluationRequest): Promise<Uint8Array> {
+  const path = `/v1/agents/${pubkey(account)}/spending-evaluations`;
+  if (body.agent_account !== account || body.requester_pubkey !== requester) throw new RangeError('Proposal identity mismatch');
+  u64(body.amount_base_units_str, 'amount_base_units_str');
+  const bytes = new TextEncoder().encode(canonicalPolicyJson(body));
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return new TextEncoder().encode(`conatus:spending-evaluation:v1:${timestamp}:${account}:${requester}:POST:${path}:${hex}:${body.nonce}:${body.idempotency_key}:${body.expected_policy_id}:${body.expected_policy_version}:${body.expected_policy_hash}`);
+}
+
+function spendingDecision(raw: unknown): SpendingDecision {
+  const d = object(raw, 'spending decision');
+  for (const key of ['decision_id', 'proposal_id', 'agent_account', 'network', 'genesis_hash',
+    'program_id', 'token_mint', 'economic_evidence_status', 'economic_snapshot_hash',
+    'decision_engine_version']) nonempty(d[key], key);
+  if (!['ALLOW', 'DENY', 'REQUIRE_APPROVAL'].includes(nonempty(d.decision, 'decision'))) fail('Invalid spending decision');
+  if (d.policy_id !== null) nonempty(d.policy_id, 'policy_id');
+  if (d.policy_hash !== null) nonempty(d.policy_hash, 'policy_hash');
+  if (d.policy_version !== null) integer(d.policy_version, 'policy_version');
+  for (const key of ['evaluated_at', 'expires_at', 'daily_window_start_utc', 'daily_window_end_utc']) integer(d[key], key);
+  u64(d.requested_amount_base_units_str, 'requested_amount_base_units_str');
+  for (const key of ['daily_limit_base_units_str', 'daily_used_base_units_str',
+    'daily_committed_base_units_str', 'daily_remaining_base_units_str',
+    'minimum_reserve_base_units_str', 'accounting_reserved_base_units_str',
+    'available_liquidity_base_units_str', 'accrued_obligations_base_units_str']) {
+    if (d[key] !== null && (typeof d[key] !== 'string' || !/^(0|[1-9][0-9]*)$/.test(d[key] as string)))
+      fail(`Invalid ${key}`);
+  }
+  array(d.reason_codes, 'reason_codes').forEach((code) => nonempty(code, 'reason code'));
+  array(d.reason_details, 'reason_details').forEach((reason) => nonempty(object(reason, 'reason').code, 'reason code'));
+  if (d.is_executable !== false) fail('Spending decision cannot be executable');
+  boolean(d.historical, 'historical');
+  boolean(d.is_currently_applicable, 'is_currently_applicable');
+  return d as unknown as SpendingDecision;
 }
 
 function detail<T>(
@@ -1662,6 +1759,30 @@ export class MarketplaceClient {
   }
   async revokeAgentBudgetPolicy(account: string, body: BudgetPolicyMutationControl, options: SignedPolicyRequestOptions): Promise<Detail<AgentBudgetPolicy>> {
     return this.policyAction(account, 'revoke', body, options);
+  }
+
+  async evaluateAgentSpending(account: string, body: SpendingEvaluationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<SpendingDecision>> {
+    if (body.agent_account !== account || !body.proposal_id || !body.idempotency_key || !body.nonce)
+      throw new TypeError('Invalid spending proposal identity');
+    u64(body.amount_base_units_str, 'amount_base_units_str');
+    const raw = await this.post(`/v1/agents/${pubkey(account)}/spending-evaluations`, body,
+      options.signal, this.policyHeaders(options));
+    const response = object(raw, 'spending evaluation response');
+    return { data: spendingDecision(response.data), meta: meta(response.meta, false) };
+  }
+
+  async listAgentSpendingEvaluations(account: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<SpendingDecision[]>> {
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/spending-evaluations`, undefined,
+      options.signal, options.authHeaders), raw => array(raw, 'spending decisions').map(spendingDecision));
+  }
+
+  async getAgentSpendingEvaluation(account: string, decisionId: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<SpendingDecision>> {
+    if (!/^sd_[0-9a-f]{32}$/.test(decisionId)) throw new RangeError('Invalid decision ID');
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/spending-evaluations/${decisionId}`,
+      undefined, options.signal, options.authHeaders), spendingDecision);
   }
 
   async *iterateAgents(

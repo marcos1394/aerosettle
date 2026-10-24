@@ -63,6 +63,21 @@ def policy_write(summary, schema):
     return result
 
 
+def spending_write():
+    result = operation("Evaluate a signed spending proposal without moving funds", ref("SpendingDecisionResponse"),
+                       ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))
+    result["requestBody"] = {"required": True, "content": {"application/json": {"schema": ref("SpendingProposal")}}}
+    result["responses"].update({
+        "201": response(ref("SpendingDecisionResponse"), "New advisory decision recorded"),
+        "401": response(ref("Error"), "Invalid evaluation signature"),
+        "403": response(ref("Error"), "Requester is not current owner or device signing authority"),
+        "409": response(ref("Error"), "Idempotency or policy version conflict"),
+        "422": response(ref("Error"), "Invalid monetary context"),
+        "503": response(ref("Error"), "Required identity or economic source unavailable"),
+    })
+    return result
+
+
 def build():
     uint64 = {
         "type": "string",
@@ -126,6 +141,61 @@ def build():
         },
         "BudgetPolicyResponse": {"type": "object", "properties": {"data": ref("AgentBudgetPolicy"), "meta": ref("Meta")}},
         "BudgetPolicyHistoryResponse": {"type": "object", "properties": {"data": {"type": "array", "items": ref("AgentBudgetPolicy")}, "meta": ref("Meta")}},
+        "SpendingProposal": {
+            "type": "object", "additionalProperties": False,
+            "required": ["proposal_id", "idempotency_key", "nonce", "agent_account", "agent_id",
+                         "requester_pubkey", "network", "genesis_hash", "program_id", "token_mint",
+                         "recipient_pubkey", "amount_base_units_str", "purpose", "requested_at",
+                         "expected_policy_id", "expected_policy_version", "expected_policy_hash", "metadata"],
+            "properties": {
+                "proposal_id": {"type": "string"}, "idempotency_key": {"type": "string"}, "nonce": {"type": "string"},
+                "agent_account": ref("Pubkey"), "agent_id": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+                "requester_pubkey": ref("Pubkey"), "network": {"type": "string"},
+                "genesis_hash": ref("Pubkey"), "program_id": ref("Pubkey"), "token_mint": ref("Pubkey"),
+                "recipient_pubkey": ref("Pubkey"), "amount_base_units_str": ref("Uint64"),
+                "purpose": {"type": "string", "minLength": 1, "maxLength": 500},
+                "requested_at": {"type": "integer"}, "expected_policy_id": {"type": "string"},
+                "expected_policy_version": {"type": "integer", "minimum": 1},
+                "expected_policy_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "metadata": {"type": "object"},
+            },
+        },
+        "SpendingDecisionReason": {"type": "object", "properties": {"code": {"type": "string"}}},
+        "SpendingBudgetSnapshot": {"type": "object", "properties": {
+            "daily_window_start_utc": {"type": "integer"}, "daily_window_end_utc": {"type": "integer"},
+            "daily_limit_base_units_str": {"type": ["string", "null"]},
+            "daily_used_base_units_str": {"type": ["string", "null"]},
+            "daily_committed_base_units_str": {"type": ["string", "null"]},
+            "daily_remaining_base_units_str": {"type": ["string", "null"]},
+        }},
+        "SpendingDecision": {"type": "object", "required": ["decision_id", "proposal_id", "agent_account",
+            "decision", "reason_codes", "policy_id", "policy_version", "policy_hash",
+            "economic_snapshot_hash", "economic_evidence_status", "evaluated_at", "expires_at",
+            "is_executable", "is_currently_applicable"],
+            "properties": {
+                "decision_id": {"type": "string"}, "proposal_id": {"type": "string"},
+                "agent_account": ref("Pubkey"),
+                "decision": {"type": "string", "enum": ["ALLOW", "DENY", "REQUIRE_APPROVAL"]},
+                "reason_codes": {"type": "array", "items": {"type": "string"}},
+                "reason_details": {"type": "array", "items": ref("SpendingDecisionReason")},
+                "policy_id": {"type": ["string", "null"]}, "policy_version": {"type": ["integer", "null"]},
+                "policy_hash": {"type": ["string", "null"]},
+                "network": {"type": "string"}, "genesis_hash": ref("Pubkey"),
+                "program_id": ref("Pubkey"), "token_mint": ref("Pubkey"),
+                "requested_amount_base_units_str": ref("Uint64"),
+                "minimum_reserve_base_units_str": {"type": ["string", "null"]},
+                "accounting_reserved_base_units_str": {"type": ["string", "null"]},
+                "available_liquidity_base_units_str": {"type": ["string", "null"]},
+                "accrued_obligations_base_units_str": {"type": ["string", "null"]},
+                "economic_evidence_status": {"type": "string"},
+                "economic_snapshot_hash": {"type": "string"},
+                "evaluated_at": {"type": "integer"}, "expires_at": {"type": "integer"},
+                "decision_engine_version": {"type": "string"},
+                "is_executable": {"const": False}, "historical": {"type": "boolean"},
+                "is_currently_applicable": {"type": "boolean"},
+            }, "additionalProperties": True},
+        "SpendingDecisionResponse": {"type": "object", "properties": {"data": ref("SpendingDecision"), "meta": ref("Meta")}},
+        "SpendingDecisionListResponse": {"type": "object", "properties": {"data": {"type": "array", "items": ref("SpendingDecision")}, "meta": ref("Meta")}},
         "Agent": {
             "type": "object",
             "required": [
@@ -142,6 +212,7 @@ def build():
                     "type": "string",
                     "pattern": "^[a-fA-F0-9]{64}$",
                 },
+                "owner": ref("Pubkey"), "signing_authority": ref("Pubkey"),
                 "protocol_config": ref("Pubkey"),
                 "capabilities": ref("Uint64"),
                 "active": {"type": "boolean"},
@@ -1006,11 +1077,10 @@ def build():
         "openapi": "3.1.1",
         "info": {
             "title": "AeroSettle Marketplace API",
-            "version": "0.3.3",
+            "version": "0.4.0",
             "description":
-                "Localnet read-only API. Matching is advisory; "
-                "claim_work_order remains authoritative on-chain. "
-                "No authentication; bind to loopback only.",
+                "Localnet advisory API. Economic policy mutations and spending evaluations require Ed25519; "
+                "evaluations never execute payments. Matching remains advisory and claim_work_order is authoritative on-chain.",
         },
         "servers": [
             {"url": "http://127.0.0.1:8787"}
@@ -1082,6 +1152,15 @@ def build():
             },
             "/v1/agents/{agent_id}/budget-policy/revoke": {
                 "post": policy_write("Permanently revoke a policy", ref("BudgetPolicyResponse")),
+            },
+            "/v1/agents/{agent_id}/spending-evaluations": {
+                "get": operation("List private advisory spending decisions", ref("SpendingDecisionListResponse"),
+                                 ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+                "post": spending_write(),
+            },
+            "/v1/agents/{agent_id}/spending-evaluations/{decision_id}": {
+                "get": operation("Read a private historical spending decision", ref("SpendingDecisionResponse"),
+                                 ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
             },
             "/v1/agents/{agent_id}/solvency": {"get": operation(
                 "Calculate verified per-asset solvency", ref("SolvencyListResponse"),
