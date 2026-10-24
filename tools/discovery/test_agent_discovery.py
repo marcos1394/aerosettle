@@ -125,6 +125,23 @@ class FakeRPC:
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_agent_owner_and_device_authority_are_projected_when_decoded(self):
+        contract = schema()
+        agent_fields = next(item for item in contract["types"] if item["name"] == "AgentAccount")["type"]["fields"]
+        agent_fields[2:2] = [{"name": "owner", "type": "pubkey"},
+                             {"name": "signing_authority", "type": "pubkey"}]
+        rpc = FakeRPC()
+        owner = b58encode(bytes([4]) * 32)
+        device = b58encode(bytes([5]) * 32)
+        for account in (rpc.a1, rpc.a2, rpc.a3):
+            encoded = rpc.accounts[account]
+            raw = base64.b64decode(encoded["data"][0])
+            encoded["data"][0] = base64.b64encode(
+                raw[:72] + b58decode(owner, 32) + b58decode(device, 32) + raw[72:]).decode()
+        result = discover(rpc, Idl(contract), "confirmed")
+        self.assertEqual(result["agents"][0]["owner"], owner)
+        self.assertEqual(result["agents"][0]["signing_authority"], device)
+
     def test_base58_round_trip_zeroes_and_pubkeys(self):
         for raw in (bytes(32), bytes([1])*32, bytes(range(32)), b"\0\0abc", b"\xff"):
             self.assertEqual(b58decode(b58encode(raw)), raw)

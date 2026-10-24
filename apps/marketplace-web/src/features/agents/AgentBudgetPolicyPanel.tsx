@@ -12,6 +12,7 @@ import { LOCALNET_GENESIS, MINT, PROGRAM_ID } from '../../app/config';
 import { formatBaseUnits, ownerAuthHeaders } from '../../app/economic';
 import { useCopy } from '../../app/i18n';
 import { useResource } from '../../app/useResource';
+import { AgentSpendingEvaluationPanel } from './AgentSpendingEvaluationPanel';
 
 const emptyRule = (): AssetBudgetRule => ({
   token_mint: MINT.toBase58(),
@@ -182,6 +183,7 @@ export function AgentBudgetPolicyPanel({ account, owner }: { account: string; ow
       </div>}
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
+      {policy && <AgentSpendingEvaluationPanel policy={policy} />}
     </>}
   </section>;
 }

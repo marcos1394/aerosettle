@@ -24,6 +24,9 @@ from tools.economic_ledger.budget_policies import (
     BudgetPolicyStore, PolicyError, validate_control, verify_mutation,
 )
 from tools.economic_ledger.ledger import EconomicLedger
+from tools.economic_ledger.spending_decisions import (
+    DecisionError, SpendingDecisionStore, SpendingProposal, verify_evaluation,
+)
 from tools.economic_ledger.solvency import assess_agent, assessment_history, methodology, save_assessment
 from tools.economic_ledger.models import (
     LedgerValidationError,
@@ -53,11 +56,32 @@ def get_policy_store(provider=None) -> BudgetPolicyStore:
     return ledger._budget_policy_store
 
 
+def get_spending_store(provider=None) -> SpendingDecisionStore:
+    ledger = get_ledger(provider)
+    policy_store = get_policy_store(provider)
+    with _POLICY_STORE_INIT_LOCK:
+        if not hasattr(ledger, "_spending_decision_store"):
+            ledger._spending_decision_store = SpendingDecisionStore(ledger, policy_store)
+    return ledger._spending_decision_store
+
+
 def authorize_agent_access(agent: dict, headers: dict | None, agent_account: str | None = None) -> str:
     """Enforce authentic Ed25519 cryptographic authorization for agent economic access."""
     acc = agent_account or agent.get("agent_account", "")
     try:
         return verify_request_auth(headers, agent, acc)
+    except AuthError as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
+
+
+def authorize_evaluation_read(agent: dict, headers: dict | None, account: str) -> str:
+    signer = {str(k).lower(): str(v) for k, v in headers.items()}.get("x-signer-pubkey") if headers else None
+    if not agent.get("owner"):
+        raise ApiError(403, "FORBIDDEN", "Current owner is unavailable")
+    if signer and signer not in (agent["owner"], agent.get("signing_authority")):
+        raise ApiError(403, "FORBIDDEN", "Requester is not authorized for this agent")
+    try:
+        return verify_request_auth(headers, {"owner": signer}, account)
     except AuthError as exc:
         raise ApiError(exc.status, exc.code, str(exc)) from exc
 
@@ -390,12 +414,12 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
 
     if len(pieces) == 4 and not (
         (entity == "work-orders" and pieces[3] == "matches")
-        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy"))
+        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy", "spending-evaluations"))
     ):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
     if len(pieces) == 5 and (entity != "agents" or
        (pieces[3] == "solvency" and pieces[4] not in ("history", "methodology")) or
-       pieces[3] not in ("solvency", "budget-policy")):
+       pieces[3] not in ("solvency", "budget-policy", "spending-evaluations")):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if len(pieces) >= 3 and entity not in ("economic-movements", "costs", "reserves"):
@@ -517,6 +541,15 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                 "AGENT_NOT_FOUND",
                 "Agent not registered in current snapshot",
             )
+
+        if len(pieces) >= 4 and pieces[3] == "spending-evaluations":
+            authorize_evaluation_read(agent, headers, pieces[2])
+            store = get_spending_store(provider)
+            try:
+                data = store.list(agent) if len(pieces) == 4 else store.get(agent, pieces[4])
+            except DecisionError as exc:
+                raise ApiError(exc.status, exc.code, str(exc)) from exc
+            return 200, {"data": data, "meta": meta}
 
         if len(pieces) >= 4 and pieces[3] == "budget-policy":
             authorize_agent_access(agent, headers, pieces[2])
@@ -880,6 +913,38 @@ def policy_mutation_route(method: str, url: str, provider, headers, body: dict) 
     return (201 if created and action == "CREATE" else 200), {"data": data, "meta": out_meta}
 
 
+def spending_evaluation_route(method: str, url: str, provider, headers, body: dict) -> tuple[int, dict]:
+    parts = urlsplit(url)
+    pieces = [part for part in parts.path.split("/") if part]
+    if (method != "POST" or parts.query or parts.fragment or len(pieces) != 4 or
+            pieces[:2] != ["v1", "agents"] or pieces[3] != "spending-evaluations"):
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Only signed spending evaluations may be submitted")
+    require_pubkey(pieces[2])
+    snapshot = provider.snapshot()
+    agent = next((item for item in snapshot["agents"] if item["agent_account"] == pieces[2]), None)
+    if agent is None:
+        raise ApiError(404, "AGENT_NOT_FOUND", "Agent not registered in current snapshot")
+    try:
+        SpendingProposal.parse(body)
+        requester = verify_evaluation(agent, method, parts.path, body, headers)
+        latest = provider.snapshot()
+        latest_agent = next((item for item in latest["agents"] if item["agent_account"] == pieces[2]), None)
+        if (latest_agent is None or latest_agent.get("owner") != agent.get("owner") or
+                latest_agent.get("agent_id") != agent.get("agent_id") or
+                latest_agent.get("signing_authority") != agent.get("signing_authority")):
+            raise DecisionError(403, "AGENT_IDENTITY_MISMATCH", "Agent identity changed before evaluation")
+        def current_agent():
+            fresh = provider.snapshot()
+            return next((item for item in fresh["agents"] if item["agent_account"] == pieces[2]), None)
+        data, created = get_spending_store(provider).evaluate(
+            agent, body, requester, identity_supplier=current_agent)
+    except (DecisionError, PolicyError) as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
+    out_meta = metadata(latest)
+    out_meta["read_only"] = False
+    return (201 if created else 200), {"data": data, "meta": out_meta}
+
+
 class LiveProvider:
     def __init__(
         self,
@@ -1029,8 +1094,11 @@ def handler_for(provider):
         def policy_write(self, method: str):
             parts = urlsplit(self.path)
             route_parts = [item for item in parts.path.split("/") if item]
-            if (len(route_parts) not in (4, 5) or route_parts[:2] != ["v1", "agents"]
-                    or route_parts[3] != "budget-policy"):
+            policy_path = (len(route_parts) in (4, 5) and route_parts[:2] == ["v1", "agents"]
+                           and route_parts[3] == "budget-policy")
+            evaluation_path = (method == "POST" and len(route_parts) == 4 and
+                               route_parts[:2] == ["v1", "agents"] and route_parts[3] == "spending-evaluations")
+            if not policy_path and not evaluation_path:
                 self.unsupported()
                 return
             try:
@@ -1051,7 +1119,10 @@ def handler_for(provider):
                     raise ApiError(400, "INVALID_BODY", "Expected unique-key JSON object") from exc
                 if not isinstance(body, dict):
                     raise ApiError(400, "INVALID_BODY", "Expected JSON object")
-                status, response = policy_mutation_route(method, self.path, provider, self.headers, body)
+                if evaluation_path:
+                    status, response = spending_evaluation_route(method, self.path, provider, self.headers, body)
+                else:
+                    status, response = policy_mutation_route(method, self.path, provider, self.headers, body)
                 self.respond(status, response)
             except ApiError as exc:
                 self.respond(exc.status, {"error": {"code": exc.code, "message": str(exc)}})

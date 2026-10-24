@@ -414,11 +414,19 @@ def discover(rpc: Rpc, idl: Idl, commitment: str = "confirmed") -> dict[str, Any
                 if status not in ("Active", "OwnerSuspended", "AdminSuspended", "Revoked"):
                     raise DiscoveryError(f"Unknown AgentStatus: {status}")
                 capabilities = require_uint(body, "capabilities", 2**64 - 1)
-                output.append({
+                agent_projection = {
                     "agent_account": key, "agent_id": body["agent_id"],
                     "protocol_config": config_key, "capabilities": capabilities,
                     "active": status == "Active", "status": status,
-                })
+                }
+                # The deployed IDL includes both distinct authorities. Older
+                # isolated fixtures omit them; those snapshots cannot authorize
+                # an economic evaluation.
+                if "owner" in body:
+                    agent_projection["owner"] = require_key(body, "owner")
+                if "signing_authority" in body:
+                    agent_projection["signing_authority"] = require_key(body, "signing_authority")
+                output.append(agent_projection)
             else:
                 raw_id = require_id(body, "work_order_id")
                 creator = require_key(body, "creator")
