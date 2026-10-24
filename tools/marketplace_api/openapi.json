@@ -1754,6 +1754,750 @@
         }
       }
     },
+    "/v1/agents/{agent_id}/spending-approvals": {
+      "get": {
+        "summary": "List private owner consent reviews",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Open an owner consent review without executing payment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Owner review opened",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired owner signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current AgentAccount owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identity, policy, idempotency, or concurrent state conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Forbidden approval transition or denied decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendingApprovalMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/spending-approvals/context/{decision_id}": {
+      "get": {
+        "summary": "Read the exact stored proposal and decision context for owner signing",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/DecisionId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalContextResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/spending-approvals/{approval_id}": {
+      "get": {
+        "summary": "Read a private owner consent review",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/ApprovalId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/spending-approvals/{approval_id}/history": {
+      "get": {
+        "summary": "Read immutable signed approval events",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/ApprovalId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalHistoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/spending-approvals/{approval_id}/approve": {
+      "post": {
+        "summary": "Record owner approval without executing payment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/ApprovalId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Owner review opened",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired owner signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current AgentAccount owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identity, policy, idempotency, or concurrent state conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Forbidden approval transition or denied decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendingApprovalMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/spending-approvals/{approval_id}/reject": {
+      "post": {
+        "summary": "Reject an owner consent review",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/ApprovalId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Owner review opened",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired owner signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current AgentAccount owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identity, policy, idempotency, or concurrent state conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Forbidden approval transition or denied decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendingApprovalMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/spending-approvals/{approval_id}/revoke": {
+      "post": {
+        "summary": "Revoke a prior owner approval",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentId"
+          },
+          {
+            "$ref": "#/components/parameters/ApprovalId"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSigner"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicTimestamp"
+          },
+          {
+            "$ref": "#/components/parameters/EconomicSignature"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "RPC or matching engine failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Owner review opened",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingApprovalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired owner signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signer is not current AgentAccount owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identity, policy, idempotency, or concurrent state conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Forbidden approval transition or denied decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendingApprovalMutation"
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agents/{agent_id}/solvency": {
       "get": {
         "summary": "Calculate verified per-asset solvency",
@@ -2952,6 +3696,271 @@
             "items": {
               "$ref": "#/components/schemas/SpendingDecision"
             }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "SpendingApprovalMutation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agent_account",
+          "agent_id",
+          "owner_pubkey",
+          "proposal_id",
+          "proposal_hash",
+          "decision_id",
+          "decision_hash",
+          "policy_id",
+          "policy_version",
+          "policy_hash",
+          "network",
+          "genesis_hash",
+          "program_id",
+          "token_mint",
+          "recipient_pubkey",
+          "amount_base_units_str",
+          "economic_snapshot_hash",
+          "action",
+          "issued_at",
+          "expires_at",
+          "nonce",
+          "idempotency_key",
+          "reason"
+        ],
+        "properties": {
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "owner_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "proposal_hash": {
+            "type": "string"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "decision_hash": {
+            "type": "string"
+          },
+          "policy_id": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "integer"
+          },
+          "policy_hash": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "genesis_hash": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "program_id": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "token_mint": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "recipient_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "amount_base_units_str": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "economic_snapshot_hash": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "APPROVE",
+              "REJECT",
+              "REVOKE"
+            ]
+          },
+          "issued_at": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "SpendingApproval": {
+        "type": "object",
+        "required": [
+          "approval_id",
+          "proposal_id",
+          "decision_id",
+          "approval_status",
+          "effective_status",
+          "financial_eligibility",
+          "is_executable"
+        ],
+        "properties": {
+          "approval_id": {
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "agent_account": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "owner_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "amount_base_units_str": {
+            "$ref": "#/components/schemas/Uint64"
+          },
+          "approval_status": {
+            "type": "string"
+          },
+          "effective_status": {
+            "type": "string"
+          },
+          "financial_eligibility": {
+            "type": "string"
+          },
+          "is_currently_applicable": {
+            "type": "boolean"
+          },
+          "is_executable": {
+            "const": false
+          }
+        },
+        "additionalProperties": true
+      },
+      "SpendingApprovalEvent": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "approval_id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "actor_pubkey": {
+            "$ref": "#/components/schemas/Pubkey"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "signature_message_hash": {
+            "type": "string"
+          },
+          "signature_message": {
+            "type": "string"
+          },
+          "signed_body_json": {
+            "type": "string"
+          },
+          "event_hash": {
+            "type": "string"
+          },
+          "previous_event_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "SpendingApprovalContext": {
+        "type": "object",
+        "properties": {
+          "approval_id": {
+            "type": "string"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/SpendingProposal"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/SpendingDecision"
+          },
+          "proposal_hash": {
+            "type": "string"
+          },
+          "decision_hash": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SpendingApprovalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SpendingApproval"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "SpendingApprovalListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendingApproval"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "SpendingApprovalHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendingApprovalEvent"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "SpendingApprovalContextResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SpendingApprovalContext"
           },
           "meta": {
             "$ref": "#/components/schemas/Meta"
@@ -4252,6 +5261,24 @@
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Pubkey"
+        }
+      },
+      "ApprovalId": {
+        "name": "approval_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^sa_[0-9a-f]{32}$"
+        }
+      },
+      "DecisionId": {
+        "name": "decision_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^sd_[0-9a-f]{32}$"
         }
       },
       "WorkOrderId": {

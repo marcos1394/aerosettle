@@ -528,6 +528,88 @@ export interface SpendingDecision extends SpendingBudgetSnapshot {
   is_currently_applicable: boolean;
 }
 
+export type SpendingApprovalAction = 'OPEN' | 'APPROVE' | 'REJECT' | 'REVOKE';
+export type SpendingApprovalStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'REVOKED' | 'EXPIRED';
+export interface SpendingApprovalContext {
+  approval_id: string;
+  agent_account: string;
+  agent_id: string;
+  owner_pubkey: string;
+  proposal_id: string;
+  proposal_hash: string;
+  decision_id: string;
+  decision_hash: string;
+  policy_id: string;
+  policy_version: number;
+  policy_hash: string;
+  network: string;
+  genesis_hash: string;
+  program_id: string;
+  token_mint: string;
+  recipient_pubkey: string;
+  amount_base_units_str: U64String;
+  economic_snapshot_hash: string;
+  proposal: SpendingProposal;
+  decision: SpendingDecision;
+}
+export type SpendingApprovalMutation = Omit<SpendingApprovalContext, 'approval_id' | 'proposal' | 'decision'> & {
+  action: SpendingApprovalAction;
+  issued_at: number;
+  expires_at: number;
+  nonce: string;
+  idempotency_key: string;
+  reason: string;
+};
+export interface SpendingApproval {
+  approval_id: string;
+  proposal_id: string;
+  decision_id: string;
+  agent_account: string;
+  agent_id: string;
+  owner_pubkey: string;
+  network: string;
+  genesis_hash: string;
+  program_id: string;
+  token_mint: string;
+  recipient_pubkey: string;
+  amount_base_units_str: U64String;
+  proposal_hash: string;
+  decision_hash: string;
+  economic_snapshot_hash: string;
+  policy_id: string;
+  policy_version: number;
+  policy_hash: string;
+  approval_status: SpendingApprovalStatus;
+  effective_status: SpendingApprovalStatus;
+  approved_by: string | null;
+  approved_at: number | null;
+  expires_at: number;
+  created_at: number;
+  last_event_id: string;
+  financial_eligibility: 'ELIGIBLE_FOR_FUTURE_STAGE' | 'NOT_EXECUTION_ELIGIBLE';
+  is_currently_applicable: boolean;
+  is_executable: false;
+}
+export interface SpendingApprovalEvent {
+  event_id: string;
+  approval_id: string;
+  proposal_id: string;
+  decision_id: string;
+  action: SpendingApprovalAction;
+  actor_pubkey: string;
+  occurred_at: number;
+  reason: string;
+  signature: string;
+  signature_message_hash: string;
+  signature_message: string;
+  signed_body_json: string;
+  idempotency_key: string;
+  nonce: string;
+  event_hash: string;
+  previous_event_hash: string | null;
+}
+export type SpendingApprovalHistory = SpendingApprovalEvent[];
+
 export interface RecordMovementInput {
   idempotency_key: string;
   agent_account: string;
@@ -886,6 +968,64 @@ export async function spendingEvaluationMessage(account: string, requester: stri
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   const hex = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
   return new TextEncoder().encode(`conatus:spending-evaluation:v1:${timestamp}:${account}:${requester}:POST:${path}:${hex}:${body.nonce}:${body.idempotency_key}:${body.expected_policy_id}:${body.expected_policy_version}:${body.expected_policy_hash}`);
+}
+
+export async function spendingApprovalMessage(account: string, owner: string, path: string,
+  timestamp: number, body: SpendingApprovalMutation): Promise<Uint8Array> {
+  const root = `/v1/agents/${pubkey(account)}/spending-approvals`;
+  if (path !== root && !new RegExp(`^${root}/sa_[0-9a-f]{32}/(approve|reject|revoke)$`).test(path))
+    throw new RangeError('Invalid approval path');
+  const pathAction = path === root ? 'OPEN' : path.split('/').at(-1)!.toUpperCase();
+  if (body.action !== pathAction || body.agent_account !== account || body.owner_pubkey !== owner ||
+      body.issued_at !== timestamp) throw new RangeError('Approval action or identity mismatch');
+  u64(body.amount_base_units_str, 'amount_base_units_str');
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPolicyJson(body)));
+  const hex = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+  return new TextEncoder().encode(`conatus:spending-approval:v1:${timestamp}:${account}:${body.agent_id}:${owner}:POST:${path}:${hex}:${body.nonce}:${body.idempotency_key}:${body.proposal_id}:${body.proposal_hash}:${body.decision_id}:${body.decision_hash}:${body.policy_id}:${body.policy_version}:${body.policy_hash}:${body.expires_at}`);
+}
+
+function spendingApprovalContext(raw: unknown): SpendingApprovalContext {
+  const value = object(raw, 'approval context');
+  for (const key of ['approval_id', 'agent_account', 'agent_id', 'owner_pubkey', 'proposal_id',
+    'proposal_hash', 'decision_id', 'decision_hash', 'policy_id', 'policy_hash',
+    'network', 'genesis_hash', 'program_id', 'token_mint', 'recipient_pubkey',
+    'economic_snapshot_hash']) nonempty(value[key], key);
+  integer(value.policy_version, 'policy_version');
+  u64(value.amount_base_units_str, 'amount_base_units_str');
+  const proposal = object(value.proposal, 'proposal');
+  u64(proposal.amount_base_units_str, 'proposal amount');
+  spendingDecision(value.decision);
+  return value as unknown as SpendingApprovalContext;
+}
+
+function spendingApproval(raw: unknown): SpendingApproval {
+  const value = object(raw, 'spending approval');
+  for (const key of ['approval_id', 'proposal_id', 'decision_id', 'agent_account', 'agent_id',
+    'owner_pubkey', 'policy_id', 'policy_hash', 'proposal_hash', 'decision_hash',
+    'economic_snapshot_hash', 'last_event_id', 'network', 'genesis_hash', 'program_id',
+    'token_mint', 'recipient_pubkey']) nonempty(value[key], key);
+  u64(value.amount_base_units_str, 'amount_base_units_str');
+  integer(value.policy_version, 'policy_version');
+  for (const key of ['created_at', 'expires_at']) integer(value[key], key);
+  if (!['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'REVOKED'].includes(nonempty(value.approval_status, 'approval_status')) ||
+      !['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'REVOKED', 'EXPIRED'].includes(nonempty(value.effective_status, 'effective_status')))
+    fail('Invalid approval status');
+  if (!['ELIGIBLE_FOR_FUTURE_STAGE', 'NOT_EXECUTION_ELIGIBLE'].includes(nonempty(value.financial_eligibility, 'financial_eligibility')))
+    fail('Invalid financial eligibility');
+  boolean(value.is_currently_applicable, 'is_currently_applicable');
+  if (value.is_executable !== false) fail('Owner consent cannot execute a payment');
+  return value as unknown as SpendingApproval;
+}
+
+function spendingApprovalEvent(raw: unknown): SpendingApprovalEvent {
+  const value = object(raw, 'approval event');
+  for (const key of ['event_id', 'approval_id', 'proposal_id', 'decision_id', 'actor_pubkey',
+    'signature', 'signature_message_hash', 'signature_message', 'signed_body_json',
+    'idempotency_key', 'nonce', 'event_hash']) nonempty(value[key], key);
+  if (!['OPEN', 'APPROVE', 'REJECT', 'REVOKE'].includes(nonempty(value.action, 'action')))
+    fail('Invalid approval action');
+  integer(value.occurred_at, 'occurred_at');
+  return value as unknown as SpendingApprovalEvent;
 }
 
 function spendingDecision(raw: unknown): SpendingDecision {
@@ -1783,6 +1923,61 @@ export class MarketplaceClient {
     if (!/^sd_[0-9a-f]{32}$/.test(decisionId)) throw new RangeError('Invalid decision ID');
     return detail(await this.get(`/v1/agents/${pubkey(account)}/spending-evaluations/${decisionId}`,
       undefined, options.signal, options.authHeaders), spendingDecision);
+  }
+
+  async getSpendingApprovalContext(account: string, decisionId: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<SpendingApprovalContext>> {
+    if (!/^sd_[0-9a-f]{32}$/.test(decisionId)) throw new RangeError('Invalid decision ID');
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/spending-approvals/context/${decisionId}`,
+      undefined, options.signal, options.authHeaders), spendingApprovalContext);
+  }
+
+  async listAgentSpendingApprovals(account: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<SpendingApproval[]>> {
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/spending-approvals`, undefined,
+      options.signal, options.authHeaders), raw => array(raw, 'spending approvals').map(spendingApproval));
+  }
+
+  async getAgentSpendingApproval(account: string, approvalId: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<SpendingApproval>> {
+    if (!/^sa_[0-9a-f]{32}$/.test(approvalId)) throw new RangeError('Invalid approval ID');
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/spending-approvals/${approvalId}`,
+      undefined, options.signal, options.authHeaders), spendingApproval);
+  }
+
+  async getSpendingApprovalHistory(account: string, approvalId: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<SpendingApprovalHistory>> {
+    if (!/^sa_[0-9a-f]{32}$/.test(approvalId)) throw new RangeError('Invalid approval ID');
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/spending-approvals/${approvalId}/history`,
+      undefined, options.signal, options.authHeaders), raw => array(raw, 'approval history').map(spendingApprovalEvent));
+  }
+
+  private async approvalAction(account: string, approvalId: string | null, action: SpendingApprovalAction,
+    body: SpendingApprovalMutation, options: SignedPolicyRequestOptions): Promise<Detail<SpendingApproval>> {
+    if (body.action !== action || body.agent_account !== account) throw new TypeError('Approval action or account mismatch');
+    u64(body.amount_base_units_str, 'amount_base_units_str');
+    const suffix = approvalId === null ? '' : `/${/^sa_[0-9a-f]{32}$/.test(approvalId) ? approvalId : fail('Invalid approval ID')}/${action.toLowerCase()}`;
+    const raw = await this.post(`/v1/agents/${pubkey(account)}/spending-approvals${suffix}`,
+      body, options.signal, this.policyHeaders(options));
+    const response = object(raw, 'approval mutation response');
+    return { data: spendingApproval(response.data), meta: meta(response.meta, false) };
+  }
+
+  async createSpendingApprovalReview(account: string, body: SpendingApprovalMutation,
+    options: SignedPolicyRequestOptions): Promise<Detail<SpendingApproval>> {
+    return this.approvalAction(account, null, 'OPEN', body, options);
+  }
+  async approveSpendingProposal(account: string, approvalId: string, body: SpendingApprovalMutation,
+    options: SignedPolicyRequestOptions): Promise<Detail<SpendingApproval>> {
+    return this.approvalAction(account, approvalId, 'APPROVE', body, options);
+  }
+  async rejectSpendingProposal(account: string, approvalId: string, body: SpendingApprovalMutation,
+    options: SignedPolicyRequestOptions): Promise<Detail<SpendingApproval>> {
+    return this.approvalAction(account, approvalId, 'REJECT', body, options);
+  }
+  async revokeSpendingApproval(account: string, approvalId: string, body: SpendingApprovalMutation,
+    options: SignedPolicyRequestOptions): Promise<Detail<SpendingApproval>> {
+    return this.approvalAction(account, approvalId, 'REVOKE', body, options);
   }
 
   async *iterateAgents(

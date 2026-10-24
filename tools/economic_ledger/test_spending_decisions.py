@@ -295,7 +295,7 @@ class SpendingDecisionTests(unittest.TestCase):
             previous_policy.mutate(AGENT_RECORD, "CREATE", policy_body("CREATE", 0, "00000009"), OWNER)
             previous.close()
         upgraded = EconomicLedger(old_db)
-        self.assertEqual(upgraded._conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 10)
+        self.assertEqual(upgraded._conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 11)
         self.assertIsNotNone(upgraded._conn.execute("SELECT name FROM sqlite_master WHERE name='spending_decisions'").fetchone())
         self.assertEqual(BudgetPolicyStore(upgraded).current(AGENT_RECORD)["version"], 1)
         upgraded.close()

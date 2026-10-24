@@ -8,6 +8,7 @@ import { api } from '../../app/api';
 import { ownerAuthHeaders } from '../../app/economic';
 import { useCopy } from '../../app/i18n';
 import { useResource } from '../../app/useResource';
+import { AgentSpendingApprovalPanel } from './AgentSpendingApprovalPanel';
 
 /** A signed advisory evaluation; this panel never creates or signs a payment. */
 export function AgentSpendingEvaluationPanel({ policy }: { policy: AgentBudgetPolicy }) {
@@ -116,5 +117,6 @@ export function AgentSpendingEvaluationPanel({ policy }: { policy: AgentBudgetPo
       {history.error && <p role="alert">{history.error}</p>}
       {history.data?.map((item) => <p key={item.decision_id}>{item.decision} · {item.reason_codes.join(', ')} · v{item.policy_version ?? '—'} · {item.economic_evidence_status} · {item.is_currently_applicable ? c('current', 'vigente') : c('historical', 'histórico')}</p>)}
     </details>
+    <AgentSpendingApprovalPanel policy={policy} />
   </section>;
 }
