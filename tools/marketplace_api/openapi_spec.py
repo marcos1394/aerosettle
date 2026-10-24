@@ -50,6 +50,19 @@ def operation(summary, schema, parameters=(), paged=False):
     }
 
 
+def policy_write(summary, schema):
+    result = operation(summary, schema, ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))
+    result["requestBody"] = {"required": True, "content": {"application/json": {"schema": ref("BudgetPolicyMutation")}}}
+    result["responses"].update({
+        "201": response(schema, "Policy created"),
+        "401": response(ref("Error"), "Invalid mutation signature"),
+        "403": response(ref("Error"), "Signer is not current owner"),
+        "409": response(ref("Error"), "Version, nonce, or idempotency conflict"),
+        "422": response(ref("Error"), "Invalid policy transition or context"),
+    })
+    return result
+
+
 def build():
     uint64 = {
         "type": "string",
@@ -67,6 +80,52 @@ def build():
     schemas = {
         "Pubkey": pubkey,
         "Uint64": uint64,
+        "AssetBudgetRule": {
+            "type": "object", "additionalProperties": False,
+            "required": ["token_mint", "max_per_operation_base_units_str", "max_daily_spend_base_units_str",
+                         "minimum_reserve_base_units_str", "enabled"],
+            "properties": {
+                "token_mint": ref("Pubkey"),
+                "max_per_operation_base_units_str": ref("Uint64"),
+                "max_daily_spend_base_units_str": ref("Uint64"),
+                "minimum_reserve_base_units_str": ref("Uint64"),
+                "enabled": {"type": "boolean"},
+            },
+        },
+        "BudgetPolicyMutation": {
+            "type": "object",
+            "description": "Create/update require all configuration fields; lifecycle actions require only control fields.",
+            "properties": {
+                "expected_version": {"type": "integer", "minimum": 0},
+                "idempotency_key": {"type": "string"}, "nonce": {"type": "string"},
+                "revision_reason": {"type": "string"},
+                "network": {"type": "string"}, "genesis_hash": ref("Pubkey"),
+                "program_id": ref("Pubkey"),
+                "asset_rules": {"type": "array", "items": ref("AssetBudgetRule")},
+                "allowed_recipients": {"type": "array", "items": ref("Pubkey")},
+                "valid_from": {"type": "integer"}, "expires_at": {"type": "integer"},
+            }, "additionalProperties": False,
+        },
+        "AgentBudgetPolicy": {
+            "type": "object", "required": ["policy_id", "agent_account", "owner_pubkey", "version", "status",
+                                            "asset_rules", "allowed_recipients", "policy_hash", "network",
+                                            "genesis_hash", "program_id", "valid_from", "expires_at"],
+            "properties": {
+                "policy_id": {"type": "string"}, "agent_account": ref("Pubkey"),
+                "agent_id": {"type": "string"}, "owner_pubkey": ref("Pubkey"),
+                "network": {"type": "string"}, "genesis_hash": ref("Pubkey"), "program_id": ref("Pubkey"),
+                "version": {"type": "integer", "minimum": 1},
+                "status": {"type": "string", "enum": ["DRAFT", "ACTIVE", "PAUSED", "REVOKED"]},
+                "effective_status": {"type": "string", "enum": ["DRAFT", "ACTIVE", "PAUSED", "REVOKED", "EXPIRED"]},
+                "asset_rules": {"type": "array", "items": ref("AssetBudgetRule")},
+                "allowed_recipients": {"type": "array", "items": ref("Pubkey")},
+                "valid_from": {"type": "integer"}, "expires_at": {"type": "integer"},
+                "policy_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "reserve_comparison": {"type": "array", "description": "Off-chain policy target compared with separate ledger records"},
+            }, "additionalProperties": True,
+        },
+        "BudgetPolicyResponse": {"type": "object", "properties": {"data": ref("AgentBudgetPolicy"), "meta": ref("Meta")}},
+        "BudgetPolicyHistoryResponse": {"type": "object", "properties": {"data": {"type": "array", "items": ref("AgentBudgetPolicy")}, "meta": ref("Meta")}},
         "Agent": {
             "type": "object",
             "required": [
@@ -997,6 +1056,32 @@ def build():
             },
             "/v1/agents/{agent_id}/economic-summary": {
                 "get": summary_page,
+            },
+            "/v1/agents/{agent_id}/budget-policy": {
+                "get": operation("Read current owner budget policy and accounting reserve comparison", ref("BudgetPolicyResponse"),
+                                 ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+                "post": policy_write("Create off-chain budget policy draft", ref("BudgetPolicyResponse")),
+                "put": policy_write("Create a new immutable policy configuration version", ref("BudgetPolicyResponse")),
+            },
+            "/v1/agents/{agent_id}/budget-policy/history": {
+                "get": operation("Read immutable policy version history", ref("BudgetPolicyHistoryResponse"),
+                                 ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+            },
+            "/v1/agents/{agent_id}/budget-policy/{version}": {
+                "get": operation("Read a historical policy version", ref("BudgetPolicyResponse"),
+                                 ("AgentId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature")),
+            },
+            "/v1/agents/{agent_id}/budget-policy/activate": {
+                "post": policy_write("Activate a draft policy", ref("BudgetPolicyResponse")),
+            },
+            "/v1/agents/{agent_id}/budget-policy/pause": {
+                "post": policy_write("Pause an active policy", ref("BudgetPolicyResponse")),
+            },
+            "/v1/agents/{agent_id}/budget-policy/resume": {
+                "post": policy_write("Reactivate a paused policy", ref("BudgetPolicyResponse")),
+            },
+            "/v1/agents/{agent_id}/budget-policy/revoke": {
+                "post": policy_write("Permanently revoke a policy", ref("BudgetPolicyResponse")),
             },
             "/v1/agents/{agent_id}/solvency": {"get": operation(
                 "Calculate verified per-asset solvency", ref("SolvencyListResponse"),

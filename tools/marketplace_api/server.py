@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -19,6 +20,9 @@ import cursor_pagination
 import openapi_spec
 
 from tools.economic_ledger.auth import AuthError, verify_request_auth
+from tools.economic_ledger.budget_policies import (
+    BudgetPolicyStore, PolicyError, validate_control, verify_mutation,
+)
 from tools.economic_ledger.ledger import EconomicLedger
 from tools.economic_ledger.solvency import assess_agent, assessment_history, methodology, save_assessment
 from tools.economic_ledger.models import (
@@ -29,6 +33,7 @@ from tools.economic_ledger.models import (
 )
 
 _DEFAULT_LEDGER: EconomicLedger | None = None
+_POLICY_STORE_INIT_LOCK = threading.Lock()
 
 
 def get_ledger(provider=None) -> EconomicLedger:
@@ -38,6 +43,14 @@ def get_ledger(provider=None) -> EconomicLedger:
     if _DEFAULT_LEDGER is None:
         _DEFAULT_LEDGER = EconomicLedger()
     return _DEFAULT_LEDGER
+
+
+def get_policy_store(provider=None) -> BudgetPolicyStore:
+    ledger = get_ledger(provider)
+    with _POLICY_STORE_INIT_LOCK:
+        if not hasattr(ledger, "_budget_policy_store"):
+            ledger._budget_policy_store = BudgetPolicyStore(ledger)
+    return ledger._budget_policy_store
 
 
 def authorize_agent_access(agent: dict, headers: dict | None, agent_account: str | None = None) -> str:
@@ -377,10 +390,12 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
 
     if len(pieces) == 4 and not (
         (entity == "work-orders" and pieces[3] == "matches")
-        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency"))
+        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy"))
     ):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
-    if len(pieces) == 5 and (entity != "agents" or pieces[3] != "solvency" or pieces[4] not in ("history", "methodology")):
+    if len(pieces) == 5 and (entity != "agents" or
+       (pieces[3] == "solvency" and pieces[4] not in ("history", "methodology")) or
+       pieces[3] not in ("solvency", "budget-policy")):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
 
     if len(pieces) >= 3 and entity not in ("economic-movements", "costs", "reserves"):
@@ -502,6 +517,23 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                 "AGENT_NOT_FOUND",
                 "Agent not registered in current snapshot",
             )
+
+        if len(pieces) >= 4 and pieces[3] == "budget-policy":
+            authorize_agent_access(agent, headers, pieces[2])
+            store = get_policy_store(provider)
+            try:
+                if len(pieces) == 4:
+                    data = store.current(agent)
+                    data["reserve_comparison"] = store.reserve_comparison(data)
+                elif pieces[4] == "history":
+                    data = store.history(agent)
+                else:
+                    if not pieces[4].isascii() or not pieces[4].isdecimal() or int(pieces[4]) < 1:
+                        raise ApiError(400, "INVALID_VERSION", "Expected positive policy version")
+                    data = store.version(agent, int(pieces[4]))
+            except PolicyError as exc:
+                raise ApiError(exc.status, exc.code, str(exc)) from exc
+            return 200, {"data": data, "meta": meta}
 
         if len(pieces) == 4 and pieces[3] == "economic-movements":
             authorize_agent_access(agent, headers, pieces[2])
@@ -816,6 +848,38 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
     }
 
 
+def policy_mutation_route(method: str, url: str, provider, headers, body: dict) -> tuple[int, dict]:
+    parts = urlsplit(url)
+    pieces = [part for part in parts.path.split("/") if part]
+    if parts.query or parts.fragment or len(pieces) not in (4, 5) or pieces[:2] != ["v1", "agents"] or pieces[3] != "budget-policy":
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Only budget policy administration may mutate")
+    require_pubkey(pieces[2])
+    action = None
+    if len(pieces) == 4:
+        action = "CREATE" if method == "POST" else "UPDATE" if method == "PUT" else None
+    elif method == "POST":
+        action = {"activate": "ACTIVATE", "pause": "PAUSE", "resume": "RESUME", "revoke": "REVOKE"}.get(pieces[4])
+    if action is None:
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Unsupported policy mutation")
+    snapshot = provider.snapshot()
+    agent = next((item for item in snapshot["agents"] if item["agent_account"] == pieces[2]), None)
+    if agent is None:
+        raise ApiError(404, "AGENT_NOT_FOUND", "Agent not registered in current snapshot")
+    try:
+        validate_control(body, action)
+        actor = verify_mutation(agent, method, parts.path, body, headers)
+        latest = provider.snapshot()
+        latest_agent = next((item for item in latest["agents"] if item["agent_account"] == pieces[2]), None)
+        if latest_agent is None or latest_agent.get("owner") != actor or latest_agent.get("agent_id") != agent.get("agent_id"):
+            raise PolicyError(403, "OWNER_CHANGED", "Agent identity or owner changed before mutation")
+        data, created = get_policy_store(provider).mutate(agent, action, body, actor)
+    except PolicyError as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
+    out_meta = metadata(snapshot)
+    out_meta["read_only"] = False
+    return (201 if created and action == "CREATE" else 200), {"data": data, "meta": out_meta}
+
+
 class LiveProvider:
     def __init__(
         self,
@@ -957,8 +1021,43 @@ def handler_for(provider):
                 )
 
         def do_POST(self):
-            # External write endpoints disabled: ingestion must occur through trusted internal services
-            self.unsupported()
+            self.policy_write("POST")
+
+        def do_PUT(self):
+            self.policy_write("PUT")
+
+        def policy_write(self, method: str):
+            parts = urlsplit(self.path)
+            route_parts = [item for item in parts.path.split("/") if item]
+            if (len(route_parts) not in (4, 5) or route_parts[:2] != ["v1", "agents"]
+                    or route_parts[3] != "budget-policy"):
+                self.unsupported()
+                return
+            try:
+                length = self.headers.get("Content-Length")
+                if length is None or not length.isdecimal() or int(length) > 65536:
+                    raise ApiError(400, "INVALID_BODY", "JSON body length is required and must be <= 65536 bytes")
+                raw = self.rfile.read(int(length))
+                def unique_pairs(pairs):
+                    value = {}
+                    for key, item in pairs:
+                        if key in value:
+                            raise ValueError("Duplicate JSON property")
+                        value[key] = item
+                    return value
+                try:
+                    body = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
+                except (UnicodeError, ValueError) as exc:
+                    raise ApiError(400, "INVALID_BODY", "Expected unique-key JSON object") from exc
+                if not isinstance(body, dict):
+                    raise ApiError(400, "INVALID_BODY", "Expected JSON object")
+                status, response = policy_mutation_route(method, self.path, provider, self.headers, body)
+                self.respond(status, response)
+            except ApiError as exc:
+                self.respond(exc.status, {"error": {"code": exc.code, "message": str(exc)}})
+            except Exception as exc:
+                print(f"Policy mutation error: {exc}", file=sys.stderr)
+                self.respond(500, {"error": {"code": "POLICY_WRITE_ERROR", "message": "Policy mutation failed"}})
 
         def unsupported(self):
             self.respond(
@@ -972,7 +1071,7 @@ def handler_for(provider):
                 {"Allow": "GET"},
             )
 
-        do_PUT = do_PATCH = do_DELETE = do_OPTIONS = unsupported
+        do_PATCH = do_DELETE = do_OPTIONS = unsupported
 
         def log_message(self, fmt, *args):
             print(
