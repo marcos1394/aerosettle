@@ -1,0 +1,35 @@
+.organizations-page { max-width: 1480px; margin: 0 auto; padding: 28px 24px 60px; }
+.org-hero { padding: 36px; margin-bottom: 22px; border: 1px solid rgba(74,204,180,.36); border-radius: 20px;
+  background: radial-gradient(circle at 85% 15%, rgba(65,187,169,.2), transparent 38%),
+    linear-gradient(130deg, rgba(16,42,55,.92), rgba(25,32,65,.88)); }
+.org-hero h1 { font-size: clamp(2rem, 4vw, 3.5rem); margin: 6px 0; }
+.org-hero > p { max-width: 65ch; }
+.org-safety { margin-top: 24px; padding: 12px 14px; border: 1px solid rgba(74,204,180,.4);
+  border-radius: 10px; color: #90f2d3; font-size: .75rem; letter-spacing: .08em; }
+.org-layout { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 22px; align-items: start; }
+.org-list { display: grid; gap: 10px; }
+.org-list-item { width: 100%; text-align: left; display: grid; gap: 5px; padding: 13px; color: inherit;
+  border: 1px solid rgba(140,165,190,.22); border-radius: 12px; background: rgba(64,100,120,.11); cursor: pointer; }
+.org-list-item.selected { border-color: #5ccab6; background: rgba(69,190,160,.13); }
+.org-list-item span, .org-list-item small { font-size: .74rem; opacity: .75; overflow-wrap: anywhere; }
+.org-create { display: grid; gap: 10px; padding-top: 18px; border-top: 1px solid rgba(140,165,190,.2); }
+.org-create label, .org-form { display: grid; gap: 7px; }
+.org-create input, .org-create textarea, .org-form input, .org-form select { min-width: 0; width: 100%; }
+.org-main { min-width: 0; display: grid; gap: 18px; }
+.org-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 18px 0; }
+.org-facts span { display: grid; gap: 6px; font-size: .75rem; opacity: .75; }
+.org-facts strong { font-size: .8rem; opacity: 1; overflow-wrap: anywhere; }
+.org-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.org-tabs button { border: 1px solid rgba(140,165,190,.3); border-radius: 100px; padding: 8px 13px;
+  background: transparent; color: inherit; text-transform: capitalize; cursor: pointer; }
+.org-tabs button.active { border-color: #5ccab6; background: rgba(69,190,160,.17); }
+.org-section { display: grid; gap: 11px; }
+.org-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 0; border-bottom: 1px solid rgba(140,165,190,.16); }
+.org-row span { min-width: 0; flex: 1 1 250px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.org-row small { opacity: .7; font-size: .76rem; }
+.org-form { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: end;
+  border-top: 1px solid rgba(140,165,190,.2); padding-top: 18px; }
+.org-form h4 { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 900px) { .org-layout { grid-template-columns: 1fr; } .organizations-page { padding: 18px 12px 40px; }
+  .org-hero { padding: 22px; } }
