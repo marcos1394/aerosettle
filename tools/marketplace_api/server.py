@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -40,6 +41,9 @@ from tools.economic_ledger.models import (
     MovementStatus,
     ProvenanceSource,
 )
+from tools.paper_trading.providers import DeterministicFixtureProvider
+from tools.paper_trading.simulator import METHODOLOGY_VERSION as PAPER_METHODOLOGY_VERSION, PaperError, SHOCKS
+from tools.paper_trading.store import PaperSimulationStore, verify_paper_signature
 
 _DEFAULT_LEDGER: EconomicLedger | None = None
 _POLICY_STORE_INIT_LOCK = threading.Lock()
@@ -79,6 +83,15 @@ def get_approval_store(provider=None) -> SpendingApprovalStore:
         if not hasattr(ledger, "_spending_approval_store"):
             ledger._spending_approval_store = SpendingApprovalStore(ledger, policy_store, spending_store)
     return ledger._spending_approval_store
+
+
+def get_paper_store(provider=None) -> PaperSimulationStore:
+    ledger = get_ledger(provider)
+    with _POLICY_STORE_INIT_LOCK:
+        if not hasattr(ledger, "_paper_simulation_store"):
+            paper_path = ledger.db_path.with_name("paper_trading.sqlite") if ledger.db_path else ":memory:"
+            ledger._paper_simulation_store = PaperSimulationStore(paper_path)
+    return ledger._paper_simulation_store
 
 
 def authorize_agent_access(agent: dict, headers: dict | None, agent_account: str | None = None) -> str:
@@ -380,9 +393,27 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
     entity = pieces[1]
 
     if entity not in {
-        "agents", "work-orders", "marketplace", "economic-movements", "costs", "reserves"
+        "agents", "work-orders", "marketplace", "economic-movements", "costs", "reserves", "paper-trading"
     }:
         raise ApiError(404, "NOT_FOUND", "Unknown resource")
+
+    if entity == "paper-trading":
+        if len(pieces) != 3:
+            raise ApiError(404, "NOT_FOUND", "Unknown paper route")
+        if pieces[2] == "methodology":
+            arguments(parts.query, set())
+            return 200, {"data": {"methodology_version": PAPER_METHODOLOGY_VERSION,
+                "provider_mode": "OFFLINE_FIXTURE", "network_enabled": False,
+                "scenario_shocks": SHOCKS, "is_paper": True, "is_executable": False,
+                "real_capital_authorized": False}, "meta": metadata(provider.snapshot())}
+        if pieces[2] == "instruments":
+            query = arguments(parts.query, {"treasury_token_mint"})
+            if not query.get("treasury_token_mint"):
+                raise ApiError(400, "INCOMPLETE_CONTEXT", "Explicit paper quote mint is required")
+            require_pubkey(query["treasury_token_mint"])
+            data = DeterministicFixtureProvider().get_instruments({"treasury_token_mint": query["treasury_token_mint"]})
+            return 200, {"data": data, "meta": metadata(provider.snapshot())}
+        raise ApiError(404, "NOT_FOUND", "Unknown paper route")
 
     allowed = (
         {
@@ -422,6 +453,8 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                    "window", "from_ts", "to_ts", "consolidated", "limit"}
     elif entity == "agents" and len(pieces) == 4 and pieces[3] == "investible-surplus":
         allowed = {"network", "genesis_hash", "program_id", "token_mint", "scenario", "horizon_days"}
+    elif entity == "agents" and len(pieces) in (4, 5) and pieces[3] == "paper-simulations":
+        allowed = set()
 
     query = arguments(parts.query, allowed)
 
@@ -432,13 +465,13 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
 
     if len(pieces) == 4 and not (
         (entity == "work-orders" and pieces[3] == "matches")
-        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy", "spending-evaluations", "spending-approvals", "investible-surplus"))
+        or (entity == "agents" and pieces[3] in ("economic-movements", "balances", "costs", "reserves", "economic-summary", "solvency", "budget-policy", "spending-evaluations", "spending-approvals", "investible-surplus", "paper-simulations"))
     ):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
     if len(pieces) == 5 and (entity != "agents" or
        (pieces[3] == "solvency" and pieces[4] not in ("history", "methodology")) or
        (pieces[3] == "investible-surplus" and pieces[4] != "methodology") or
-       pieces[3] not in ("solvency", "budget-policy", "spending-evaluations", "spending-approvals", "investible-surplus")):
+       pieces[3] not in ("solvency", "budget-policy", "spending-evaluations", "spending-approvals", "investible-surplus", "paper-simulations")):
         raise ApiError(404, "NOT_FOUND", "Unknown route")
     if len(pieces) == 6 and (entity != "agents" or pieces[3] != "spending-approvals" or
                              pieces[5] != "history" and pieces[4] != "context"):
@@ -563,6 +596,15 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
                 "AGENT_NOT_FOUND",
                 "Agent not registered in current snapshot",
             )
+
+        if len(pieces) >= 4 and pieces[3] == "paper-simulations":
+            authorize_agent_access(agent, headers, pieces[2])
+            try:
+                store = get_paper_store(provider)
+                data = store.list(agent) if len(pieces) == 4 else store.get(agent, pieces[4])
+            except PaperError as exc:
+                raise ApiError(exc.status, exc.code, str(exc)) from exc
+            return 200, {"data": data, "meta": meta}
 
         if len(pieces) >= 4 and pieces[3] == "spending-evaluations":
             authorize_evaluation_read(agent, headers, pieces[2])
@@ -1048,6 +1090,39 @@ def spending_approval_route(method: str, url: str, provider, headers, body: dict
     return (201 if created and action == "OPEN" else 200), {"data": data, "meta": out_meta}
 
 
+def paper_simulation_route(method: str, url: str, provider, headers, body: dict) -> tuple[int, dict]:
+    parts = urlsplit(url)
+    pieces = [part for part in parts.path.split("/") if part]
+    if (method != "POST" or parts.query or parts.fragment or len(pieces) != 4 or
+            pieces[:2] != ["v1", "agents"] or pieces[3] != "paper-simulations"):
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Only signed paper simulation POST is supported")
+    require_pubkey(pieces[2])
+    snapshot = provider.snapshot()
+    agent = next((item for item in snapshot["agents"] if item["agent_account"] == pieces[2]), None)
+    if agent is None:
+        raise ApiError(404, "AGENT_NOT_FOUND", "Agent not registered in current snapshot")
+    try:
+        actor = verify_paper_signature(agent, parts.path, body, headers)
+        policy = get_policy_store(provider).current(agent)
+        now = int(time.time())
+        if (policy["status"] != "ACTIVE" or now < policy["valid_from"] or
+                now >= policy["expires_at"] or
+                (body["network"], body["genesis_hash"], body["program_id"]) !=
+                (policy["network"], policy["genesis_hash"], policy["program_id"]) or
+                body["treasury_token_mint"] not in [rule["token_mint"] for rule in policy["asset_rules"]
+                                                     if rule["enabled"]]):
+            raise PaperError(409, "POLICY_CONTEXT_CONFLICT", "Current policy context is not active for this paper scenario")
+        def current_agent():
+            fresh = provider.snapshot()
+            return next((item for item in fresh["agents"] if item["agent_account"] == pieces[2]), None)
+        data, created = get_paper_store(provider).run(agent, body, actor, identity_supplier=current_agent)
+    except (PaperError, PolicyError) as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
+    out_meta = metadata(provider.snapshot())
+    out_meta["read_only"] = False
+    return (201 if created else 200), {"data": data, "meta": out_meta}
+
+
 class LiveProvider:
     def __init__(
         self,
@@ -1203,7 +1278,9 @@ def handler_for(provider):
                                route_parts[:2] == ["v1", "agents"] and route_parts[3] == "spending-evaluations")
             approval_path = (method == "POST" and len(route_parts) in (4, 6) and
                              route_parts[:2] == ["v1", "agents"] and route_parts[3] == "spending-approvals")
-            if not policy_path and not evaluation_path and not approval_path:
+            paper_path = (method == "POST" and len(route_parts) == 4 and
+                          route_parts[:2] == ["v1", "agents"] and route_parts[3] == "paper-simulations")
+            if not policy_path and not evaluation_path and not approval_path and not paper_path:
                 self.unsupported()
                 return
             try:
@@ -1228,6 +1305,8 @@ def handler_for(provider):
                     status, response = spending_evaluation_route(method, self.path, provider, self.headers, body)
                 elif approval_path:
                     status, response = spending_approval_route(method, self.path, provider, self.headers, body)
+                elif paper_path:
+                    status, response = paper_simulation_route(method, self.path, provider, self.headers, body)
                 else:
                     status, response = policy_mutation_route(method, self.path, provider, self.headers, body)
                 self.respond(status, response)

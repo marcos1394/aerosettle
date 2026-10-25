@@ -5,6 +5,7 @@ import { api } from '../../app/api';
 import { ownerAuthHeaders } from '../../app/economic';
 import { useCopy } from '../../app/i18n';
 import { useResource } from '../../app/useResource';
+import { PaperTradingLab } from './PaperTradingLab';
 
 const SCENARIOS: InvestibleSurplusScenario[] = ['BASE', 'CONSERVATIVE', 'STRESS'];
 
@@ -31,6 +32,13 @@ export function InvestibleSurplusPanel({ context, owner }: {
         program_id: context.program_id, token_mint: context.token_mint, scenario: name, horizon_days: horizon },
       { authHeaders, signal })));
     return results.map((result) => result.data);
+  });
+  const paperPolicy = useResource(`paper-policy:${identity}`, async (signal) => {
+    if (address !== owner || !wallet.signMessage) return null;
+    const authHeaders = await ownerAuthHeaders(context.agent_account, owner, {
+      publicKey: address, signMessage: (message) => wallet.signMessage!(message),
+    }, signal);
+    return (await api.getAgentBudgetPolicy(context.agent_account, { authHeaders, signal })).data;
   });
   const assessments: InvestibleSurplusAssessment[] = active ? resource.data ?? [] : [];
   const current = assessments.find((item) => item.scenario === scenario);
@@ -83,5 +91,8 @@ export function InvestibleSurplusPanel({ context, owner }: {
         </details>
       </div>}
     </>}
+    {paperPolicy.data?.effective_status === 'ACTIVE' &&
+      paperPolicy.data.asset_rules.some((rule) => rule.enabled && rule.token_mint === context.token_mint) &&
+      <PaperTradingLab policy={paperPolicy.data} tokenMint={context.token_mint} />}
   </section>;
 }

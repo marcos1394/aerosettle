@@ -1,0 +1,13 @@
+# CON-31 — Preparación regulatoria preliminar (México, 24 de octubre de 2026)
+
+**Actividad actual:** simulación matemática con fixtures locales y presupuesto ficticio. No hay inversión, intermediación, ejecución, custodia ni dinero de terceros. La investigación de proveedores no habilita conexión.
+
+**Actividades futuras que requieren revisión independiente:** datos de mercado licenciados, enlace con broker, asesoría o recomendaciones individualizadas, intermediación, órdenes, custodia, fondos de terceros y tratamiento de datos de clientes. La [CNBV describe a los intermediarios autorizados y las actividades de intermediación de valores](https://www.cnbv.gob.mx/SECTORES-SUPERVISADOS/BURS%C3%81TIL/Descripci%C3%B3n/Paginas/Otros-intermediarios.aspx); esa descripción no permite deducir automáticamente si un diseño futuro requiere licencia. Antes de seleccionar un intermediario mexicano debe verificarse su registro y autorización, entre otros mecanismos mediante [SIPRES de CONDUSEF](https://www.condusef.gob.mx/index.php?idc=2732&idcat=3&p=contenido).
+
+**KYC/KYB y titularidad:** verificar identidad de la persona moral, representantes, control y beneficiario controlador, así como titularidad económica de la cuenta y facultades para invertir. El [SAT expone reglas de identificación de beneficiario controlador](https://sppld.sat.gob.mx/pld/interiores/preguntas.html), pero la obligación concreta depende de la actividad y sujeto obligado. La elegibilidad de una SAS mexicana ante un broker, instrumentos específicos, permisos de inversión y apertura corporativa queda **no verificada**.
+
+**Contabilidad, fiscalidad y datos:** evaluar registro contable, comprobantes, retenciones y reportes aplicables con asesoría local; el [SAT describe obligaciones generales de personas morales](https://wwwmatnp.sat.gob.mx/articulo/32449/articulo-76). Si se recaban datos personales, aplicar la [Ley Federal de Protección de Datos Personales en Posesión de los Particulares vigente](https://www.diputados.gob.mx/LeyesBiblio/pdf/LFPDPPP.pdf), con análisis de finalidades, seguridad, avisos y transferencias. La simulación actual no solicita datos KYC ni secretos de broker.
+
+**Puertas antes de trading real:** dictamen jurídico y fiscal para modelo/instrumento/jurisdicción, debida diligencia de broker y licencias de datos, KYC/KYB, titularidad y custodia, revisión de seguridad, gestión de riesgos, operaciones y supervisión, consentimiento específico, controles de fondos y pruebas productivas. CON-31 no supera ni sustituye esas puertas.
+
+Este documento técnico identifica temas de revisión; no constituye opinión jurídica ni fiscal definitiva.
