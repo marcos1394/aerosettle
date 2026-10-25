@@ -474,6 +474,74 @@ export interface PaperSimulationResult {
   is_paper: true; is_executable: false; real_capital_authorized: false;
 }
 
+export type OrganizationRole = 'OWNER' | 'LEGAL_REPRESENTATIVE' | 'ADMIN' | 'OPERATOR' |
+  'MEMBER' | 'AUDITOR' | 'VIEWER';
+export type OrganizationPermission = 'organization.read' | 'organization.update_metadata' |
+  'members.read' | 'members.invite' | 'members.suspend' | 'members.reinstate' |
+  'members.remove' | 'roles.read' | 'roles.assign' | 'roles.revoke' |
+  'delegations.create' | 'delegations.revoke' | 'delegations.read' |
+  'agents.read_membership' | 'agents.invite' | 'agents.remove_membership' | 'audit.read';
+export type OrganizationAction = 'CREATE' | 'UPDATE_METADATA' | 'INVITE_HUMAN' | 'ACCEPT_HUMAN' |
+  'DECLINE_HUMAN' | 'INVITE_AGENT' | 'ACCEPT_AGENT' | 'SUSPEND_MEMBER' | 'REINSTATE_MEMBER' |
+  'REMOVE_MEMBER' | 'ASSIGN_ROLE' | 'REVOKE_ROLE' | 'CREATE_DELEGATION' |
+  'REVOKE_DELEGATION' | 'REMOVE_AGENT';
+export interface OrganizationMutationRequest {
+  organization_id: string; actor_pubkey: string; target_type: string; target_id: string;
+  action: OrganizationAction; role_id: string; permission_scope: string;
+  payload: Record<string, unknown>; expected_version: number;
+  issued_at: number; expires_at: number; nonce: string; idempotency_key: string;
+}
+export interface ConatusOrganization {
+  organization_id: string; organization_name: string; organization_slug: string;
+  description: string; organization_type: 'INDIVIDUAL_LED' | 'COLLECTIVE' | 'REGISTERED_ENTITY_CLAIMED';
+  founder_pubkey: string; owner_pubkey: string;
+  legal_representative_pubkey: string | null; legal_representative_status: string;
+  jurisdiction: string; legal_entity_name: string; legal_entity_verification_status: string;
+  organization_status: 'ACTIVE' | 'SUSPENDED'; created_at: number; updated_at: number;
+  version: number; is_financial_authority: false; is_device_signing_authority: false;
+}
+export interface OrganizationOverview {
+  organization: ConatusOrganization; permissions: string[];
+  member_count?: number; agent_count?: number;
+  pending_invitations?: OrganizationInvitation[];
+}
+export interface OrganizationInvitation {
+  invitation_id: string; organization_id: string; subject_type: 'HUMAN' | 'AGENT';
+  subject_id: string; proposed_role: OrganizationRole; invited_by: string;
+  created_at: number; valid_from: number; expires_at: number; status: string;
+  registration: Record<string, unknown> | null; registration_snapshot_hash?: string;
+}
+export interface OrganizationMember {
+  membership_id: string; member_pubkey: string; role_id: OrganizationRole;
+  status: string; valid_from: number; expires_at: number; invited_by: string;
+}
+export interface OrganizationAgentMember {
+  membership_id: string; agent_account: string; agent_id: string;
+  agent_owner_pubkey: string; current_owner_pubkey: string | null;
+  network: string; genesis_hash: string; program_id: string;
+  status: string; effective_status: 'ACTIVE' | 'REVIEW_REQUIRED' | 'REMOVED';
+  consented_by: string; consented_at: number; valid_from: number; expires_at: number;
+}
+export interface OrganizationDelegation {
+  delegation_id: string; delegator_pubkey: string; delegate_pubkey: string;
+  permission: string; resource_scope: string; valid_from: number; expires_at: number;
+  status: string; created_at: number; revoked_at?: number;
+}
+export interface OrganizationEvent {
+  event_id: string; organization_id: string; version: number;
+  actor_pubkey: string; event_type: OrganizationAction;
+  target_type: string; target_id: string; previous_state_hash: string;
+  new_state_hash: string; previous_event_hash: string; event_hash: string;
+  signature: string; signature_message: string; occurred_at: number;
+}
+export interface OrganizationPermissionDecision {
+  decision: 'ALLOW' | 'DENY'; reason_codes: string[]; organization_id: string;
+  actor_pubkey: string; requested_permission: string; target_resource: string;
+  effective_role: OrganizationRole | null; effective_permissions: string[];
+  evaluated_at: number; membership_version: number;
+  is_financial_authority: false; is_device_signing_authority: false;
+}
+
 export interface EconomicMovementFilters extends Paging {
   nature?: MovementNature;
   status?: MovementStatus;
@@ -1130,6 +1198,66 @@ export async function paperSimulationMessage(account: string, owner: string,
   const budgetBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.paper_budget_base_units_str));
   const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
   return new TextEncoder().encode(`conatus:paper-simulation:v1:${timestamp}:${account}:${body.agent_id}:${owner}:POST:${path}:${hex(hashBytes)}:${body.scenario_id}:${hex(budgetBytes)}:${body.nonce}:${body.idempotency_key}`);
+}
+
+function validatedOrganizationId(value: string): string {
+  if (!/^org_[0-9a-f]{32}$/.test(value)) throw new RangeError('Invalid organization ID');
+  return value;
+}
+
+export function organizationReadMessage(path: string, actor: string, timestamp: number): Uint8Array {
+  if (!/^\/v1\/organizations(?:\/.*)?$/.test(path) || path.includes('?') || path.includes('#'))
+    throw new RangeError('Invalid organization read route');
+  pubkey(actor);
+  if (!Number.isSafeInteger(timestamp)) throw new RangeError('Invalid organization read timestamp');
+  return new TextEncoder().encode(`conatus:organization-read:v1:${timestamp}:${actor}:${path}`);
+}
+
+export async function organizationMutationMessage(method: 'POST', path: string,
+  body: OrganizationMutationRequest): Promise<Uint8Array> {
+  validatedOrganizationId(body.organization_id); pubkey(body.actor_pubkey);
+  if (method !== 'POST' || (path !== '/v1/organizations' &&
+      path !== `/v1/organizations/${body.organization_id}/actions`) ||
+      (path === '/v1/organizations') !== (body.action === 'CREATE'))
+    throw new RangeError('Invalid organization mutation route');
+  if (!Number.isSafeInteger(body.expected_version) || !Number.isSafeInteger(body.issued_at) ||
+      !Number.isSafeInteger(body.expires_at) || body.expires_at <= body.issued_at)
+    throw new RangeError('Invalid organization mutation controls');
+  const bytes = new TextEncoder().encode(canonicalPolicyJson(body));
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return new TextEncoder().encode(`conatus:organization-admin:v1:1:${body.organization_id}:${body.actor_pubkey}:` +
+    `${body.target_type}:${body.target_id}:${body.action}:${body.role_id}:${body.permission_scope}:` +
+    `${method}:${path}:${hex}:${body.issued_at}:${body.nonce}:${body.idempotency_key}:` +
+    `${body.expected_version}:${body.expires_at}`);
+}
+
+function organizationResponse(raw: unknown): ConatusOrganization {
+  const value = object(raw, 'organization');
+  validatedOrganizationId(nonempty(value.organization_id, 'organization_id'));
+  pubkey(nonempty(value.owner_pubkey, 'owner_pubkey'));
+  if (value.is_financial_authority !== false || value.is_device_signing_authority !== false ||
+      value.legal_entity_verification_status === 'VERIFIED' ||
+      !['ACTIVE', 'SUSPENDED'].includes(String(value.organization_status)))
+    fail('Organization response claims unverified authority');
+  integer(value.version, 'organization version');
+  return value as unknown as ConatusOrganization;
+}
+
+const ORGANIZATION_PERMISSIONS = new Set(['organization.read', 'organization.update_metadata',
+  'members.read', 'members.invite', 'members.suspend', 'members.reinstate', 'members.remove',
+  'roles.read', 'roles.assign', 'roles.revoke', 'delegations.create', 'delegations.revoke',
+  'delegations.read', 'agents.read_membership', 'agents.invite',
+  'agents.remove_membership', 'audit.read']);
+const ORGANIZATION_ROLES = new Set(['OWNER', 'LEGAL_REPRESENTATIVE', 'ADMIN',
+  'OPERATOR', 'MEMBER', 'AUDITOR', 'VIEWER']);
+function organizationOverview(raw: unknown): OrganizationOverview {
+  const value = object(raw, 'organization overview');
+  organizationResponse(value.organization);
+  const permissions = array(value.permissions, 'organization permissions');
+  if (permissions.some((permission) => !ORGANIZATION_PERMISSIONS.has(String(permission))))
+    fail('Organization claims financial or unknown authority');
+  return value as unknown as OrganizationOverview;
 }
 
 export async function spendingEvaluationMessage(account: string, requester: string,
@@ -2097,6 +2225,73 @@ export class MarketplaceClient {
     if (!/^paper_sim_[0-9a-f]{32}$/.test(simulationId)) throw new RangeError('Invalid paper simulation ID');
     return detail(await this.get(`/v1/agents/${pubkey(account)}/paper-simulations/${simulationId}`,
       undefined, options.signal, options.authHeaders), paperSimulationResult);
+  }
+
+  async listMyOrganizations(options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<OrganizationOverview[]>> {
+    return detail(await this.get('/v1/organizations', undefined, options.signal, this.policyHeaders(options)),
+      raw => array(raw, 'organizations').map(organizationOverview));
+  }
+
+  async getOrganization(organizationId: string,
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<OrganizationOverview>> {
+    return detail(await this.get(`/v1/organizations/${validatedOrganizationId(organizationId)}`,
+      undefined, options.signal, this.policyHeaders(options)), organizationOverview);
+  }
+
+  async getOrganizationAgentRegistration(account: string,
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<Record<string, unknown>>> {
+    return detail(await this.get(`/v1/organizations/agent-registration/${pubkey(account)}`,
+      undefined, options.signal, this.policyHeaders(options)), raw => object(raw, 'agent registration'));
+  }
+
+  async getOrganizationSection<T = unknown>(organizationId: string,
+    section: 'members' | 'agents' | 'invitations' | 'roles' | 'delegations' | 'audit-events' | 'permissions',
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<T>> {
+    const raw = await this.get(`/v1/organizations/${validatedOrganizationId(organizationId)}/${section}`,
+      undefined, options.signal, this.policyHeaders(options));
+    const response = object(raw, 'organization section response');
+    if (section === 'permissions') {
+      const decision = object(response.data, 'organization permission decision');
+      if (decision.is_financial_authority !== false || decision.is_device_signing_authority !== false ||
+          array(decision.effective_permissions, 'effective permissions').some(p => !ORGANIZATION_PERMISSIONS.has(String(p))))
+        fail('Organization permission response claims financial authority');
+    }
+    if (section === 'roles') {
+      const roles = object(response.data, 'organization roles');
+      const catalog = object(roles.catalog, 'role catalog');
+      for (const [role, values] of Object.entries(catalog)) {
+        if (!ORGANIZATION_ROLES.has(role) || array(values, 'role permissions').some(p =>
+          !ORGANIZATION_PERMISSIONS.has(String(p)))) fail('Unsafe organization role catalog');
+      }
+      const assignments = object(roles.assignments, 'role assignments');
+      if (Object.values(assignments).some(role => !ORGANIZATION_ROLES.has(String(role))))
+        fail('Unknown organization role assignment');
+    }
+    if (section === 'delegations' && array(response.data, 'delegations').some(value =>
+      !ORGANIZATION_PERMISSIONS.has(String(object(value, 'delegation').permission))))
+      fail('Unsafe organization delegation');
+    if (section === 'members' && array(response.data, 'members').some(value =>
+      !ORGANIZATION_ROLES.has(String(object(value, 'member').role_id))))
+      fail('Unknown organization member role');
+    return { data: response.data as T, meta: meta(response.meta) };
+  }
+
+  async createOrganization(body: OrganizationMutationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<ConatusOrganization>> {
+    if (body.action !== 'CREATE' || body.expected_version !== 0 || body.target_id !== body.organization_id)
+      throw new RangeError('Invalid organization creation');
+    const raw = object(await this.post('/v1/organizations', body, options.signal,
+      this.policyHeaders(options)), 'organization mutation');
+    return { data: organizationResponse(raw.data), meta: meta(raw.meta, false) };
+  }
+
+  async applyOrganizationAction(organizationIdValue: string, body: OrganizationMutationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<ConatusOrganization>> {
+    const id = validatedOrganizationId(organizationIdValue);
+    if (body.organization_id !== id || body.action === 'CREATE') throw new RangeError('Organization action mismatch');
+    const raw = object(await this.post(`/v1/organizations/${id}/actions`, body, options.signal,
+      this.policyHeaders(options)), 'organization mutation');
+    return { data: organizationResponse(raw.data), meta: meta(raw.meta, false) };
   }
 
   async getAgentBudgetPolicy(account: string, options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<AgentBudgetPolicy>> {

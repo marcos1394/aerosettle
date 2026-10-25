@@ -925,6 +925,30 @@ def build():
             "properties": {"data": ref("PaperSimulationResult"), "meta": ref("Meta")}},
         "PaperSimulationListResponse": {"type": "object", "required": ["data", "meta"],
             "properties": {"data": {"type": "array", "items": ref("PaperSimulationResult")}, "meta": ref("Meta")}},
+        "OrganizationMutationRequest": {"type": "object", "additionalProperties": False,
+            "required": ["organization_id", "actor_pubkey", "target_type", "target_id", "action",
+                "role_id", "permission_scope", "payload", "expected_version", "issued_at",
+                "expires_at", "nonce", "idempotency_key"],
+            "properties": {"organization_id": {"type": "string", "pattern": "^org_[0-9a-f]{32}$"},
+                "actor_pubkey": ref("Pubkey"), "target_type": {"type": "string"},
+                "target_id": {"type": "string"}, "action": {"enum": ["CREATE", "UPDATE_METADATA",
+                    "INVITE_HUMAN", "ACCEPT_HUMAN", "DECLINE_HUMAN", "INVITE_AGENT", "ACCEPT_AGENT",
+                    "SUSPEND_MEMBER", "REINSTATE_MEMBER", "REMOVE_MEMBER", "ASSIGN_ROLE", "REVOKE_ROLE",
+                    "CREATE_DELEGATION", "REVOKE_DELEGATION", "REMOVE_AGENT"]},
+                "role_id": {"type": "string"}, "permission_scope": {"type": "string"},
+                "payload": {"type": "object"}, "expected_version": {"type": "integer", "minimum": 0},
+                "issued_at": {"type": "integer"}, "expires_at": {"type": "integer"},
+                "nonce": {"type": "string"}, "idempotency_key": {"type": "string"}}},
+        "Organization": {"type": "object", "required": ["organization_id", "owner_pubkey",
+            "organization_status", "legal_entity_verification_status", "is_financial_authority",
+            "is_device_signing_authority", "version"],
+            "properties": {"organization_id": {"type": "string"}, "owner_pubkey": ref("Pubkey"),
+                "organization_status": {"enum": ["ACTIVE", "SUSPENDED"]},
+                "legal_entity_verification_status": {"enum": ["UNVERIFIED", "PENDING_VERIFICATION", "VERIFIED"]},
+                "is_financial_authority": {"const": False}, "is_device_signing_authority": {"const": False},
+                "version": {"type": "integer"}}},
+        "OrganizationMutationResponse": {"type": "object", "required": ["data", "meta"],
+            "properties": {"data": ref("Organization"), "meta": ref("Meta")}},
     }
 
     def param(name, schema, description):
@@ -951,6 +975,13 @@ def build():
                               "schema": {"type": "string", "pattern": "^paper_sim_[0-9a-f]{32}$"}},
         "PaperQuoteMint": {"name": "treasury_token_mint", "in": "query", "required": True,
                            "schema": ref("Pubkey")},
+        "OrganizationId": {"name": "organization_id", "in": "path", "required": True,
+                           "schema": {"type": "string", "pattern": "^org_[0-9a-f]{32}$"}},
+        "OrganizationSection": {"name": "section", "in": "path", "required": True,
+            "schema": {"enum": ["members", "agents", "invitations", "roles", "delegations",
+                                "audit-events", "permissions"]}},
+        "OrganizationAgentAccount": {"name": "agent_account", "in": "path", "required": True,
+                                      "schema": ref("Pubkey")},
         "SurplusNetwork": {"name": "network", "in": "query", "required": True, "schema": {"type": "string"}},
         "SurplusGenesis": {"name": "genesis_hash", "in": "query", "required": True, "schema": ref("Pubkey")},
         "SurplusProgram": {"name": "program_id", "in": "query", "required": True, "schema": ref("Pubkey")},
@@ -1083,6 +1114,13 @@ def build():
                               "schema": {"type": "integer"}, "description": "Unix seconds within five minutes of the server clock"},
         "EconomicSignature": {"name": "X-Signature", "in": "header", "required": True,
                               "schema": {"type": "string"}, "description": "Base58 Ed25519 signature of conatus:economic-auth:v1:{timestamp}:{agent_id}"},
+        "OrganizationSigner": {"name": "X-Signer-Pubkey", "in": "header", "required": True,
+                               "schema": ref("Pubkey"), "description": "Current organization actor wallet"},
+        "OrganizationTimestamp": {"name": "X-Timestamp", "in": "header", "required": True,
+                                  "schema": {"type": "integer"}, "description": "Unix seconds within five minutes of the server clock"},
+        "OrganizationSignature": {"name": "X-Signature", "in": "header", "required": True,
+                                  "schema": {"type": "string"}, "description":
+                                  "Base58 Ed25519 signature: GET uses conatus:organization-read:v1 over actor, timestamp and exact path; POST uses conatus:organization-admin:v1 over the canonical complete body and route"},
         "CostId": {
             "name": "cost_id",
             "in": "path",
@@ -1368,6 +1406,27 @@ def build():
             "/v1/agents/{agent_id}/paper-simulations/{simulation_id}": {"get": operation(
                 "Read one private immutable paper simulation", ref("PaperSimulationResponse"),
                 ("AgentId", "PaperSimulationId", "EconomicSigner", "EconomicTimestamp", "EconomicSignature"))},
+            "/v1/organizations": {
+                "get": operation("List only organizations accessible to the signed wallet",
+                                 {"type": "object"}, ("OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature")),
+                "post": {**operation("Create a signed off-chain organization", ref("OrganizationMutationResponse"),
+                                      ("OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature")),
+                    "requestBody": {"required": True, "content": {"application/json":
+                        {"schema": ref("OrganizationMutationRequest")}}}}},
+            "/v1/organizations/agent-registration/{agent_account}": {"get": operation(
+                "Read current public AgentAccount identity for a signed organizational invitation",
+                {"type": "object"}, ("OrganizationAgentAccount", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}": {"get": operation(
+                "Read an accessible organization", {"type": "object"},
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/{section}": {"get": operation(
+                "Read an authorized administrative section", {"type": "object"},
+                ("OrganizationId", "OrganizationSection", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/actions": {"post": {**operation(
+                "Apply a versioned, signed, audited administrative action", ref("OrganizationMutationResponse"),
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature")),
+                "requestBody": {"required": True, "content": {"application/json":
+                    {"schema": ref("OrganizationMutationRequest")}}}}},
             "/v1/costs/{cost_id}": {
                 "get": operation(
                     "Get operational cost detail",

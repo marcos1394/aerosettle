@@ -19,6 +19,7 @@ const groups: { en: string; es: string; items: Section[] }[] = [
       { en: 'Mission Control', es: 'Mission Control', to: '/app', icon: 'grid' },
       { en: 'Economy', es: 'Economía', to: '/app/economy', icon: 'economy' },
       { en: 'Agents', es: 'Agentes', to: '/app/agents', icon: 'agents' },
+      { en: 'Organizations', es: 'Organizaciones', to: '/app/organizations', icon: 'agents' },
       { en: 'Missions', es: 'Misiones', to: '/app/missions', icon: 'missions' },
       { en: 'Mission planner', es: 'Planificador', to: '/app/planner', icon: 'target' },
     ],

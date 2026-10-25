@@ -44,6 +44,8 @@ from tools.economic_ledger.models import (
 from tools.paper_trading.providers import DeterministicFixtureProvider
 from tools.paper_trading.simulator import METHODOLOGY_VERSION as PAPER_METHODOLOGY_VERSION, PaperError, SHOCKS
 from tools.paper_trading.store import PaperSimulationStore, verify_paper_signature
+from tools.organizations.signatures import OrganizationError, ORG_ID, verify_mutation as verify_organization_mutation, verify_read as verify_organization_read
+from tools.organizations.store import OrganizationStore, READ_PERMISSION, _fresh_agent
 
 _DEFAULT_LEDGER: EconomicLedger | None = None
 _POLICY_STORE_INIT_LOCK = threading.Lock()
@@ -92,6 +94,64 @@ def get_paper_store(provider=None) -> PaperSimulationStore:
             paper_path = ledger.db_path.with_name("paper_trading.sqlite") if ledger.db_path else ":memory:"
             ledger._paper_simulation_store = PaperSimulationStore(paper_path)
     return ledger._paper_simulation_store
+
+
+def get_organization_store(provider=None) -> OrganizationStore:
+    ledger = get_ledger(provider)
+    with _POLICY_STORE_INIT_LOCK:
+        if not hasattr(ledger, "_organization_store"):
+            path = ledger.db_path.with_name("organizations.sqlite") if ledger.db_path else ":memory:"
+            def current_snapshot():
+                return {**provider.snapshot(), "network": "localnet", "genesis_hash": provider.health()}
+            ledger._organization_store = OrganizationStore(path, current_snapshot)
+    return ledger._organization_store
+
+
+def organization_read_route(url: str, provider, headers: dict | None) -> tuple[int, dict]:
+    parts = urlsplit(url)
+    pieces = [piece for piece in parts.path.split("/") if piece]
+    if parts.query or parts.fragment:
+        raise ApiError(400, "INVALID_QUERY", "Organization reads do not accept query parameters")
+    try:
+        actor = verify_organization_read(parts.path, headers)
+        if len(pieces) == 2:
+            data = get_organization_store(provider).list_for(actor)
+        elif len(pieces) == 4 and pieces[2] == "agent-registration":
+            require_pubkey(pieces[3])
+            data = _fresh_agent(lambda: {**provider.snapshot(), "network": "localnet",
+                "genesis_hash": provider.health()}, pieces[3])
+            if data is None:
+                raise OrganizationError(404, "NOT_FOUND", "Agent registration unavailable")
+        elif len(pieces) in (3, 4) and ORG_ID.fullmatch(pieces[2]):
+            section = pieces[3] if len(pieces) == 4 else None
+            if section is not None and section not in READ_PERMISSION:
+                raise OrganizationError(404, "NOT_FOUND", "Unknown organization resource")
+            data = get_organization_store(provider).read(pieces[2], actor, section)
+        else:
+            raise OrganizationError(404, "NOT_FOUND", "Unknown organization resource")
+    except OrganizationError as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
+    return 200, {"data": data, "meta": metadata(provider.snapshot())}
+
+
+def organization_mutation_route(method: str, url: str, provider, headers: dict,
+                                body: dict) -> tuple[int, dict]:
+    parts = urlsplit(url)
+    pieces = [piece for piece in parts.path.split("/") if piece]
+    if (method != "POST" or parts.query or parts.fragment or
+            not (pieces == ["v1", "organizations"] or
+                 len(pieces) == 4 and pieces[:2] == ["v1", "organizations"] and
+                 pieces[3] == "actions" and ORG_ID.fullmatch(pieces[2]))):
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Only signed organization POST is supported")
+    try:
+        actor, message = verify_organization_mutation(method, parts.path, body, headers)
+        signature = next((str(value) for key, value in headers.items() if str(key).lower() == "x-signature"), "")
+        result, created = get_organization_store(provider).mutate(body, signature, message, actor)
+    except OrganizationError as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
+    meta = metadata(provider.snapshot())
+    meta["read_only"] = False
+    return (201 if created else 200), {"data": result, "meta": meta}
 
 
 def authorize_agent_access(agent: dict, headers: dict | None, agent_account: str | None = None) -> str:
@@ -393,9 +453,12 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
     entity = pieces[1]
 
     if entity not in {
-        "agents", "work-orders", "marketplace", "economic-movements", "costs", "reserves", "paper-trading"
+        "agents", "work-orders", "marketplace", "economic-movements", "costs", "reserves", "paper-trading", "organizations"
     }:
         raise ApiError(404, "NOT_FOUND", "Unknown resource")
+
+    if entity == "organizations":
+        return organization_read_route(url, provider, headers)
 
     if entity == "paper-trading":
         if len(pieces) != 3:
@@ -1280,7 +1343,9 @@ def handler_for(provider):
                              route_parts[:2] == ["v1", "agents"] and route_parts[3] == "spending-approvals")
             paper_path = (method == "POST" and len(route_parts) == 4 and
                           route_parts[:2] == ["v1", "agents"] and route_parts[3] == "paper-simulations")
-            if not policy_path and not evaluation_path and not approval_path and not paper_path:
+            organization_path = (method == "POST" and route_parts[:2] == ["v1", "organizations"] and
+                                 (len(route_parts) == 2 or len(route_parts) == 4 and route_parts[3] == "actions"))
+            if not policy_path and not evaluation_path and not approval_path and not paper_path and not organization_path:
                 self.unsupported()
                 return
             try:
@@ -1307,6 +1372,8 @@ def handler_for(provider):
                     status, response = spending_approval_route(method, self.path, provider, self.headers, body)
                 elif paper_path:
                     status, response = paper_simulation_route(method, self.path, provider, self.headers, body)
+                elif organization_path:
+                    status, response = organization_mutation_route(method, self.path, provider, self.headers, body)
                 else:
                     status, response = policy_mutation_route(method, self.path, provider, self.headers, body)
                 self.respond(status, response)

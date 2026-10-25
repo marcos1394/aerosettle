@@ -22,6 +22,7 @@ const Activity = lazy(() => import('../features/activity/ActivityPage'));
 const Economy = lazy(() => import('../features/economy/EconomyPage'));
 const Fleet = lazy(() => import('../features/fleet/FleetPage'));
 const RegisterAgent = lazy(() => import('../features/agents/RegisterAgent'));
+const Organizations = lazy(() => import('../features/organizations/OrganizationsPage'));
 class Boundary extends Component<
   { children: ReactNode; path: string },
   { failed: boolean }
@@ -93,6 +94,7 @@ function RouteTree() {
             <Route path="agents" element={<Agents />} />
             <Route path="agents/register" element={<RegisterAgent />} />
             <Route path="agents/:agentId" element={<AgentDetail />} />
+            <Route path="organizations" element={<Organizations />} />
             <Route path="missions" element={<Missions />} />
             <Route path="missions/new" element={<CreateMission />} />
             <Route path="missions/:workOrderPda" element={<MissionDetail />} />
