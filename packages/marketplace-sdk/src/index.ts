@@ -425,6 +425,55 @@ export interface InvestibleSurplusFilters {
   scenario?: InvestibleSurplusScenario; horizon_days?: 7 | 30 | 90;
 }
 
+export type PaperScenario = 'BASE' | 'DOWNSIDE' | 'STRESS';
+export interface PaperInstrument {
+  instrument_id: string; instrument_type: 'SPOT'; display_symbol: string;
+  trading_base_asset: string; trading_quote_currency: string; venue: string;
+  risk_category: string; settlement_assumptions: string;
+}
+export interface ProductiveReinvestmentScenario {
+  scenario_id: string; resource_type: 'HARDWARE' | 'REPLACEMENT' | 'MAINTENANCE' | 'CAPACITY';
+  initial_cost_base_units_str: U64String; operating_cost_base_units_str: U64String;
+  maintenance_cost_base_units_str: U64String; useful_life_days: number;
+  estimated_utilization_bps: number; capacity_change_bps: number;
+  currency_or_token_mint: string; evidence_provenance: 'FIXTURE' | 'USER_SUPPLIED_ASSUMPTION';
+  residual_value_assumption_base_units_str?: U64String;
+  assumed_monthly_cash_benefit_base_units_str?: U64String;
+}
+export interface PaperSimulationRequest {
+  agent_account: string; agent_id: string; owner_pubkey: string;
+  network: string; genesis_hash: string; program_id: string;
+  treasury_token_mint: string; trading_quote_currency: string;
+  paper_budget_base_units_str: U64String;
+  funding_source: 'MANUAL_PAPER_ALLOCATION';
+  scenario_id: string; scenario_kind: 'FINANCIAL_SPOT' | 'PRODUCTIVE_COMPARISON';
+  scenario: PaperScenario; instrument_id: string; side: 'BUY' | 'SELL';
+  quantity_base_units_str: U64String; require_full_fill: boolean; holding_period_days: 7 | 30 | 90;
+  productive_alternatives: ProductiveReinvestmentScenario[];
+  simulation_timestamp: number; nonce: string; idempotency_key: string;
+}
+export interface PaperSimulationResult {
+  simulation_id: string; scenario_id: string; status: string;
+  fill_status: 'FILLED_SIMULATED' | 'PARTIALLY_FILLED_SIMULATED' | 'REJECTED_SIMULATED' |
+    'INSUFFICIENT_LIQUIDITY' | 'STALE_QUOTE' | null;
+  agent_account: string; agent_id: string; owner_pubkey: string;
+  network: string; genesis_hash: string; program_id: string;
+  treasury_token_mint: string; trading_quote_currency: string;
+  paper_budget_base_units_str: U64String; remaining_paper_budget_base_units_str: U64String;
+  funding_source: string; scenario: PaperScenario; scenario_kind: string;
+  entry_total_base_units_str?: U64String; filled_quantity_base_units_str?: U64String;
+  entry_fee_base_units_str?: U64String; entry_spread_base_units_str?: U64String;
+  entry_slippage_base_units_str?: U64String;
+  hypothetical_loss_base_units_str?: U64String | null;
+  hypothetical_net_result_base_units_str?: string | null;
+  productive_alternatives: Array<Record<string, unknown>>;
+  market_snapshot: Record<string, unknown>; execution_cost_snapshot: Record<string, unknown>;
+  input_snapshot_hash: string; market_snapshot_hash: string; result_hash: string;
+  provider_id: string; provider_mode: string; data_provenance: string;
+  simulation_timestamp: number; methodology_version: string;
+  is_paper: true; is_executable: false; real_capital_authorized: false;
+}
+
 export interface EconomicMovementFilters extends Paging {
   nature?: MovementNature;
   status?: MovementStatus;
@@ -968,6 +1017,32 @@ function investibleSurplusAssessment(raw: unknown): InvestibleSurplusAssessment 
   return a as unknown as InvestibleSurplusAssessment;
 }
 
+function paperSimulationResult(raw: unknown): PaperSimulationResult {
+  const result = object(raw, 'paper simulation result');
+  for (const key of ['simulation_id', 'scenario_id', 'agent_account', 'agent_id', 'owner_pubkey',
+    'network', 'genesis_hash', 'program_id', 'treasury_token_mint', 'trading_quote_currency',
+    'funding_source', 'provider_id', 'provider_mode', 'data_provenance', 'methodology_version',
+    'input_snapshot_hash', 'market_snapshot_hash', 'result_hash']) nonempty(result[key], key);
+  if (!/^paper_sim_[0-9a-f]{32}$/.test(result.simulation_id as string) ||
+      result.is_paper !== true || result.is_executable !== false ||
+      result.real_capital_authorized !== false ||
+      !['FIXTURE', 'SANDBOX_DATA', 'HISTORICAL_MARKET_DATA', 'USER_SUPPLIED_ASSUMPTION'].includes(result.data_provenance as string) ||
+      !['OFFLINE_FIXTURE'].includes(result.provider_mode as string) ||
+      !['SIMULATED', 'RISK_REJECTED', 'STALE_MARKET_DATA', 'INSUFFICIENT_DATA', 'INVALID_CONTEXT'].includes(result.status as string))
+    fail('Paper result cannot authorize financial execution or claim productive provenance');
+  integer(result.simulation_timestamp, 'simulation timestamp');
+  for (const key of ['paper_budget_base_units_str', 'remaining_paper_budget_base_units_str']) u64(result[key], key);
+  for (const key of ['entry_total_base_units_str', 'filled_quantity_base_units_str',
+    'entry_fee_base_units_str', 'entry_spread_base_units_str', 'entry_slippage_base_units_str',
+    'hypothetical_loss_base_units_str']) if (result[key] !== undefined && result[key] !== null) u64(result[key], key);
+  if (result.hypothetical_net_result_base_units_str !== undefined && result.hypothetical_net_result_base_units_str !== null &&
+      !/^-?(0|[1-9][0-9]*)$/.test(String(result.hypothetical_net_result_base_units_str))) fail('Invalid paper P&L');
+  array(result.productive_alternatives, 'productive alternatives');
+  object(result.market_snapshot, 'market snapshot');
+  object(result.execution_cost_snapshot, 'execution cost snapshot');
+  return result as unknown as PaperSimulationResult;
+}
+
 function meta(raw: unknown, expectedReadOnly = true): ApiMeta {
   const m = object(raw, 'metadata');
 
@@ -1043,6 +1118,18 @@ export async function budgetPolicyMutationMessage(method: 'POST' | 'PUT', accoun
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   const hex = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
   return new TextEncoder().encode(`conatus:budget-policy-mutation:v1:${timestamp}:${account}:${owner}:${method}:${path}:${hex}:${body.nonce}:${body.idempotency_key}:${body.expected_version}`);
+}
+
+export async function paperSimulationMessage(account: string, owner: string,
+  timestamp: number, body: PaperSimulationRequest): Promise<Uint8Array> {
+  const path = `/v1/agents/${pubkey(account)}/paper-simulations`;
+  if (body.agent_account !== account || body.owner_pubkey !== owner || body.simulation_timestamp !== timestamp)
+    throw new RangeError('Paper simulation identity mismatch');
+  u64(body.paper_budget_base_units_str, 'paper budget');
+  const hashBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPolicyJson(body)));
+  const budgetBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.paper_budget_base_units_str));
+  const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return new TextEncoder().encode(`conatus:paper-simulation:v1:${timestamp}:${account}:${body.agent_id}:${owner}:POST:${path}:${hex(hashBytes)}:${body.scenario_id}:${hex(budgetBytes)}:${body.nonce}:${body.idempotency_key}`);
 }
 
 export async function spendingEvaluationMessage(account: string, requester: string,
@@ -1964,6 +2051,52 @@ export class MarketplaceClient {
       object(value.scenarios, 'scenarios');
       return value;
     });
+  }
+
+  async getPaperTradingMethodology(options: { signal?: AbortSignal } = {}): Promise<Detail<Record<string, unknown>>> {
+    return detail(await this.get('/v1/paper-trading/methodology', undefined, options.signal), raw => {
+      const value = object(raw, 'paper methodology');
+      if (value.is_paper !== true || value.is_executable !== false || value.real_capital_authorized !== false ||
+          value.network_enabled !== false) fail('Unsafe paper methodology');
+      return value;
+    });
+  }
+
+  async listPaperTradingInstruments(treasuryTokenMint: string,
+    options: { signal?: AbortSignal } = {}): Promise<Detail<PaperInstrument[]>> {
+    const query = new URLSearchParams({ treasury_token_mint: pubkey(treasuryTokenMint) });
+    return detail(await this.get('/v1/paper-trading/instruments', query, options.signal), raw =>
+      array(raw, 'paper instruments').map(item => {
+        const instrument = object(item, 'paper instrument');
+        if (instrument.instrument_type !== 'SPOT' || !String(instrument.instrument_id).startsWith('fixture:spot:'))
+          fail('Unknown paper instrument');
+        return instrument as unknown as PaperInstrument;
+      }));
+  }
+
+  async runAgentPaperSimulation(account: string, body: PaperSimulationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<PaperSimulationResult>> {
+    if (body.agent_account !== account || !body.scenario_id || !body.nonce || !body.idempotency_key)
+      throw new TypeError('Invalid paper request identity');
+    u64(body.paper_budget_base_units_str, 'paper budget');
+    u64(body.quantity_base_units_str, 'paper quantity');
+    const raw = await this.post(`/v1/agents/${pubkey(account)}/paper-simulations`, body,
+      options.signal, this.policyHeaders(options));
+    const response = object(raw, 'paper simulation response');
+    return { data: paperSimulationResult(response.data), meta: meta(response.meta, false) };
+  }
+
+  async listAgentPaperSimulations(account: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<PaperSimulationResult[]>> {
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/paper-simulations`, undefined,
+      options.signal, options.authHeaders), raw => array(raw, 'paper simulations').map(paperSimulationResult));
+  }
+
+  async getAgentPaperSimulation(account: string, simulationId: string,
+    options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<PaperSimulationResult>> {
+    if (!/^paper_sim_[0-9a-f]{32}$/.test(simulationId)) throw new RangeError('Invalid paper simulation ID');
+    return detail(await this.get(`/v1/agents/${pubkey(account)}/paper-simulations/${simulationId}`,
+      undefined, options.signal, options.authHeaders), paperSimulationResult);
   }
 
   async getAgentBudgetPolicy(account: string, options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<AgentBudgetPolicy>> {
