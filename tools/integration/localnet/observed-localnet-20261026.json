@@ -1,0 +1,165 @@
+{
+  "environment": "isolated-localnet",
+  "genesis_hash": "8EnNDKjPs6ptLPhNqNnbh6yBDNAMPSXT5ascmZTw2oYz",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "scenarios": [
+    {
+      "scenario": "full",
+      "network": "solana:localnet",
+      "rpc_url": "http://127.0.0.1:18899",
+      "genesis_hash": "8EnNDKjPs6ptLPhNqNnbh6yBDNAMPSXT5ascmZTw2oYz",
+      "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+      "transaction_signature": "4S4srfwMMVQg9SJtsNXYzDieYwEs7JRQ96bPaEGpXYDzJjLSi7Atz5rxhM4jNjodoVTv5jUBfjSRrQr4KunpUCmz",
+      "slot": 499,
+      "block_time": 1792985716,
+      "commitment": "finalized",
+      "transaction_error": null,
+      "work_order_pda": "pEADFPbDTW8ppWYTJnffAP9FyZNjsQEvGHdfMRDmQ6T",
+      "agent_account": "9o43kvJzRyMQ2kgFgrb8tA8Acimvp7TQiz58o7cFrCmk",
+      "escrow_vault": "4piSWbT5QfxRFVjD4s5jHDDWMvr2yACEuuqJjDYmQkzc",
+      "mint": "G8r6B4J1P6mxjatNp9CNm7E21aMHzLGgTiixecBkkK5h",
+      "creator": "BsFaaPxc7wFk1NPGcdqkqQbdFd9ZLShK2DoNGPsvWs8D",
+      "settlement_beneficiary": "8NUSK78Qku5V2iMYEDHfTdPgdFk63deAaVNcEhhDRDRi",
+      "operator_token_account": "D5S9iameVH1c6S6E7yJShnfRh8tuu32dWq7ACp5VfJbN",
+      "creator_refund_token_account": "DK9AW2QZuQBYUCAYonE27VQbeiteDvjcmhu5tdH77was",
+      "initial_balances": {
+        "vault": "10000000",
+        "operator": "0",
+        "refund": "0"
+      },
+      "final_balances": {
+        "vault": "0",
+        "operator": "10000000",
+        "refund": "0"
+      },
+      "expected_payout": "10000000",
+      "creator_refund": "0",
+      "captured_result": "FINALIZED",
+      "current_rpc_status": "UNVERIFIABLE_ON_LIVE_RPC"
+    },
+    {
+      "scenario": "zero",
+      "network": "solana:localnet",
+      "rpc_url": "http://127.0.0.1:18899",
+      "genesis_hash": "8EnNDKjPs6ptLPhNqNnbh6yBDNAMPSXT5ascmZTw2oYz",
+      "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+      "transaction_signature": "4AH3C7pznzPafZcPvwxNyecpjagxe5HPJ8tR5ifbXYd9sECzASB1MJTJvvCp9rXUxMBrWirV28DDuQhEaxsDWJyd",
+      "slot": 758,
+      "block_time": 1792985842,
+      "commitment": "finalized",
+      "transaction_error": null,
+      "work_order_pda": "6zM5kpU5QAsVQo5cTfBLfE4YbDFLt2gTi4KKsyFLya4Q",
+      "agent_account": "Dit1yMaK9wXed8Dy2x29kozH214xDKmXhCZMwqw3kh9M",
+      "escrow_vault": "FUZP3qkw3K2CxBYjnUEhDigt2bhPmrSoRYmPRpuPsTYC",
+      "mint": "G8r6B4J1P6mxjatNp9CNm7E21aMHzLGgTiixecBkkK5h",
+      "creator": "BsFaaPxc7wFk1NPGcdqkqQbdFd9ZLShK2DoNGPsvWs8D",
+      "settlement_beneficiary": "GNERsG6oaAQdfyyUDUp9Ybr4TG5cx4Qm8AW2Xejsn6qp",
+      "operator_token_account": "5mdobhFzpwHKbqZSS5vSAAiprVw9oq74UyDNQmKVZM5M",
+      "creator_refund_token_account": "9aXfSuaMYQor67bZYgWSRcFBFfeji7EAvU4tztwJ8bHg",
+      "initial_balances": {
+        "vault": "10000000",
+        "operator": "0",
+        "refund": "0"
+      },
+      "final_balances": {
+        "vault": "0",
+        "operator": "0",
+        "refund": "10000000"
+      },
+      "expected_payout": "0",
+      "creator_refund": "10000000",
+      "captured_result": "FINALIZED",
+      "current_rpc_status": "UNVERIFIABLE_ON_LIVE_RPC"
+    },
+    {
+      "scenario": "proportional",
+      "network": "solana:localnet",
+      "rpc_url": "http://127.0.0.1:18899",
+      "genesis_hash": "8EnNDKjPs6ptLPhNqNnbh6yBDNAMPSXT5ascmZTw2oYz",
+      "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+      "transaction_signature": "4c6mT4crbpVNLkjM3aqAPcDqXCHP3DmywDhFW8WQjzv7J4Zv5dWeUzHoQttf6RfpxLNub8XP7xra6LCbkfCkcErP",
+      "slot": 1020,
+      "block_time": 1792985969,
+      "commitment": "finalized",
+      "transaction_error": null,
+      "work_order_pda": "Cf9a8TMqBT99GyZwQzQC2NtKXXJG3n7jUZyx67hdzaTi",
+      "agent_account": "DggoESVLed2o5n3W8qgYodo8jtfFnyGWhC6aKW2CBhNe",
+      "escrow_vault": "J49HzthKohQrZtp4r2KuPX6oaMsZocB26jCXwqCzGLoe",
+      "mint": "G8r6B4J1P6mxjatNp9CNm7E21aMHzLGgTiixecBkkK5h",
+      "creator": "BsFaaPxc7wFk1NPGcdqkqQbdFd9ZLShK2DoNGPsvWs8D",
+      "settlement_beneficiary": "3DgNBMz6cRoMq8WXEiqoLDVSS5CS43SMCGMNLgUJQeVe",
+      "operator_token_account": "nBreixeeeCQ82iJcK8RYJEXNwZ7C3tjtakh3SWzZq1z",
+      "creator_refund_token_account": "48A8QX7WVuV6pv9z7Dvit9opKRpEVuAjUsxJ4Yt1qGRz",
+      "initial_balances": {
+        "vault": "10000000",
+        "operator": "0",
+        "refund": "0"
+      },
+      "final_balances": {
+        "vault": "0",
+        "operator": "6000000",
+        "refund": "4000000"
+      },
+      "expected_payout": "6000000",
+      "creator_refund": "4000000",
+      "captured_result": "FINALIZED",
+      "current_rpc_status": "UNVERIFIABLE_ON_LIVE_RPC"
+    },
+    {
+      "scenario": "invalid_shared",
+      "work_order_pda": "CioKG28Ta9ixHGLaZD1KAeDdEX9CzNq3ba34hJsPMD7w",
+      "escrow_vault": "6w3bHxuiqyWc8bRmLfwYqs7RFXRVrZwJbEkYpNX471zv",
+      "mint": "G8r6B4J1P6mxjatNp9CNm7E21aMHzLGgTiixecBkkK5h",
+      "initial_balances": {
+        "vault": "10000000",
+        "operator": "0",
+        "refund": "0"
+      },
+      "captured_result": "ANCHOR_REJECTED",
+      "current_rpc_status": "UNVERIFIABLE_ON_LIVE_RPC"
+    },
+    {
+      "scenario": "valid_shared",
+      "network": "solana:localnet",
+      "rpc_url": "http://127.0.0.1:18899",
+      "genesis_hash": "8EnNDKjPs6ptLPhNqNnbh6yBDNAMPSXT5ascmZTw2oYz",
+      "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+      "transaction_signature": "4xteMydfrK2Z2LMCGLt7TazDngeUsfxYe7ww5vab8nAa3SFc9UKezFC6wk7WMr29in7jG8DPkUqRQYQv36oHz1hK",
+      "slot": 1474,
+      "block_time": 1792986189,
+      "commitment": "finalized",
+      "transaction_error": null,
+      "work_order_pda": "6i4oStTFhag64nTAPNsnrah9Xq1QmqtTz3TeXJTFFU7A",
+      "agent_account": "EvqGyYY3AMfz86jNM2rHFVmvHtbrDafXXRvQLU3f8xMN",
+      "escrow_vault": "4HUEW87TbMom9AGwDYcnsGshZk5RCfNbP1FpH3k56s6Z",
+      "mint": "G8r6B4J1P6mxjatNp9CNm7E21aMHzLGgTiixecBkkK5h",
+      "creator": "BsFaaPxc7wFk1NPGcdqkqQbdFd9ZLShK2DoNGPsvWs8D",
+      "settlement_beneficiary": "BsFaaPxc7wFk1NPGcdqkqQbdFd9ZLShK2DoNGPsvWs8D",
+      "operator_token_account": "aTaFgMZwg4gp92sZmqHcGMumyuGK6oayKEH2CMybh9n",
+      "creator_refund_token_account": "aTaFgMZwg4gp92sZmqHcGMumyuGK6oayKEH2CMybh9n",
+      "initial_balances": {
+        "vault": "10000000",
+        "operator": "0",
+        "refund": "0"
+      },
+      "final_balances": {
+        "vault": "0",
+        "operator": "10000000",
+        "refund": "10000000"
+      },
+      "expected_payout": "6000000",
+      "creator_refund": "4000000",
+      "captured_result": "FINALIZED",
+      "current_rpc_status": "UNVERIFIABLE_ON_LIVE_RPC"
+    }
+  ],
+  "evidence_level": "HISTORICAL_FIXTURE",
+  "current_rpc_status": "UNVERIFIABLE_ON_LIVE_RPC",
+  "capture_note": "These were genuinely finalized during the run; the isolated validator was later stopped and its ledger removed after storage exhaustion. This capture is not current LIVE_RPC evidence.",
+  "reconciler_live_rpc_observation": {
+    "scenario": "full",
+    "evidence_hash": "7a01839cbf36392bdebcbdb44a7dcd0df7114c8da8f44d39180a886bd3a119c5",
+    "status_during_run": "LIVE_RPC_FINALIZED"
+  },
+  "validator_restart_result": "PENDING: getTransaction did not retain the tested signature after restart on this local Agave validator"
+}

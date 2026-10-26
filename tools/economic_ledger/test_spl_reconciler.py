@@ -37,6 +37,7 @@ Covers all mandatory test conditions specified in Jira CON-23 and the audit feed
 from __future__ import annotations
 
 import json
+import hashlib
 import tempfile
 import time
 import unittest
@@ -83,6 +84,7 @@ from tools.economic_ledger.spl_reconciler import (
     compute_canonical_evidence_hash,
     derive_agent_pda,
     derive_escrow_vault_pda,
+    derive_protocol_config_pda,
     derive_work_order_pda,
     encode_agent_account,
     encode_spl_transfer_checked,
@@ -396,6 +398,31 @@ class SplSettlementReconcilerTests(unittest.TestCase):
             pass
         self.temp_dir.cleanup()
 
+    def test_anchor_idl_discriminators_and_canonical_pdas(self) -> None:
+        snapshot = Path(__file__).parents[1] / "integration/localnet/aerosettle-idl.json"
+        idl = json.loads(snapshot.read_text())
+        self.assertEqual(idl["address"], DEFAULT_PROGRAM_ID)
+        for name, constant in (
+            ("settle_work_order", SETTLE_WORK_ORDER_DISCRIMINATOR),
+        ):
+            entry = next(x for x in idl["instructions"] if x["name"] == name)
+            digest = hashlib.sha256(f"global:{name}".encode()).digest()[:8]
+            self.assertEqual(bytes(entry["discriminator"]), digest)
+            self.assertEqual(digest, constant)
+        settle = next(x for x in idl["instructions"] if x["name"] == "settle_work_order")
+        self.assertEqual([x["name"] for x in settle["accounts"]], [
+            "protocol_config", "work_order", "escrow_vault", "mint",
+            "operator_token_account", "creator_refund_token_account", "token_program",
+        ])
+        self.assertEqual(derive_protocol_config_pda()[0], DEFAULT_PROTOCOL_CONFIG)
+        self.assertEqual(derive_work_order_pda(
+            DEFAULT_PROTOCOL_CONFIG, CREATOR_TARGET, WO_ID_TARGET,
+        )[0], WORK_ORDER_TARGET)
+        self.assertEqual(derive_agent_pda(
+            DEFAULT_PROTOCOL_CONFIG, AGENT_ID_TARGET,
+        )[0], AGENT_TARGET)
+        self.assertEqual(derive_escrow_vault_pda(WORK_ORDER_TARGET)[0], VAULT_TARGET)
+
     # ─────────────────────────────────────────────────────────────────────────
     # Condition 1: Valid Settlement Full Payout (10.0 USDC)
     # ─────────────────────────────────────────────────────────────────────────
@@ -645,6 +672,22 @@ class SplSettlementReconcilerTests(unittest.TestCase):
         # Balance must remain exactly 10.0 USDC, never duplicated to 20.0 USDC
         rec_bal, _ = get_single_balance(self.ledger, AGENT_TARGET, MINT_TARGET)
         self.assertEqual(rec_bal, 10_000_000)
+
+    def test_same_effect_with_changed_economic_evidence_is_rejected(self) -> None:
+        signature = "5ChangedEffectIdentity11111111111111111111111111"
+        self.mock_rpc.register_transaction(signature, make_settlement_tx(tx_signature=signature))
+        first, _ = self.reconciler.reconcile_settlement(self.ledger, tx_signature=signature)
+        setup_canonical_mock_accounts(
+            self.mock_rpc,
+            payment_model=PaymentModel.Proportional.value,
+            completion_bps=6_000,
+        )
+        self.mock_rpc.register_transaction(signature, make_settlement_tx(
+            tx_signature=signature, operator_payout=6_000_000, creator_refund=4_000_000,
+        ))
+        with self.assertRaises(IdempotencyConflictError):
+            self.reconciler.reconcile_settlement(self.ledger, tx_signature=signature)
+        self.assertEqual(self.ledger.get_by_idempotency_key(first.idempotency_key), first)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Condition 12: Process Restart & Disk Persistence
@@ -1248,6 +1291,14 @@ class SplSettlementReconcilerTests(unittest.TestCase):
                     self.assertEqual(receipt.creator_refund, refund)
                     self.assertEqual(receipt.total_escrow_settled, payout + refund)
                     self.assertEqual(receipt.evidence_source, EvidenceSourceKind.SYNTHETIC_TEST.value)
+
+    def test_mock_cannot_claim_live_rpc_by_explicit_source_override(self) -> None:
+        signature = "5MockLiveSourceOverride111111111111111111111111111"
+        self.mock_rpc.register_transaction(signature, make_settlement_tx(tx_signature=signature))
+        with self.assertRaises(SettlementVerificationError):
+            self.reconciler.verify_settlement_transaction(
+                signature, source_kind=EvidenceSourceKind.LIVE_RPC,
+            )
 
     def test_negative_missing_token_account_owner_fails_closed(self) -> None:
         """If token account owner cannot be determined from parsed metadata or RPC,

@@ -1,0 +1,9 @@
+# CON-34 Localnet runner
+
+Prerequisites: Solana CLI/test-validator 4.1.2, Rust 1.89, Node 24, Python 3.12+, `npm ci --prefix tools/bootstrap`, `pip install -r requirements.txt`, and `cargo build-sbf --manifest-path programs/aerosettle/Cargo.toml`. No production wallet is read. The runner uses only fresh in-memory test keypairs and test SPL mint; it stores public evidence and an isolated SQLite database in a new temporary directory.
+
+Run `bash tools/integration/localnet/run_localnet_e2e.sh`. The script starts a validator on loopback RPC port 18899 with a separate faucet on 18909, deploys `target/deploy/aerosettle.so` at genesis, executes five scenarios, reconstructs receipts using actual JSON-RPC, tests immediate/concurrent/SQLite replays, stops and restarts the **same** ledger without reset, then requires that genesis, signatures, accounts and SPL balances remain available. It exits nonzero if any check fails and does not delete its ledger. `CON34_RPC_PORT` and `CON34_FAUCET_PORT` select unused ports. Set `CON34_PUBLIC_REPORT_DIR` to copy only `report.json` and `verified.json` for CI; never upload the ledger or keypairs.
+
+`CON34_SCENARIOS=full` runs just the full payout when storage is constrained, while the default runs full, zero, proportional, invalid shared and valid shared. A one-scenario run proves only that case. The manual GitHub Actions workflow uses the complete matrix, a pinned Agave release with SHA-256 check, and uploads only public JSON after a successful run. PR and master regressions run separately in `con34-regression.yml`.
+
+As of the local attempt, the validator returned `null` for `getTransaction` after recovery of the same genesis, including an immediate stop/restart test. That is a failing acceptance check. The saved observation is `HISTORICAL_FIXTURE`, not current `LIVE_RPC`. Resolve validator transaction-history persistence before treating CON-34 as complete or relying on this evidence for Devnet readiness.
