@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BIN = ROOT / "target/debug/examples/marketplace_match_bridge"
 
 FIXTURES = (
-    ROOT / ".aerosettle-local/marketplace-parity-v1.json"
+    ROOT / "tools/marketplace_api/fixtures/marketplace-parity-v1.json"
 )
 
 

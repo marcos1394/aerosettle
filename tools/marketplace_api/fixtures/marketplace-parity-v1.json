@@ -1,0 +1,382 @@
+{
+  "agent_accounts": {
+    "aerial_agent": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+    "telemetry_agent": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7"
+  },
+  "cases": [
+    {
+      "expected": {
+        "eligible_agent_accounts": [
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB"
+        ],
+        "rejections_by_agent": {
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB": null,
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7": {
+            "code": "MISSING_CAPABILITIES",
+            "missing_mask": "33"
+          }
+        }
+      },
+      "input": {
+        "agents": [
+          {
+            "active": true,
+            "agent_account": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+            "agent_id": "04bf7a1d47e225b5ffa90aa190d6f2be0c295aa1eff11f9330c10893b6ecae3b",
+            "capabilities": "32801",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          },
+          {
+            "active": true,
+            "agent_account": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7",
+            "agent_id": "cfdb944273246ecf7d03dc1e3e25854a7ac24d6b1f11bcb1ee38daf5c7b2b676",
+            "capabilities": "32768",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          }
+        ],
+        "now_unix": 1791677696,
+        "protocol_paused": false,
+        "work_orders": [
+          {
+            "execution_deadline": 1791681296,
+            "is_open": true,
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "required_capabilities": "33",
+            "status": "Open",
+            "work_order_account": "2MYb6oZ4dzHAqSziopNjCdoXA6uzz4VJNPovcMsaScxs"
+          }
+        ]
+      },
+      "name": "open-drone-only"
+    },
+    {
+      "expected": {
+        "eligible_agent_accounts": [],
+        "rejections_by_agent": {
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB": {
+            "code": "EXECUTION_DEADLINE_REACHED"
+          },
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7": {
+            "code": "EXECUTION_DEADLINE_REACHED"
+          }
+        }
+      },
+      "input": {
+        "agents": [
+          {
+            "active": true,
+            "agent_account": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+            "agent_id": "04bf7a1d47e225b5ffa90aa190d6f2be0c295aa1eff11f9330c10893b6ecae3b",
+            "capabilities": "32801",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          },
+          {
+            "active": true,
+            "agent_account": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7",
+            "agent_id": "cfdb944273246ecf7d03dc1e3e25854a7ac24d6b1f11bcb1ee38daf5c7b2b676",
+            "capabilities": "32768",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          }
+        ],
+        "now_unix": 1791677696,
+        "protocol_paused": false,
+        "work_orders": [
+          {
+            "execution_deadline": 1791677696,
+            "is_open": true,
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "required_capabilities": "33",
+            "status": "Open",
+            "work_order_account": "2MYb6oZ4dzHAqSziopNjCdoXA6uzz4VJNPovcMsaScxs"
+          }
+        ]
+      },
+      "name": "expired"
+    },
+    {
+      "expected": {
+        "eligible_agent_accounts": [],
+        "rejections_by_agent": {
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB": {
+            "code": "WORK_ORDER_NOT_OPEN"
+          },
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7": {
+            "code": "WORK_ORDER_NOT_OPEN"
+          }
+        }
+      },
+      "input": {
+        "agents": [
+          {
+            "active": true,
+            "agent_account": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+            "agent_id": "04bf7a1d47e225b5ffa90aa190d6f2be0c295aa1eff11f9330c10893b6ecae3b",
+            "capabilities": "32801",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          },
+          {
+            "active": true,
+            "agent_account": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7",
+            "agent_id": "cfdb944273246ecf7d03dc1e3e25854a7ac24d6b1f11bcb1ee38daf5c7b2b676",
+            "capabilities": "32768",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          }
+        ],
+        "now_unix": 1791677696,
+        "protocol_paused": false,
+        "work_orders": [
+          {
+            "execution_deadline": 1791681296,
+            "is_open": false,
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "required_capabilities": "33",
+            "status": "Draft",
+            "work_order_account": "2MYb6oZ4dzHAqSziopNjCdoXA6uzz4VJNPovcMsaScxs"
+          }
+        ]
+      },
+      "name": "draft"
+    },
+    {
+      "expected": {
+        "eligible_agent_accounts": [],
+        "rejections_by_agent": {
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB": {
+            "code": "WORK_ORDER_NOT_OPEN"
+          },
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7": {
+            "code": "WORK_ORDER_NOT_OPEN"
+          }
+        }
+      },
+      "input": {
+        "agents": [
+          {
+            "active": true,
+            "agent_account": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+            "agent_id": "04bf7a1d47e225b5ffa90aa190d6f2be0c295aa1eff11f9330c10893b6ecae3b",
+            "capabilities": "32801",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          },
+          {
+            "active": true,
+            "agent_account": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7",
+            "agent_id": "cfdb944273246ecf7d03dc1e3e25854a7ac24d6b1f11bcb1ee38daf5c7b2b676",
+            "capabilities": "32768",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          }
+        ],
+        "now_unix": 1791677696,
+        "protocol_paused": false,
+        "work_orders": [
+          {
+            "execution_deadline": 1791681296,
+            "is_open": false,
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "required_capabilities": "33",
+            "status": "Settled",
+            "work_order_account": "2MYb6oZ4dzHAqSziopNjCdoXA6uzz4VJNPovcMsaScxs"
+          }
+        ]
+      },
+      "name": "settled"
+    },
+    {
+      "expected": {
+        "eligible_agent_accounts": [],
+        "rejections_by_agent": {
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB": {
+            "code": "PROTOCOL_PAUSED"
+          },
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7": {
+            "code": "PROTOCOL_PAUSED"
+          }
+        }
+      },
+      "input": {
+        "agents": [
+          {
+            "active": true,
+            "agent_account": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+            "agent_id": "04bf7a1d47e225b5ffa90aa190d6f2be0c295aa1eff11f9330c10893b6ecae3b",
+            "capabilities": "32801",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          },
+          {
+            "active": true,
+            "agent_account": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7",
+            "agent_id": "cfdb944273246ecf7d03dc1e3e25854a7ac24d6b1f11bcb1ee38daf5c7b2b676",
+            "capabilities": "32768",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          }
+        ],
+        "now_unix": 1791677696,
+        "protocol_paused": true,
+        "work_orders": [
+          {
+            "execution_deadline": 1791681296,
+            "is_open": true,
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "required_capabilities": "33",
+            "status": "Open",
+            "work_order_account": "2MYb6oZ4dzHAqSziopNjCdoXA6uzz4VJNPovcMsaScxs"
+          }
+        ]
+      },
+      "name": "paused"
+    },
+    {
+      "expected": {
+        "eligible_agent_accounts": [],
+        "rejections_by_agent": {
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB": {
+            "code": "AGENT_INACTIVE"
+          },
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7": {
+            "code": "MISSING_CAPABILITIES",
+            "missing_mask": "33"
+          }
+        }
+      },
+      "input": {
+        "agents": [
+          {
+            "active": false,
+            "agent_account": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+            "agent_id": "04bf7a1d47e225b5ffa90aa190d6f2be0c295aa1eff11f9330c10893b6ecae3b",
+            "capabilities": "32801",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "OwnerSuspended"
+          },
+          {
+            "active": true,
+            "agent_account": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7",
+            "agent_id": "cfdb944273246ecf7d03dc1e3e25854a7ac24d6b1f11bcb1ee38daf5c7b2b676",
+            "capabilities": "32768",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          }
+        ],
+        "now_unix": 1791677696,
+        "protocol_paused": false,
+        "work_orders": [
+          {
+            "execution_deadline": 1791681296,
+            "is_open": true,
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "required_capabilities": "33",
+            "status": "Open",
+            "work_order_account": "2MYb6oZ4dzHAqSziopNjCdoXA6uzz4VJNPovcMsaScxs"
+          }
+        ]
+      },
+      "name": "drone-suspended"
+    },
+    {
+      "expected": {
+        "eligible_agent_accounts": [
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7"
+        ],
+        "rejections_by_agent": {
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB": null,
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7": null
+        }
+      },
+      "input": {
+        "agents": [
+          {
+            "active": true,
+            "agent_account": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+            "agent_id": "04bf7a1d47e225b5ffa90aa190d6f2be0c295aa1eff11f9330c10893b6ecae3b",
+            "capabilities": "32801",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          },
+          {
+            "active": true,
+            "agent_account": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7",
+            "agent_id": "cfdb944273246ecf7d03dc1e3e25854a7ac24d6b1f11bcb1ee38daf5c7b2b676",
+            "capabilities": "32768",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          }
+        ],
+        "now_unix": 1791677696,
+        "protocol_paused": false,
+        "work_orders": [
+          {
+            "execution_deadline": 1791681296,
+            "is_open": true,
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "required_capabilities": "32768",
+            "status": "Open",
+            "work_order_account": "2MYb6oZ4dzHAqSziopNjCdoXA6uzz4VJNPovcMsaScxs"
+          }
+        ]
+      },
+      "name": "telemetry-both"
+    },
+    {
+      "expected": {
+        "eligible_agent_accounts": [],
+        "rejections_by_agent": {
+          "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB": {
+            "code": "MISSING_CAPABILITIES",
+            "missing_mask": "9223372036854775808"
+          },
+          "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7": {
+            "code": "MISSING_CAPABILITIES",
+            "missing_mask": "9223372036854775841"
+          }
+        }
+      },
+      "input": {
+        "agents": [
+          {
+            "active": true,
+            "agent_account": "DcusvnYAdFFKzNDVzUkUvmgZ9fDhzszeRR5Fj8F5dMbB",
+            "agent_id": "04bf7a1d47e225b5ffa90aa190d6f2be0c295aa1eff11f9330c10893b6ecae3b",
+            "capabilities": "32801",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          },
+          {
+            "active": true,
+            "agent_account": "FPbX4tQ2t9KSUDPix3NxBVEp2dD5LWoikhBVYYafU9H7",
+            "agent_id": "cfdb944273246ecf7d03dc1e3e25854a7ac24d6b1f11bcb1ee38daf5c7b2b676",
+            "capabilities": "32768",
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "status": "Active"
+          }
+        ],
+        "now_unix": 1791677696,
+        "protocol_paused": false,
+        "work_orders": [
+          {
+            "execution_deadline": 1791681296,
+            "is_open": true,
+            "protocol_config": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+            "required_capabilities": "9223372036854775841",
+            "status": "Open",
+            "work_order_account": "2MYb6oZ4dzHAqSziopNjCdoXA6uzz4VJNPovcMsaScxs"
+          }
+        ]
+      },
+      "name": "unknown-required-bit"
+    }
+  ],
+  "not_on_chain": true,
+  "origin": "Synthetic scenarios derived from Discovery",
+  "schema": "aerosettle.matching.parity.v1"
+}
