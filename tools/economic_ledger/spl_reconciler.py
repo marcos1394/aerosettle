@@ -1372,19 +1372,16 @@ class SplSettlementReconciler:
                     f"Creator refund token account owner '{cr_owner}' does not match creator '{wo_data['creator']}'"
                 )
         else:
-            # Shared destination:
-            # If operator payout > 0, owner must match settlement_beneficiary
-            # If operator payout == 0 (pure refund), owner must match creator or settlement_beneficiary
-            if contract_operator > 0:
-                if op_owner != settlement_beneficiary:
-                    raise AccountMismatchError(
-                        f"Shared token account owner '{op_owner}' does not match settlement beneficiary '{settlement_beneficiary}'"
-                    )
-            else:
-                if op_owner != settlement_beneficiary and op_owner != wo_data["creator"]:
-                    raise AccountMismatchError(
-                        f"Shared token account owner '{op_owner}' is an unauthorized third party"
-                    )
+            # Anchor validates both Account<TokenAccount> owner constraints before
+            # executing the instruction, even when either transfer amount is zero.
+            if wo_data["creator"] != settlement_beneficiary:
+                raise AccountMismatchError(
+                    "Shared token account requires creator and frozen settlement beneficiary to match"
+                )
+            if op_owner != settlement_beneficiary:
+                raise AccountMismatchError(
+                    f"Shared token account owner '{op_owner}' does not match creator and settlement beneficiary '{settlement_beneficiary}'"
+                )
 
         # 13. Examine Inner TransferChecked Instructions for settle_work_order
         inner_instructions_list = meta.get("innerInstructions") or []
