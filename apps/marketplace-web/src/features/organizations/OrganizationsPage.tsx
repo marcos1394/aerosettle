@@ -11,6 +11,7 @@ import bs58 from 'bs58';
 import { api } from '../../app/api';
 import { useCopy } from '../../app/i18n';
 import './organizations.css';
+import OrganizationGovernancePanel from './OrganizationGovernancePanel';
 
 type Section = 'members' | 'agents' | 'invitations' | 'roles' | 'delegations' | 'audit-events';
 const SECTIONS: Section[] = ['members', 'agents', 'invitations', 'roles', 'delegations', 'audit-events'];
@@ -201,6 +202,9 @@ export default function OrganizationsPage() {
                 {org.organization_status === 'ACTIVE' ? c('Suspend organization', 'Suspender organización') :
                   c('Resume organization', 'Reactivar organización')}</button>}
             </section>
+            {org.organization_status === 'ACTIVE' && !pending.length &&
+              <OrganizationGovernancePanel key={`${org.organization_id}:${actor}`} organizationId={org.organization_id}
+                ownerPubkey={org.owner_pubkey} />}
             {pending.length > 0 && <section className="panel"><h3>{c('Invitations awaiting your consent', 'Invitaciones pendientes de tu consentimiento')}</h3>
               {pending.map((item: OrganizationInvitation) => <div className="org-row" key={item.invitation_id}>
                 <span>{item.subject_type} · {item.subject_id} · {item.proposed_role}</span>

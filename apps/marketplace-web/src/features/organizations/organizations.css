@@ -33,3 +33,11 @@
 .org-form h4 { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 900px) { .org-layout { grid-template-columns: 1fr; } .organizations-page { padding: 18px 12px 40px; }
   .org-hero { padding: 22px; } }
+.org-governance { margin-top: 1.25rem; }
+.org-gov-board { display: grid; gap: 1rem; margin-top: 1rem; }
+.org-gov-card { border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; padding: 1rem; overflow-wrap: anywhere; }
+.org-gov-card p { margin: .45rem 0; }
+.org-gov-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; }
+.org-gov-rules { padding: .75rem 0; }
+.org-gov-error { color: #ffb4a9; overflow-wrap: anywhere; }
+.org-governance textarea { width: 100%; min-height: 5rem; }
