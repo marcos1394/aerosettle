@@ -36,6 +36,10 @@ jobs:
       - run: npm ci --prefix packages/transaction-sdk --omit=optional
       - run: npm ci --prefix packages/marketplace-sdk
       - run: npm ci --prefix apps/marketplace-web
+      - name: Prepare ignored Localnet web fixtures
+        run: |
+          cp tools/integration/localnet/aerosettle-idl.json apps/marketplace-web/src/localnet-idl.json
+          cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
       - run: npm test --prefix packages/transaction-sdk
       - run: npm test --prefix packages/marketplace-sdk
       - run: npm test --prefix apps/marketplace-web

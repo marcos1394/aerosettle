@@ -6,4 +6,6 @@ Run `bash tools/integration/localnet/run_localnet_e2e.sh`. The script starts a v
 
 `CON34_SCENARIOS=full` runs just the full payout when storage is constrained, while the default runs full, zero, proportional, invalid shared and valid shared. A one-scenario run proves only that case. The manual GitHub Actions workflow uses the complete matrix, a pinned Agave release with SHA-256 check, and uploads only public JSON after a successful run. PR and master regressions run separately in `con34-regression.yml`.
 
+The web regression job copies the tracked IDL and the explicit Localnet evidence requirement mask into ignored build inputs. This makes a clean checkout reproducible without treating the mask as transaction or attestation proof.
+
 As of the local attempt, the validator returned `null` for `getTransaction` after recovery of the same genesis, including an immediate stop/restart test. That is a failing acceptance check. The saved observation is `HISTORICAL_FIXTURE`, not current `LIVE_RPC`. Resolve validator transaction-history persistence before treating CON-34 as complete or relying on this evidence for Devnet readiness.
