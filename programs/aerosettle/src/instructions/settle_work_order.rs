@@ -71,6 +71,14 @@ pub struct SettleWorkOrder<'info> {
 
     #[account(
         mut,
+        // Both destination fields may alias only when their independently
+        // checked SPL owners are the same creator/frozen beneficiary. Reload
+        // both after the CPIs before Anchor serializes either account.
+        dup,
+        constraint =
+            creator_refund_token_account.key() != operator_token_account.key()
+                || work_order.creator == work_order.settlement_beneficiary
+                @ WorkOrderError::SettlementInvalidCreatorRefund,
         constraint =
             creator_refund_token_account.owner
                 == work_order.creator
