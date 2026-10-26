@@ -46,6 +46,8 @@ from tools.paper_trading.simulator import METHODOLOGY_VERSION as PAPER_METHODOLO
 from tools.paper_trading.store import PaperSimulationStore, verify_paper_signature
 from tools.organizations.signatures import OrganizationError, ORG_ID, verify_mutation as verify_organization_mutation, verify_read as verify_organization_read
 from tools.organizations.store import OrganizationStore, READ_PERMISSION, _fresh_agent
+from tools.governance.signatures import GovernanceError, verify_mutation as verify_governance_mutation
+from tools.governance.store import GovernanceStore
 
 _DEFAULT_LEDGER: EconomicLedger | None = None
 _POLICY_STORE_INIT_LOCK = threading.Lock()
@@ -99,12 +101,64 @@ def get_paper_store(provider=None) -> PaperSimulationStore:
 def get_organization_store(provider=None) -> OrganizationStore:
     ledger = get_ledger(provider)
     with _POLICY_STORE_INIT_LOCK:
-        if not hasattr(ledger, "_organization_store"):
-            path = ledger.db_path.with_name("organizations.sqlite") if ledger.db_path else ":memory:"
-            def current_snapshot():
-                return {**provider.snapshot(), "network": "localnet", "genesis_hash": provider.health()}
-            ledger._organization_store = OrganizationStore(path, current_snapshot)
+        return get_organization_store_unlocked(ledger, provider)
+
+
+def get_governance_store(provider=None) -> GovernanceStore:
+    ledger = get_ledger(provider)
+    with _POLICY_STORE_INIT_LOCK:
+        if not hasattr(ledger, "_governance_store"):
+            ledger._governance_store = GovernanceStore(get_organization_store_unlocked(ledger, provider))
+    return ledger._governance_store
+
+
+def get_organization_store_unlocked(ledger, provider) -> OrganizationStore:
+    if not hasattr(ledger, "_organization_store"):
+        path = ledger.db_path.with_name("organizations.sqlite") if ledger.db_path else ":memory:"
+        def current_snapshot():
+            return {**provider.snapshot(), "network": "localnet", "genesis_hash": provider.health()}
+        ledger._organization_store = OrganizationStore(path, current_snapshot)
     return ledger._organization_store
+
+
+def governance_read_route(url: str, provider, headers: dict | None) -> tuple[int, dict]:
+    parts = urlsplit(url)
+    pieces = [piece for piece in parts.path.split("/") if piece]
+    if parts.query or parts.fragment or len(pieces) < 4 or not ORG_ID.fullmatch(pieces[2]):
+        raise ApiError(404, "NOT_FOUND", "Unknown governance route")
+    try:
+        actor = verify_organization_read(parts.path, headers)
+        section = "overview" if len(pieces) == 4 else pieces[4] if len(pieces) == 5 else None
+        proposal_id = None
+        if len(pieces) == 6 and pieces[4] == "proposals":
+            section, proposal_id = "proposal", pieces[5]
+        elif len(pieces) == 7 and pieces[4] == "proposals" and pieces[6] == "votes":
+            section, proposal_id = "votes", pieces[5]
+        if section not in {"overview", "bylaws", "proposals", "proposal", "votes", "disputes",
+                           "distributions", "audit-events"}:
+            raise GovernanceError(404, "NOT_FOUND", "Unknown governance resource")
+        data = get_governance_store(provider).read(pieces[2], actor, section, proposal_id)
+    except OrganizationError as exc:
+        raise ApiError(exc.status, exc.code, str(exc)) from exc
+    return 200, {"data": data, "meta": metadata(provider.snapshot())}
+
+
+def governance_mutation_route(url: str, provider, headers: dict, body: dict) -> tuple[int, dict]:
+    parts = urlsplit(url)
+    pieces = [piece for piece in parts.path.split("/") if piece]
+    if (parts.query or parts.fragment or len(pieces) != 5 or pieces[3:] != ["governance", "actions"] or
+            not ORG_ID.fullmatch(pieces[2])):
+        raise ApiError(405, "METHOD_NOT_ALLOWED", "Only signed governance actions are supported")
+    try:
+        actor, message, signature = verify_governance_mutation(parts.path, body, headers)
+        data, created = get_governance_store(provider).mutate(body, signature, message, actor)
+    except (OrganizationError, ValueError) as exc:
+        if isinstance(exc, OrganizationError):
+            raise ApiError(exc.status, exc.code, str(exc)) from exc
+        raise ApiError(422, "INVALID_GOVERNANCE_RULE", str(exc)) from exc
+    meta = metadata(provider.snapshot())
+    meta["read_only"] = False
+    return (201 if created else 200), {"data": data, "meta": meta}
 
 
 def organization_read_route(url: str, provider, headers: dict | None) -> tuple[int, dict]:
@@ -458,6 +512,8 @@ def route(url: str, provider, headers: dict | None = None) -> tuple[int, dict]:
         raise ApiError(404, "NOT_FOUND", "Unknown resource")
 
     if entity == "organizations":
+        if len(pieces) >= 4 and pieces[3] == "governance":
+            return governance_read_route(url, provider, headers)
         return organization_read_route(url, provider, headers)
 
     if entity == "paper-trading":
@@ -1345,7 +1401,10 @@ def handler_for(provider):
                           route_parts[:2] == ["v1", "agents"] and route_parts[3] == "paper-simulations")
             organization_path = (method == "POST" and route_parts[:2] == ["v1", "organizations"] and
                                  (len(route_parts) == 2 or len(route_parts) == 4 and route_parts[3] == "actions"))
-            if not policy_path and not evaluation_path and not approval_path and not paper_path and not organization_path:
+            governance_path = (method == "POST" and len(route_parts) == 5 and
+                               route_parts[:2] == ["v1", "organizations"] and
+                               route_parts[3:] == ["governance", "actions"])
+            if not policy_path and not evaluation_path and not approval_path and not paper_path and not organization_path and not governance_path:
                 self.unsupported()
                 return
             try:
@@ -1374,6 +1433,8 @@ def handler_for(provider):
                     status, response = paper_simulation_route(method, self.path, provider, self.headers, body)
                 elif organization_path:
                     status, response = organization_mutation_route(method, self.path, provider, self.headers, body)
+                elif governance_path:
+                    status, response = governance_mutation_route(self.path, provider, self.headers, body)
                 else:
                     status, response = policy_mutation_route(method, self.path, provider, self.headers, body)
                 self.respond(status, response)

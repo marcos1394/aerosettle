@@ -542,6 +542,69 @@ export interface OrganizationPermissionDecision {
   is_financial_authority: false; is_device_signing_authority: false;
 }
 
+export type GovernanceAction = 'CREATE_BYLAWS' | 'AMEND_BYLAWS' | 'CREATE_PROPOSAL' |
+  'OPEN_VOTING' | 'CAST_VOTE' | 'CLOSE_VOTING' | 'OPEN_DISPUTE' | 'RESOLVE_DISPUTE' |
+  'ADOPT_DISTRIBUTION_POLICY' | 'SIMULATE_DISTRIBUTION';
+export interface GovernanceMutationRequest {
+  organization_id: string; proposal_id: string; actor_pubkey: string; action: GovernanceAction;
+  bylaws_version: number; bylaws_hash: string; electorate_snapshot_hash: string;
+  payload: Record<string, unknown>; expected_version: number;
+  issued_at: number; expires_at: number; nonce: string; idempotency_key: string;
+}
+export interface OrganizationBylaws {
+  organization_id: string; bylaws_id: string; version: number; bylaws_hash: string;
+  title: string; purpose: string; eligible_voter_roles: OrganizationRole[];
+  proposal_roles: OrganizationRole[]; proposal_permissions: string[];
+  distribution_policy_id: string | null; quorum_bps: number; approval_threshold_bps: number;
+  voting_period_seconds: number; minimum_voting_period_seconds: number;
+  dispute_window_seconds: number; vote_weighting_rule: 'ONE_ELIGIBLE_WALLET_ONE_VOTE';
+  effective_from: number; created_by: string; created_at: number; status: string;
+}
+export interface GovernanceProposal {
+  proposal_id: string; organization_id: string; proposal_type: string; title: string;
+  description: string; proposal_payload: Record<string, unknown>; proposal_payload_hash: string;
+  created_by: string; created_at: number; bylaws_version: number; bylaws_hash: string;
+  electorate_snapshot_hash: string; electorate: Record<string, number>;
+  voting_starts_at: number | null; voting_ends_at: number | null;
+  status: string; resolution_status: string; resolved_at: number | null;
+  tally: GovernanceTally | null; consumed: boolean; is_executable: false;
+  vote_count?: number; my_vote?: 'YES' | 'NO' | 'ABSTAIN' | null;
+}
+export interface GovernanceTally {
+  proposal_id: string; eligible_weight: number; participating_weight: number;
+  yes_weight: number; no_weight: number; abstain_weight: number;
+  quorum_met: boolean; approval_threshold_met: boolean;
+  outcome: 'ACCEPTED' | 'REJECTED'; is_executable: false;
+}
+export interface GovernanceVote { voter_pubkey: string; choice: 'YES' | 'NO' | 'ABSTAIN'; voted_at: number; }
+export interface GovernanceDispute {
+  dispute_id: string; organization_id: string; proposal_id: string; opened_by: string;
+  reason_code: string; evidence_refs: string[]; opened_at: number; response_deadline: number;
+  status: string; resolution: string | null; resolved_by: string | null;
+}
+export interface OrganizationDistributionPolicy {
+  distribution_policy_id: string; organization_id: string; mint: string;
+  participant_shares_bps: Record<string, number>; reserve_share_bps: number;
+  approved_proposal_id: string; policy_hash: string; version: number; is_executable: false;
+}
+export interface DistributionSimulation {
+  organization_id: string; distribution_policy_id: string; mint: string;
+  pool_provenance: 'SYNTHETIC_POOL' | 'HYPOTHETICAL_DISTRIBUTION';
+  pool_amount_base_units: number; participant_allocations_base_units: Record<string, number>;
+  reserve_base_units: number; rounding_remainder_to_reserve: number;
+  is_simulation: true; is_executable: false; funds_transferred: false;
+}
+export interface GovernanceOverview {
+  organization_id: string; governance_version: number; current_bylaws: OrganizationBylaws | null;
+  proposal_count: number; is_executable: false;
+}
+export interface GovernanceAuditEvent {
+  event_id: string; organization_id: string; version: number; organization_version: number;
+  actor_pubkey: string; action: GovernanceAction; signature: string;
+  previous_state_hash: string; new_state_hash: string; previous_event_hash: string;
+  event_hash: string; occurred_at: number;
+}
+
 export interface EconomicMovementFilters extends Paging {
   nature?: MovementNature;
   status?: MovementStatus;
@@ -1230,6 +1293,40 @@ export async function organizationMutationMessage(method: 'POST', path: string,
     `${body.target_type}:${body.target_id}:${body.action}:${body.role_id}:${body.permission_scope}:` +
     `${method}:${path}:${hex}:${body.issued_at}:${body.nonce}:${body.idempotency_key}:` +
     `${body.expected_version}:${body.expires_at}`);
+}
+
+export async function governanceMutationMessage(method: 'POST', path: string,
+  body: GovernanceMutationRequest): Promise<Uint8Array> {
+  validatedOrganizationId(body.organization_id); pubkey(body.actor_pubkey);
+  if (method !== 'POST' || path !== `/v1/organizations/${body.organization_id}/governance/actions` ||
+      !Number.isSafeInteger(body.expected_version) || !Number.isSafeInteger(body.bylaws_version) ||
+      !Number.isSafeInteger(body.issued_at) || !Number.isSafeInteger(body.expires_at) ||
+      body.expires_at <= body.issued_at) throw new RangeError('Invalid governance mutation context');
+  const bytes = new TextEncoder().encode(canonicalPolicyJson(body));
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+  return new TextEncoder().encode(`conatus:governance:v1:1:${body.organization_id}:${body.proposal_id}:` +
+    `${body.actor_pubkey}:${body.action}:${body.bylaws_version}:${body.bylaws_hash}:` +
+    `${body.electorate_snapshot_hash}:${method}:${path}:${hex}:${body.issued_at}:${body.nonce}:` +
+    `${body.idempotency_key}:${body.expected_version}:${body.expires_at}`);
+}
+
+function safeGovernanceResponse(raw: unknown): unknown {
+  const inspect = (value: unknown, depth: number): void => {
+    if (depth > 12) fail('Governance response is too deeply nested');
+    if (typeof value === 'number' && !Number.isSafeInteger(value)) fail('Governance integer exceeds safe precision');
+    if (Array.isArray(value)) { value.forEach(item => inspect(item, depth + 1)); return; }
+    if (!value || typeof value !== 'object') return;
+    for (const [key, item] of Object.entries(value)) {
+      if ((key === 'is_executable' || key === 'funds_transferred' || key === 'is_financial_authority' ||
+           key === 'real_capital_authorized') && item !== false)
+        fail('Governance response claims financial execution authority');
+      if (key === 'is_simulation' && item !== true) fail('Unsafe governance simulation response');
+      inspect(item, depth + 1);
+    }
+  };
+  inspect(raw, 0);
+  return raw;
 }
 
 function organizationResponse(raw: unknown): ConatusOrganization {
@@ -2292,6 +2389,82 @@ export class MarketplaceClient {
     const raw = object(await this.post(`/v1/organizations/${id}/actions`, body, options.signal,
       this.policyHeaders(options)), 'organization mutation');
     return { data: organizationResponse(raw.data), meta: meta(raw.meta, false) };
+  }
+
+  async getGovernanceSection<T = unknown>(organizationId: string,
+    section: '' | 'bylaws' | 'proposals' | 'disputes' | 'distributions' | 'audit-events',
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<T>> {
+    const suffix = section ? `/${section}` : '';
+    return detail(await this.get(`/v1/organizations/${validatedOrganizationId(organizationId)}/governance${suffix}`,
+      undefined, options.signal, this.policyHeaders(options)), raw => safeGovernanceResponse(raw) as T);
+  }
+
+  async getGovernanceProposal(organizationId: string, proposalId: string,
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<GovernanceProposal>> {
+    if (!/^gp_[0-9a-f]{32}$/.test(proposalId)) throw new RangeError('Invalid governance proposal ID');
+    return detail(await this.get(`/v1/organizations/${validatedOrganizationId(organizationId)}/governance/proposals/${proposalId}`,
+      undefined, options.signal, this.policyHeaders(options)), raw => safeGovernanceResponse(raw) as GovernanceProposal);
+  }
+
+  async getGovernanceVotes(organizationId: string, proposalId: string,
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<GovernanceVote[]>> {
+    if (!/^gp_[0-9a-f]{32}$/.test(proposalId)) throw new RangeError('Invalid governance proposal ID');
+    return detail(await this.get(`/v1/organizations/${validatedOrganizationId(organizationId)}/governance/proposals/${proposalId}/votes`,
+      undefined, options.signal, this.policyHeaders(options)), raw => safeGovernanceResponse(raw) as GovernanceVote[]);
+  }
+
+  async applyGovernanceAction(organizationId: string, body: GovernanceMutationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<unknown>> {
+    const id = validatedOrganizationId(organizationId);
+    if (body.organization_id !== id) throw new RangeError('Governance organization mismatch');
+    const raw = object(await this.post(`/v1/organizations/${id}/governance/actions`, body,
+      options.signal, this.policyHeaders(options)), 'governance mutation');
+    return { data: safeGovernanceResponse(raw.data), meta: meta(raw.meta, false) };
+  }
+
+  async getOrganizationBylaws(organizationId: string,
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<OrganizationBylaws[]>> {
+    return this.getGovernanceSection<OrganizationBylaws[]>(organizationId, 'bylaws', options);
+  }
+
+  async listGovernanceProposals(organizationId: string,
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<GovernanceProposal[]>> {
+    return this.getGovernanceSection<GovernanceProposal[]>(organizationId, 'proposals', options);
+  }
+
+  async getGovernanceAuditEvents(organizationId: string,
+    options: { authHeaders: Record<string, string>; signal?: AbortSignal }): Promise<Detail<GovernanceAuditEvent[]>> {
+    return this.getGovernanceSection<GovernanceAuditEvent[]>(organizationId, 'audit-events', options);
+  }
+
+  async createGovernanceProposal(organizationId: string, body: GovernanceMutationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<unknown>> {
+    if (body.action !== 'CREATE_PROPOSAL') throw new RangeError('CREATE_PROPOSAL action required');
+    return this.applyGovernanceAction(organizationId, body, options);
+  }
+
+  async openGovernanceVoting(organizationId: string, body: GovernanceMutationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<unknown>> {
+    if (body.action !== 'OPEN_VOTING') throw new RangeError('OPEN_VOTING action required');
+    return this.applyGovernanceAction(organizationId, body, options);
+  }
+
+  async castGovernanceVote(organizationId: string, body: GovernanceMutationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<unknown>> {
+    if (body.action !== 'CAST_VOTE') throw new RangeError('CAST_VOTE action required');
+    return this.applyGovernanceAction(organizationId, body, options);
+  }
+
+  async closeGovernanceVoting(organizationId: string, body: GovernanceMutationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<unknown>> {
+    if (body.action !== 'CLOSE_VOTING') throw new RangeError('CLOSE_VOTING action required');
+    return this.applyGovernanceAction(organizationId, body, options);
+  }
+
+  async simulateGovernanceDistribution(organizationId: string, body: GovernanceMutationRequest,
+    options: SignedPolicyRequestOptions): Promise<Detail<DistributionSimulation>> {
+    if (body.action !== 'SIMULATE_DISTRIBUTION') throw new RangeError('SIMULATE_DISTRIBUTION action required');
+    return this.applyGovernanceAction(organizationId, body, options) as Promise<Detail<DistributionSimulation>>;
   }
 
   async getAgentBudgetPolicy(account: string, options: { authHeaders?: Record<string, string>; signal?: AbortSignal } = {}): Promise<Detail<AgentBudgetPolicy>> {

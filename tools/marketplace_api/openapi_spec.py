@@ -949,6 +949,20 @@ def build():
                 "version": {"type": "integer"}}},
         "OrganizationMutationResponse": {"type": "object", "required": ["data", "meta"],
             "properties": {"data": ref("Organization"), "meta": ref("Meta")}},
+        "GovernanceMutationRequest": {"type": "object", "additionalProperties": False,
+            "required": ["organization_id", "proposal_id", "actor_pubkey", "action", "bylaws_version",
+                "bylaws_hash", "electorate_snapshot_hash", "payload", "expected_version",
+                "issued_at", "expires_at", "nonce", "idempotency_key"],
+            "properties": {"organization_id": {"type": "string", "pattern": "^org_[0-9a-f]{32}$"},
+                "proposal_id": {"type": "string"}, "actor_pubkey": ref("Pubkey"),
+                "action": {"enum": ["CREATE_BYLAWS", "AMEND_BYLAWS", "CREATE_PROPOSAL", "OPEN_VOTING",
+                    "CAST_VOTE", "CLOSE_VOTING", "OPEN_DISPUTE", "RESOLVE_DISPUTE",
+                    "ADOPT_DISTRIBUTION_POLICY", "SIMULATE_DISTRIBUTION"]},
+                "bylaws_version": {"type": "integer", "minimum": 0}, "bylaws_hash": {"type": "string"},
+                "electorate_snapshot_hash": {"type": "string"}, "payload": {"type": "object"},
+                "expected_version": {"type": "integer", "minimum": 0},
+                "issued_at": {"type": "integer"}, "expires_at": {"type": "integer"},
+                "nonce": {"type": "string"}, "idempotency_key": {"type": "string"}}},
     }
 
     def param(name, schema, description):
@@ -982,6 +996,8 @@ def build():
                                 "audit-events", "permissions"]}},
         "OrganizationAgentAccount": {"name": "agent_account", "in": "path", "required": True,
                                       "schema": ref("Pubkey")},
+        "GovernanceProposalId": {"name": "proposal_id", "in": "path", "required": True,
+            "schema": {"type": "string", "pattern": "^gp_[0-9a-f]{32}$"}},
         "SurplusNetwork": {"name": "network", "in": "query", "required": True, "schema": {"type": "string"}},
         "SurplusGenesis": {"name": "genesis_hash", "in": "query", "required": True, "schema": ref("Pubkey")},
         "SurplusProgram": {"name": "program_id", "in": "query", "required": True, "schema": ref("Pubkey")},
@@ -1121,6 +1137,9 @@ def build():
         "OrganizationSignature": {"name": "X-Signature", "in": "header", "required": True,
                                   "schema": {"type": "string"}, "description":
                                   "Base58 Ed25519 signature: GET uses conatus:organization-read:v1 over actor, timestamp and exact path; POST uses conatus:organization-admin:v1 over the canonical complete body and route"},
+        "GovernanceSignature": {"name": "X-Signature", "in": "header", "required": True,
+                                "schema": {"type": "string"}, "description":
+                                "Base58 Ed25519 signature of conatus:governance:v1 over the exact POST route, full canonical body, bylaws, electorate, version, nonce and expiration"},
         "CostId": {
             "name": "cost_id",
             "in": "path",
@@ -1427,6 +1446,35 @@ def build():
                 ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature")),
                 "requestBody": {"required": True, "content": {"application/json":
                     {"schema": ref("OrganizationMutationRequest")}}}}},
+            "/v1/organizations/{organization_id}/governance": {"get": operation(
+                "Read current off-chain governance version and bylaws", {"type": "object"},
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/governance/bylaws": {"get": operation(
+                "Read immutable bylaws versions", {"type": "object"},
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/governance/proposals": {"get": operation(
+                "Read accessible governance proposals", {"type": "object"},
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/governance/proposals/{proposal_id}": {"get": operation(
+                "Read one signed governance proposal and tally", {"type": "object"},
+                ("OrganizationId", "GovernanceProposalId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/governance/proposals/{proposal_id}/votes": {"get": operation(
+                "Read immutable votes for a proposal", {"type": "object"},
+                ("OrganizationId", "GovernanceProposalId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/governance/disputes": {"get": operation(
+                "Read governance disputes", {"type": "object"},
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/governance/distributions": {"get": operation(
+                "Read declarative policies and hypothetical simulations", {"type": "object"},
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/governance/audit-events": {"get": operation(
+                "Read verified governance event history", {"type": "object"},
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "OrganizationSignature"))},
+            "/v1/organizations/{organization_id}/governance/actions": {"post": {**operation(
+                "Apply a signed off-chain governance action; never executes funds", {"type": "object"},
+                ("OrganizationId", "OrganizationSigner", "OrganizationTimestamp", "GovernanceSignature")),
+                "requestBody": {"required": True, "content": {"application/json":
+                    {"schema": ref("GovernanceMutationRequest")}}}}},
             "/v1/costs/{cost_id}": {
                 "get": operation(
                     "Get operational cost detail",
