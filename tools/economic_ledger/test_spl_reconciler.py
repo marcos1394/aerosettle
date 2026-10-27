@@ -37,6 +37,7 @@ Covers all mandatory test conditions specified in Jira CON-23 and the audit feed
 from __future__ import annotations
 
 import json
+import hashlib
 import tempfile
 import time
 import unittest
@@ -83,6 +84,7 @@ from tools.economic_ledger.spl_reconciler import (
     compute_canonical_evidence_hash,
     derive_agent_pda,
     derive_escrow_vault_pda,
+    derive_protocol_config_pda,
     derive_work_order_pda,
     encode_agent_account,
     encode_spl_transfer_checked,
@@ -182,6 +184,23 @@ def setup_canonical_mock_accounts(
             encode_token_account(mint=token_mint, owner=creator, amount=0),
             owner=DEFAULT_TOKEN_PROGRAM,
         )
+
+
+def setup_shared_destination_accounts(mock_rpc: MockRpcClient, **overrides: Any) -> tuple[str, str]:
+    """Independent canonical PDA fixture satisfying both Anchor owner constraints."""
+    work_order, _ = derive_work_order_pda(DEFAULT_PROTOCOL_CONFIG, BENEFICIARY_TARGET, WO_ID_TARGET)
+    vault, _ = derive_escrow_vault_pda(work_order)
+    setup_canonical_mock_accounts(
+        mock_rpc,
+        work_order_pubkey=work_order,
+        creator=BENEFICIARY_TARGET,
+        settlement_beneficiary=BENEFICIARY_TARGET,
+        escrow_vault=vault,
+        operator_token_account=PAYOUT_ACCOUNT_TARGET,
+        creator_refund_token_account=PAYOUT_ACCOUNT_TARGET,
+        **overrides,
+    )
+    return work_order, vault
 
 
 def make_settlement_tx(
@@ -378,6 +397,31 @@ class SplSettlementReconcilerTests(unittest.TestCase):
         except Exception:
             pass
         self.temp_dir.cleanup()
+
+    def test_anchor_idl_discriminators_and_canonical_pdas(self) -> None:
+        snapshot = Path(__file__).parents[1] / "integration/localnet/aerosettle-idl.json"
+        idl = json.loads(snapshot.read_text())
+        self.assertEqual(idl["address"], DEFAULT_PROGRAM_ID)
+        for name, constant in (
+            ("settle_work_order", SETTLE_WORK_ORDER_DISCRIMINATOR),
+        ):
+            entry = next(x for x in idl["instructions"] if x["name"] == name)
+            digest = hashlib.sha256(f"global:{name}".encode()).digest()[:8]
+            self.assertEqual(bytes(entry["discriminator"]), digest)
+            self.assertEqual(digest, constant)
+        settle = next(x for x in idl["instructions"] if x["name"] == "settle_work_order")
+        self.assertEqual([x["name"] for x in settle["accounts"]], [
+            "protocol_config", "work_order", "escrow_vault", "mint",
+            "operator_token_account", "creator_refund_token_account", "token_program",
+        ])
+        self.assertEqual(derive_protocol_config_pda()[0], DEFAULT_PROTOCOL_CONFIG)
+        self.assertEqual(derive_work_order_pda(
+            DEFAULT_PROTOCOL_CONFIG, CREATOR_TARGET, WO_ID_TARGET,
+        )[0], WORK_ORDER_TARGET)
+        self.assertEqual(derive_agent_pda(
+            DEFAULT_PROTOCOL_CONFIG, AGENT_ID_TARGET,
+        )[0], AGENT_TARGET)
+        self.assertEqual(derive_escrow_vault_pda(WORK_ORDER_TARGET)[0], VAULT_TARGET)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Condition 1: Valid Settlement Full Payout (10.0 USDC)
@@ -628,6 +672,22 @@ class SplSettlementReconcilerTests(unittest.TestCase):
         # Balance must remain exactly 10.0 USDC, never duplicated to 20.0 USDC
         rec_bal, _ = get_single_balance(self.ledger, AGENT_TARGET, MINT_TARGET)
         self.assertEqual(rec_bal, 10_000_000)
+
+    def test_same_effect_with_changed_economic_evidence_is_rejected(self) -> None:
+        signature = "5ChangedEffectIdentity11111111111111111111111111"
+        self.mock_rpc.register_transaction(signature, make_settlement_tx(tx_signature=signature))
+        first, _ = self.reconciler.reconcile_settlement(self.ledger, tx_signature=signature)
+        setup_canonical_mock_accounts(
+            self.mock_rpc,
+            payment_model=PaymentModel.Proportional.value,
+            completion_bps=6_000,
+        )
+        self.mock_rpc.register_transaction(signature, make_settlement_tx(
+            tx_signature=signature, operator_payout=6_000_000, creator_refund=4_000_000,
+        ))
+        with self.assertRaises(IdempotencyConflictError):
+            self.reconciler.reconcile_settlement(self.ledger, tx_signature=signature)
+        self.assertEqual(self.ledger.get_by_idempotency_key(first.idempotency_key), first)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Condition 12: Process Restart & Disk Persistence
@@ -1046,7 +1106,7 @@ class SplSettlementReconcilerTests(unittest.TestCase):
     # ─────────────────────────────────────────────────────────────────────────
 
     def test_adversarial_30_shared_destination_no_overattribution(self) -> None:
-        setup_canonical_mock_accounts(
+        work_order, vault = setup_shared_destination_accounts(
             self.mock_rpc,
             payment_model=PaymentModel.Proportional.value,
             completion_bps=6_000,
@@ -1056,8 +1116,11 @@ class SplSettlementReconcilerTests(unittest.TestCase):
         # Operator payout = 6.0 USDC, Creator refund = 4.0 USDC. Total delta = 10.0 USDC.
         tx = make_settlement_tx(
             tx_signature=sig,
+            work_order=work_order,
+            escrow_vault=vault,
             operator_account=PAYOUT_ACCOUNT_TARGET,
             creator_refund_account=PAYOUT_ACCOUNT_TARGET,
+            creator_owner=BENEFICIARY_TARGET,
             operator_payout=6_000_000,
             creator_refund=4_000_000,
             total_escrow=10_000_000,
@@ -1141,20 +1204,20 @@ class SplSettlementReconcilerTests(unittest.TestCase):
 
         is 0 (rejected work order), the single CPI is a refund and must NOT be attributed to operator.
         """
-        setup_canonical_mock_accounts(
+        work_order, vault = setup_shared_destination_accounts(
             self.mock_rpc,
             verification_status=VerificationStatus.Rejected.value,
             completion_bps=0,
-            operator_token_account=REFUND_ACCOUNT_TARGET,
-            creator_refund_token_account=REFUND_ACCOUNT_TARGET,
         )
         sig = "5SharedDestZeroPayoutSig3232323232323232323232"
         tx = make_settlement_tx(
             tx_signature=sig,
-            operator_account=REFUND_ACCOUNT_TARGET,
-            creator_refund_account=REFUND_ACCOUNT_TARGET,
+            work_order=work_order,
+            escrow_vault=vault,
+            operator_account=PAYOUT_ACCOUNT_TARGET,
+            creator_refund_account=PAYOUT_ACCOUNT_TARGET,
             beneficiary_owner=BENEFICIARY_TARGET,
-            creator_owner=CREATOR_TARGET,
+            creator_owner=BENEFICIARY_TARGET,
             operator_payout=0,
             creator_refund=10_000_000,
             total_escrow=10_000_000,
@@ -1169,6 +1232,73 @@ class SplSettlementReconcilerTests(unittest.TestCase):
         self.assertEqual(movement.amount_base_units, 0)
         rec_bal, _ = get_single_balance(self.ledger, AGENT_TARGET, MINT_TARGET)
         self.assertEqual(rec_bal, 0)
+
+    def test_shared_destination_anchor_owner_matrix(self) -> None:
+        """SD-01..07: both owner constraints apply even to a zero-value leg."""
+        cases = (
+            ("SD-01", True, 10_000, VerificationStatus.Accepted, 10_000_000, 0),
+            ("SD-02", True, 0, VerificationStatus.Rejected, 0, 10_000_000),
+            ("SD-03", True, 6_000, VerificationStatus.Accepted, 6_000_000, 4_000_000),
+            ("SD-04", False, 10_000, VerificationStatus.Accepted, 10_000_000, 0),
+            ("SD-05", False, 0, VerificationStatus.Rejected, 0, 10_000_000),
+            ("SD-06", False, 6_000, VerificationStatus.Accepted, 6_000_000, 4_000_000),
+            ("SD-07", True, 6_000, VerificationStatus.Accepted, 6_000_000, 9_000_000),
+        )
+        for name, same_owner, bps, status, payout, refund in cases:
+            with self.subTest(name=name):
+                mock = MockRpcClient(genesis_hash=DEFAULT_GENESIS_HASH)
+                surplus = 5_000_000 if name == "SD-07" else 0
+                if same_owner:
+                    work_order, vault = setup_shared_destination_accounts(
+                        mock,
+                        payment_model=PaymentModel.Proportional.value,
+                        verification_status=status.value,
+                        completion_bps=bps,
+                    )
+                    creator = BENEFICIARY_TARGET
+                else:
+                    work_order, vault = WORK_ORDER_TARGET, VAULT_TARGET
+                    setup_canonical_mock_accounts(
+                        mock,
+                        payment_model=PaymentModel.Proportional.value,
+                        verification_status=status.value,
+                        completion_bps=bps,
+                        operator_token_account=PAYOUT_ACCOUNT_TARGET,
+                        creator_refund_token_account=PAYOUT_ACCOUNT_TARGET,
+                    )
+                    creator = CREATOR_TARGET
+                signature = f"5SharedDestination{name.replace('-', '')}1111111111111111111111111111"
+                tx = make_settlement_tx(
+                    tx_signature=signature,
+                    work_order=work_order,
+                    escrow_vault=vault,
+                    operator_account=PAYOUT_ACCOUNT_TARGET,
+                    creator_refund_account=PAYOUT_ACCOUNT_TARGET,
+                    beneficiary_owner=BENEFICIARY_TARGET,
+                    creator_owner=creator,
+                    total_escrow=10_000_000 + surplus,
+                    operator_payout=payout,
+                    creator_refund=refund,
+                )
+                mock.register_transaction(signature, tx)
+                reconciler = SplSettlementReconciler(rpc_client=mock)
+                if not same_owner:
+                    with self.assertRaises(AccountMismatchError):
+                        reconciler.verify_settlement_transaction(signature)
+                else:
+                    receipt = reconciler.verify_settlement_transaction(signature)
+                    self.assertEqual(receipt.operator_payout, payout)
+                    self.assertEqual(receipt.creator_refund, refund)
+                    self.assertEqual(receipt.total_escrow_settled, payout + refund)
+                    self.assertEqual(receipt.evidence_source, EvidenceSourceKind.SYNTHETIC_TEST.value)
+
+    def test_mock_cannot_claim_live_rpc_by_explicit_source_override(self) -> None:
+        signature = "5MockLiveSourceOverride111111111111111111111111111"
+        self.mock_rpc.register_transaction(signature, make_settlement_tx(tx_signature=signature))
+        with self.assertRaises(SettlementVerificationError):
+            self.reconciler.verify_settlement_transaction(
+                signature, source_kind=EvidenceSourceKind.LIVE_RPC,
+            )
 
     def test_negative_missing_token_account_owner_fails_closed(self) -> None:
         """If token account owner cannot be determined from parsed metadata or RPC,

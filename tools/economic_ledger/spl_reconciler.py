@@ -795,6 +795,24 @@ class SolanaRpcClient:
             raise RpcError("Invalid getGenesisHash response")
         return res
 
+    def get_signature_status(self, tx_signature: str) -> Optional[dict[str, Any]]:
+        res = self._call("getSignatureStatuses", [[tx_signature], {"searchTransactionHistory": True}])
+        values = res.get("value") if isinstance(res, dict) else None
+        if not isinstance(values, list) or len(values) != 1:
+            raise RpcError("Invalid getSignatureStatuses response")
+        status = values[0]
+        if status is not None and not isinstance(status, dict):
+            raise RpcError("Invalid signature status")
+        return status
+
+    def get_token_account_balance(self, pubkey: str, *, commitment: str = "finalized") -> int:
+        res = self._call("getTokenAccountBalance", [pubkey, {"commitment": commitment}])
+        value = res.get("value") if isinstance(res, dict) else None
+        amount = value.get("amount") if isinstance(value, dict) else None
+        if not isinstance(amount, str) or not amount.isdigit():
+            raise RpcError("Invalid getTokenAccountBalance response")
+        return int(amount)
+
     def get_transaction(
         self,
         tx_signature: str,
@@ -995,9 +1013,11 @@ class SplSettlementReconciler:
         token balances, or verified on-chain account states.
         """
         # Detect evidence source kind cleanly: never let mock RPC masquerade as LIVE_RPC
+        if source_kind == EvidenceSourceKind.LIVE_RPC and type(self.rpc) is not SolanaRpcClient:
+            raise SettlementVerificationError("LIVE_RPC requires the actual SolanaRpcClient")
         effective_source = source_kind
         if effective_source is None:
-            if isinstance(self.rpc, SolanaRpcClient):
+            if type(self.rpc) is SolanaRpcClient:
                 effective_source = EvidenceSourceKind.LIVE_RPC
             else:
                 effective_source = EvidenceSourceKind.SYNTHETIC_TEST
@@ -1045,6 +1065,16 @@ class SplSettlementReconciler:
             raise TransactionFailedError(
                 f"Transaction '{tx_signature}' failed on-chain with error: {meta['err']}"
             )
+
+        if type(self.rpc) is SolanaRpcClient:
+            status = self.rpc.get_signature_status(tx_signature)
+            if status is None or status.get("err") is not None:
+                raise SettlementVerificationError("Missing or failed RPC signature status")
+            expected_status = "finalized" if require_finalized else "confirmed"
+            if status.get("confirmationStatus") not in ({"finalized"} if require_finalized else {"confirmed", "finalized"}):
+                raise CommitmentUnsatisfiedError(f"Signature has not reached {expected_status} commitment")
+            if status.get("slot") != tx.get("slot"):
+                raise SettlementVerificationError("Signature status slot does not match transaction slot")
 
         slot = int(tx.get("slot", 0))
         if slot <= 0:
@@ -1372,19 +1402,16 @@ class SplSettlementReconciler:
                     f"Creator refund token account owner '{cr_owner}' does not match creator '{wo_data['creator']}'"
                 )
         else:
-            # Shared destination:
-            # If operator payout > 0, owner must match settlement_beneficiary
-            # If operator payout == 0 (pure refund), owner must match creator or settlement_beneficiary
-            if contract_operator > 0:
-                if op_owner != settlement_beneficiary:
-                    raise AccountMismatchError(
-                        f"Shared token account owner '{op_owner}' does not match settlement beneficiary '{settlement_beneficiary}'"
-                    )
-            else:
-                if op_owner != settlement_beneficiary and op_owner != wo_data["creator"]:
-                    raise AccountMismatchError(
-                        f"Shared token account owner '{op_owner}' is an unauthorized third party"
-                    )
+            # Anchor validates both Account<TokenAccount> owner constraints before
+            # executing the instruction, even when either transfer amount is zero.
+            if wo_data["creator"] != settlement_beneficiary:
+                raise AccountMismatchError(
+                    "Shared token account requires creator and frozen settlement beneficiary to match"
+                )
+            if op_owner != settlement_beneficiary:
+                raise AccountMismatchError(
+                    f"Shared token account owner '{op_owner}' does not match creator and settlement beneficiary '{settlement_beneficiary}'"
+                )
 
         # 13. Examine Inner TransferChecked Instructions for settle_work_order
         inner_instructions_list = meta.get("innerInstructions") or []
@@ -1754,9 +1781,31 @@ class SplSettlementReconciler:
         ag_id = receipt.agent_id
         own_pubkey = receipt.owner_pubkey
 
+        def assert_same_effect(movement: EconomicMovement) -> None:
+            expected = {
+                "idempotency_key": receipt.effect_id,
+                "agent_id": receipt.agent_id,
+                "agent_account": receipt.agent_account,
+                "owner_pubkey": receipt.owner_pubkey,
+                "network": receipt.network,
+                "genesis_hash": receipt.genesis_hash,
+                "program_id": receipt.program_id,
+                "token_mint": receipt.token_mint,
+                "amount_base_units": receipt.operator_payout,
+                "work_order_account": receipt.work_order_account,
+                "tx_signature": receipt.tx_signature,
+                "evidence_hash": receipt.evidence_hash,
+            }
+            for field, value in expected.items():
+                if getattr(movement, field) != value:
+                    raise IdempotencyConflictError(
+                        f"Existing movement conflicts with verified settlement field '{field}'"
+                    )
+
         # Check if movement already exists for this idempotent financial effect
         existing = ledger.get_by_idempotency_key(receipt.effect_id)
         if existing:
+            assert_same_effect(existing)
             if existing.status == MovementStatus.RECONCILED:
                 return existing, receipt
 
@@ -1780,6 +1829,7 @@ class SplSettlementReconciler:
         ]
         if matching:
             target_mov = matching[0]
+            assert_same_effect(target_mov)
             if target_mov.status == MovementStatus.RECONCILED:
                 return target_mov, receipt
             if is_finalized:

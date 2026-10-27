@@ -153,6 +153,15 @@ fn read_order(svm: &LiteSVM, address: Pubkey) -> WorkOrderAccount {
 }
 
 fn setup_verified(model: PaymentModel, status: VerificationStatus, bps: u16) -> Rig {
+    setup_verified_with_identity(model, status, bps, false)
+}
+
+fn setup_verified_with_identity(
+    model: PaymentModel,
+    status: VerificationStatus,
+    bps: u16,
+    shared_identity: bool,
+) -> Rig {
     let mut svm = LiteSVM::new().with_default_programs();
     let program = include_bytes!(concat!(
         env!("CARGO_TARGET_TMPDIR"),
@@ -164,9 +173,19 @@ fn setup_verified(model: PaymentModel, status: VerificationStatus, bps: u16) -> 
     let protocol_authority = Keypair::new();
     let creator = Keypair::new();
     let verifier = Keypair::new();
-    let owner = Keypair::new();
+    let owner = if shared_identity {
+        Keypair::try_from(creator.to_bytes().as_slice()).expect("copy test identity")
+    } else {
+        Keypair::new()
+    };
     let device = Keypair::new();
-    for key in [&protocol_authority, &creator, &verifier, &owner, &device] {
+    for (index, key) in [&protocol_authority, &creator, &verifier, &owner, &device]
+        .into_iter()
+        .enumerate()
+    {
+        if shared_identity && index == 3 {
+            continue;
+        }
         fund_lamports(&mut svm, key);
     }
 
@@ -190,7 +209,11 @@ fn setup_verified(model: PaymentModel, status: VerificationStatus, bps: u16) -> 
     let mint = make_mint(&mut svm, creator.pubkey(), TOTAL + BONUS);
     let source_tokens = make_token_account(&mut svm, mint, creator.pubkey(), TOTAL);
     let operator_tokens = make_token_account(&mut svm, mint, owner.pubkey(), 0);
-    let refund_tokens = make_token_account(&mut svm, mint, creator.pubkey(), 0);
+    let refund_tokens = if shared_identity {
+        operator_tokens
+    } else {
+        make_token_account(&mut svm, mint, creator.pubkey(), 0)
+    };
 
     let work_order_id = [201u8; 32];
     let work_order = pda(&[
@@ -460,6 +483,66 @@ fn rejected_refunds_creator_fully() {
     let mut rig = setup_verified(PaymentModel::Proportional, VerificationStatus::Rejected, 0);
     must_settle(&mut rig);
     assert_distribution(&rig, 0, TOTAL);
+}
+
+#[test]
+fn shared_destination_matching_creator_and_beneficiary_settles_exactly() {
+    for (bps, status, expected_payout) in [
+        (10_000, VerificationStatus::Accepted, TOTAL),
+        (0, VerificationStatus::Rejected, 0),
+        (6_000, VerificationStatus::Accepted, 60_000_000),
+    ] {
+        let mut rig = setup_verified_with_identity(PaymentModel::Proportional, status, bps, true);
+        assert_eq!(rig.operator_tokens, rig.refund_tokens);
+        let order = read_order(&rig.svm, rig.work_order);
+        assert_eq!(order.creator, order.settlement_beneficiary);
+        must_settle(&mut rig);
+        assert_eq!(token_balance(&rig.svm, rig.operator_tokens), TOTAL);
+        assert_eq!(token_balance(&rig.svm, rig.vault), 0);
+        assert_eq!(read_order(&rig.svm, rig.work_order).status, WorkOrderStatus::Settled);
+        assert_eq!(expected_payout + (TOTAL - expected_payout), TOTAL);
+    }
+}
+
+#[test]
+fn shared_destination_distinct_creator_and_beneficiary_is_rejected_for_all_payouts() {
+    for (bps, status) in [
+        (10_000, VerificationStatus::Accepted),
+        (0, VerificationStatus::Rejected),
+        (6_000, VerificationStatus::Accepted),
+    ] {
+        let mut rig = setup_verified(PaymentModel::Proportional, status, bps);
+        let order = read_order(&rig.svm, rig.work_order);
+        assert_ne!(order.creator, order.settlement_beneficiary);
+        let payer = Keypair::new();
+        fund_lamports(&mut rig.svm, &payer);
+        let ix = settle_instruction(&rig, rig.operator_tokens, rig.operator_tokens);
+        assert!(send(&mut rig.svm, &payer, ix).is_err());
+        assert_eq!(token_balance(&rig.svm, rig.vault), TOTAL);
+        assert_eq!(token_balance(&rig.svm, rig.operator_tokens), 0);
+        assert_eq!(read_order(&rig.svm, rig.work_order).status, WorkOrderStatus::Verified);
+    }
+}
+
+#[test]
+fn shared_destination_donated_surplus_is_conserved() {
+    let mut rig = setup_verified_with_identity(
+        PaymentModel::Proportional,
+        VerificationStatus::Accepted,
+        6_000,
+        true,
+    );
+    let donor = Keypair::new();
+    fund_lamports(&mut rig.svm, &donor);
+    let donor_tokens = make_token_account(&mut rig.svm, rig.mint, donor.pubkey(), BONUS);
+    let donate = spl_instruction::transfer_checked(
+        &TOKEN_PROGRAM_ID, &donor_tokens, &rig.mint, &rig.vault,
+        &donor.pubkey(), &[], BONUS, DECIMALS,
+    ).expect("donation instruction");
+    must_send(&mut rig.svm, &donor, donate);
+    must_settle(&mut rig);
+    assert_eq!(token_balance(&rig.svm, rig.operator_tokens), TOTAL + BONUS);
+    assert_eq!(token_balance(&rig.svm, rig.vault), 0);
 }
 
 #[test]
