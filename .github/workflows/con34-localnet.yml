@@ -2,7 +2,7 @@ name: CON-34 real Localnet E2E
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [master]
     paths:
       - .github/workflows/con34-localnet.yml
       - programs/aerosettle/**
