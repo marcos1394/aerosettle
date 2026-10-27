@@ -19,7 +19,7 @@
     "smoke": "node examples/localnet-preview.mjs"
   },
   "dependencies": {
-    "@solana/web3.js": "1.99.0"
+    "@solana/web3.js": "3.1.1"
   },
   "devDependencies": {
     "@types/node": "22.15.30",
