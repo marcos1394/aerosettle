@@ -53,6 +53,12 @@ class DevnetTests(unittest.TestCase):
         with self.assertRaisesRegex(devnet.DeploymentError, "Genesis mismatch"):
             devnet.verify_cluster(CONFIG, FakeRpc({"getGenesisHash": "wrong"}))
 
+    def test_rpc_failure_does_not_log_exception_secrets(self):
+        with patch.object(devnet.urllib.request, "urlopen", side_effect=RuntimeError("sensitive-provider-token")):
+            with self.assertRaises(devnet.DeploymentError) as failure:
+                devnet.Rpc(devnet.OFFICIAL_RPC).call("getGenesisHash")
+        self.assertNotIn("sensitive-provider-token", str(failure.exception))
+
     def test_program_absent_is_not_verified(self):
         rpc = FakeRpc({"getGenesisHash": CONFIG["genesis_hash"], "getAccountInfo": {"value": None}})
         self.assertEqual(devnet.inspect_program(CONFIG, rpc)["verification_status"], "PREPARED")
@@ -123,6 +129,8 @@ class DevnetTests(unittest.TestCase):
             idl.write_text(json.dumps({"address": "wrong", "instructions": [{"name": "x"}], "accounts": [{"name": "y"}]}))
             with self.assertRaisesRegex(devnet.DeploymentError, "IDL hash"):
                 devnet.verify_artifacts(CONFIG, manifest)
+            with self.assertRaisesRegex(devnet.DeploymentError, "IDL program ID mismatch"):
+                devnet.artifact_manifest(CONFIG, binary, idl)
 
     def test_wallet_binding_and_insufficient_funds(self):
         config = copy.deepcopy(CONFIG)
@@ -143,6 +151,17 @@ class DevnetTests(unittest.TestCase):
             binding.write_text(binding.read_text().replace("devnet", "localnet"))
             with self.assertRaisesRegex(devnet.DeploymentError, "binding mismatch"):
                 devnet.preflight(config, rpc, entries, True)
+
+    def test_deployment_checks_dynamic_rent_before_submit(self):
+        rpc = FakeRpc({"getMinimumBalanceForRentExemption": 2_500_000_000})
+        initial = devnet.required_deploy_lamports(CONFIG, rpc, 500_000, False)
+        upgrade = devnet.required_deploy_lamports(CONFIG, rpc, 500_000, True)
+        self.assertEqual(initial, 5_000_000_000 + CONFIG["minimum_fee_payer_lamports"])
+        self.assertEqual(upgrade, 2_500_000_000 + CONFIG["minimum_fee_payer_lamports"])
+        self.assertEqual(rpc.calls[0][0], "getMinimumBalanceForRentExemption")
+        self.assertEqual(rpc.calls[0][1][0], 500_045)
+        with self.assertRaisesRegex(devnet.DeploymentError, "Invalid Devnet rent quote"):
+            devnet.required_deploy_lamports(CONFIG, FakeRpc({"getMinimumBalanceForRentExemption": None}), 500_000, False)
 
     def test_signature_finality_and_incomplete_deployment(self):
         for responses in (
@@ -168,9 +187,9 @@ class DevnetTests(unittest.TestCase):
 
     def test_airdrop_limit_and_rollback_gate(self):
         self.assertLessEqual(CONFIG["maximum_airdrop_lamports"], 100_000_000)
-        self.assertLessEqual(CONFIG["maximum_test_wallet_lamports"], 2_000_000_000)
+        self.assertLessEqual(CONFIG["maximum_test_wallet_lamports"], 10_000_000_000)
         self.assertEqual(devnet.STATES, {"PREPARED", "SUBMITTED", "FINALIZED", "VERIFIED", "FAILED"})
-        rpc = FakeRpc({"getGenesisHash": CONFIG["genesis_hash"], "getBalance": {"value": 2_000_000_000}})
+        rpc = FakeRpc({"getGenesisHash": CONFIG["genesis_hash"], "getBalance": {"value": 10_000_000_000}})
         with self.assertRaisesRegex(devnet.DeploymentError, "limit"):
             devnet.request_test_funds(CONFIG, rpc, "test-wallet", 1)
         with self.assertRaisesRegex(devnet.DeploymentError, "limit"):

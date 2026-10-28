@@ -17,5 +17,5 @@
   "test_mint_decimals": null,
   "minimum_fee_payer_lamports": 50000000,
   "maximum_airdrop_lamports": 100000000,
-  "maximum_test_wallet_lamports": 2000000000
+  "maximum_test_wallet_lamports": 10000000000
 }

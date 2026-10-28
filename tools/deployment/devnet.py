@@ -92,7 +92,7 @@ def validate_config(config: dict) -> None:
     for key in ("minimum_fee_payer_lamports", "maximum_airdrop_lamports", "maximum_test_wallet_lamports"):
         require(type(config.get(key)) is int and config[key] > 0, f"Invalid {key}")
     require(config["maximum_airdrop_lamports"] <= 100_000_000, "Airdrop limit exceeds 0.1 SOL")
-    require(config["maximum_test_wallet_lamports"] <= 2_000_000_000, "Wallet funding limit exceeds 2 SOL")
+    require(config["maximum_test_wallet_lamports"] <= 10_000_000_000, "Wallet funding limit exceeds 10 SOL")
     if config.get("test_mint_pubkey"):
         require(config.get("test_mint_authority_pubkey") and type(config.get("test_mint_decimals")) is int and
                 0 <= config["test_mint_decimals"] <= 9, "Test mint identity incomplete")
@@ -193,6 +193,15 @@ def balance(rpc: Rpc, pubkey: str) -> int:
     value = rpc.call("getBalance", [pubkey, {"commitment": "finalized"}])
     require(isinstance(value, dict) and type(value.get("value")) is int, "Invalid balance response")
     return value["value"]
+
+
+def required_deploy_lamports(config: dict, rpc: Rpc, binary_size: int, is_upgrade: bool) -> int:
+    require(binary_size > 0, "Empty deployment binary")
+    # Buffer and ProgramData both hold the ELF. Use the larger ProgramData
+    # header for each account so this remains conservative on initial deploy.
+    rent = rpc.call("getMinimumBalanceForRentExemption", [binary_size + 45, {"commitment": "finalized"}])
+    require(type(rent) is int and rent > 0, "Invalid Devnet rent quote")
+    return rent * (1 if is_upgrade else 2) + config["minimum_fee_payer_lamports"]
 
 
 def verify_test_mint(config: dict, rpc: Rpc) -> None:
@@ -496,6 +505,9 @@ def main() -> None:
             existing = inspect_program(config, rpc)
             require(not existing.get("exists") or existing["upgrade_authority_pubkey"] == config["upgrade_authority_pubkey"], "Upgrade authority mismatch")
             require(not existing.get("exists") or not binary_matches_deployed(rpc, existing["program_data_address"], artifact_path(manifest["binary_path"]).read_bytes()), "Identical binary already deployed")
+            required_balance = required_deploy_lamports(config, rpc, artifact_path(manifest["binary_path"]).stat().st_size, bool(existing.get("exists")))
+            require(balance(rpc, config["fee_payer_pubkey"]) >= required_balance,
+                    "Fee payer lacks rent and transaction reserve for deployment")
             command = ["solana", "program", "deploy", "--url", OFFICIAL_RPC, "--use-rpc", "--output", "json", "--commitment", "finalized", "--fee-payer", wallets["fee_payer"]["keypair"], "--upgrade-authority", wallets["upgrade_authority"]["keypair"], "--program-id", str(args.program_keypair), str(artifact_path(manifest["binary_path"]))]
             process = subprocess.run(command, capture_output=True, text=True, check=False)
             require(process.returncode == 0, "Devnet deploy command failed; inspect chain state before retry")
