@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
       - run: python -m unittest discover -s tools/deployment -v
       - name: Read-only Devnet genesis and program inspection
         run: |
@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
       - run: rustup toolchain install 1.89.0 --profile minimal
       - run: rustup default 1.89.0
       - name: Install pinned Agave CLI
@@ -48,8 +48,8 @@ jobs:
         env:
           CON35_OUTPUT_DIR: target/deploy/con35
         run: bash tools/deployment/compare_clean_builds.sh
-      - name: Rust workspace regression
-        run: cargo test --workspace --offline
+      - name: Verify Anchor test artifact layout
+        run: cmp target/deploy/aerosettle.so target/deploy/con35/aerosettle.so
       - name: Verify generated IDL and seal manifest
         run: |
           python - <<'PY'

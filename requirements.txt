@@ -1,2 +1,1 @@
 cryptography>=50.0.0
-certifi>=2026.5.20

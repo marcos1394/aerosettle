@@ -2,6 +2,24 @@ name: CON-34 regressions
 on:
   pull_request:
     branches: [master]
+    paths:
+      - Anchor.toml
+      - Cargo.toml
+      - Cargo.lock
+      - requirements.txt
+      - programs/**
+      - packages/**
+      - apps/**
+      - tools/bootstrap/**
+      - tools/integration/localnet/**
+      - tools/economic_ledger/**
+      - tools/marketplace_api/**
+      - tools/funding/**
+      - tools/discovery/**
+      - tools/organizations/**
+      - tools/governance/**
+      - tools/mission/**
+      - tools/paper_trading/**
   push:
     branches: [master]
 permissions:

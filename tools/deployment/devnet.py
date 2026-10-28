@@ -342,14 +342,21 @@ def verify_artifacts(config: dict, manifest: dict) -> None:
 def verify_signature(rpc: Rpc, signature: str, expected_slot: int | None = None, expected_program_id: str | None = None) -> int:
     require(bool(re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{80,90}", signature or "")), "Invalid transaction signature")
     statuses = rpc.call("getSignatureStatuses", [[signature], {"searchTransactionHistory": True}])
-    value = statuses.get("value", [None])[0]
-    require(value is not None and value.get("confirmationStatus") == "finalized" and value.get("err") is None, "Deployment transaction not finalized")
+    require(isinstance(statuses, dict) and isinstance(statuses.get("value"), list) and len(statuses["value"]) == 1,
+            "Malformed transaction status response")
+    value = statuses["value"][0]
+    require(isinstance(value, dict) and value.get("confirmationStatus") == "finalized" and
+            "err" in value and value["err"] is None, "Deployment transaction not finalized")
     tx = rpc.call("getTransaction", [signature, {"encoding": "json", "commitment": "finalized", "maxSupportedTransactionVersion": 0}])
-    require(tx is not None and tx.get("meta", {}).get("err") is None, "Deployment transaction missing or failed")
+    require(isinstance(tx, dict) and isinstance(tx.get("meta"), dict) and
+            "err" in tx["meta"] and tx["meta"]["err"] is None, "Deployment transaction missing or failed")
+    transaction = tx.get("transaction")
+    require(isinstance(transaction, dict) and signature in transaction.get("signatures", []),
+            "Transaction signature does not match RPC evidence")
     slot = tx.get("slot")
     require(type(slot) is int and slot == value.get("slot"), "Deployment transaction slot mismatch")
     if expected_program_id:
-        message = tx.get("transaction", {}).get("message", {})
+        message = transaction.get("message", {})
         keys = message.get("accountKeys", [])
         keys = [key.get("pubkey") if isinstance(key, dict) else key for key in keys]
         expected_program_data, _ = find_program_address([b58decode(expected_program_id, 32)], LOADER)
@@ -359,9 +366,9 @@ def verify_signature(rpc: Rpc, signature: str, expected_slot: int | None = None,
         for instruction in message.get("instructions", []):
             program_index = instruction.get("programIdIndex")
             account_indices = instruction.get("accounts", [])
-            if type(program_index) is not int or program_index >= len(keys) or keys[program_index] != LOADER:
+            if type(program_index) is not int or not 0 <= program_index < len(keys) or keys[program_index] != LOADER:
                 continue
-            if not isinstance(account_indices, list) or any(type(index) is not int or index >= len(keys) for index in account_indices):
+            if not isinstance(account_indices, list) or any(type(index) is not int or not 0 <= index < len(keys) for index in account_indices):
                 continue
             instruction_accounts = {keys[index] for index in account_indices}
             if expected_program_id not in instruction_accounts or expected_program_data not in instruction_accounts:

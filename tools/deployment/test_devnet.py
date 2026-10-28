@@ -174,6 +174,10 @@ class DevnetTests(unittest.TestCase):
             {"getSignatureStatuses": {"value": [None]}},
             {"getSignatureStatuses": {"value": [{"confirmationStatus": "confirmed", "err": None}]}},
             {"getSignatureStatuses": {"value": [{"confirmationStatus": "finalized", "err": None, "slot": 42}]}, "getTransaction": None},
+            {"getSignatureStatuses": {"value": [{"confirmationStatus": "finalized", "err": None, "slot": 42}]},
+             "getTransaction": {"slot": 42, "meta": {"err": None}, "transaction": {"signatures": ["4" * 88]}}},
+            {"getSignatureStatuses": {"value": [{"confirmationStatus": "finalized", "err": None, "slot": 42}]},
+             "getTransaction": {"slot": 42, "transaction": {"signatures": [SIGNATURE]}}},
         ):
             with self.subTest(responses=responses), self.assertRaises(devnet.DeploymentError):
                 devnet.verify_signature(FakeRpc(responses), SIGNATURE)
@@ -218,7 +222,7 @@ class DevnetTests(unittest.TestCase):
         program_data_address, _ = devnet.find_program_address([devnet.b58decode(config["program_id"], 32)], devnet.LOADER)
         rpc.responses.update({
             "getSignatureStatuses": {"value": [{"confirmationStatus": "finalized", "err": None, "slot": 42}]},
-            "getTransaction": {"slot": 42, "meta": {"err": None}, "transaction": {"message": {
+            "getTransaction": {"slot": 42, "meta": {"err": None}, "transaction": {"signatures": [SIGNATURE], "message": {
                 "accountKeys": [config["program_id"], devnet.LOADER, program_data_address],
                 "instructions": [{"programIdIndex": 1, "accounts": [0, 2], "data": devnet.b58encode((2).to_bytes(4, "little"))}],
             }}},

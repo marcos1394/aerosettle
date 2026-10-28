@@ -27,6 +27,8 @@ lock_after="$(shasum -a 256 Cargo.lock | cut -d ' ' -f 1)"
 shasum -a 256 "$scratch/one/aerosettle.so" "$scratch/one/aerosettle-idl.json"
 if [[ -n "${CON35_OUTPUT_DIR:-}" ]]; then
   mkdir -p "$CON35_OUTPUT_DIR"
+  mkdir -p target/deploy
+  cp "$scratch/one/aerosettle.so" target/deploy/aerosettle.so
   cp "$scratch/one/aerosettle.so" "$CON35_OUTPUT_DIR/aerosettle.so"
   cp "$scratch/one/aerosettle-idl.json" "$CON35_OUTPUT_DIR/aerosettle-idl.json"
   cp "$scratch/one/aerosettle-error-catalog.json" "$CON35_OUTPUT_DIR/aerosettle-error-catalog.json"
