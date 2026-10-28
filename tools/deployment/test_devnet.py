@@ -196,14 +196,14 @@ class DevnetTests(unittest.TestCase):
                 devnet.write_immutable(path, {"deployment_id": "other"})
 
     def test_airdrop_limit_and_rollback_gate(self):
-        self.assertLessEqual(CONFIG["maximum_airdrop_lamports"], 100_000_000)
+        self.assertLessEqual(CONFIG["maximum_airdrop_lamports"], 2_000_000_000)
         self.assertLessEqual(CONFIG["maximum_test_wallet_lamports"], 10_000_000_000)
         self.assertEqual(devnet.STATES, {"PREPARED", "SUBMITTED", "FINALIZED", "VERIFIED", "FAILED"})
         rpc = FakeRpc({"getGenesisHash": CONFIG["genesis_hash"], "getBalance": {"value": 10_000_000_000}})
         with self.assertRaisesRegex(devnet.DeploymentError, "limit"):
             devnet.request_test_funds(CONFIG, rpc, "test-wallet", 1)
         with self.assertRaisesRegex(devnet.DeploymentError, "limit"):
-            devnet.request_test_funds(CONFIG, rpc, "test-wallet", 100_000_001)
+            devnet.request_test_funds(CONFIG, rpc, "test-wallet", 2_000_000_001)
         failed = FakeRpc({"getGenesisHash": CONFIG["genesis_hash"], "getBalance": {"value": 0}, "requestAirdrop": devnet.DeploymentError("Airdrop rejected")})
         with self.assertRaisesRegex(devnet.DeploymentError, "Airdrop rejected"):
             devnet.request_test_funds(CONFIG, failed, "test-wallet", 1)

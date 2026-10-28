@@ -91,7 +91,7 @@ def validate_config(config: dict) -> None:
     require(config.get("genesis_reference"), "Genesis reference missing")
     for key in ("minimum_fee_payer_lamports", "maximum_airdrop_lamports", "maximum_test_wallet_lamports"):
         require(type(config.get(key)) is int and config[key] > 0, f"Invalid {key}")
-    require(config["maximum_airdrop_lamports"] <= 100_000_000, "Airdrop limit exceeds 0.1 SOL")
+    require(config["maximum_airdrop_lamports"] <= 2_000_000_000, "Airdrop limit exceeds 2 SOL")
     require(config["maximum_test_wallet_lamports"] <= 10_000_000_000, "Wallet funding limit exceeds 10 SOL")
     if config.get("test_mint_pubkey"):
         require(config.get("test_mint_authority_pubkey") and type(config.get("test_mint_decimals")) is int and
