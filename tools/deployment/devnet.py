@@ -412,6 +412,19 @@ def write_immutable(path: Path, value: dict) -> None:
         require(path.read_text() == data, "Manifest already exists with different content")
 
 
+def write_prepared_manifest(config: dict, path: Path, fresh: dict) -> dict:
+    if path.exists():
+        existing = load_json(path)
+        verify_artifacts(config, existing)
+        require(existing["verification_status"] == "PREPARED", "Prepared manifest path contains another state")
+        stable = lambda value: {key: item for key, item in value.items()
+                                if key not in ("build_timestamp", "manifest_integrity_sha256")}
+        require(stable(existing) == stable(fresh), "Prepared manifest path contains different artifacts or context")
+        return existing
+    write_immutable(path, fresh)
+    return fresh
+
+
 def approval_valid(manifest: dict, submit: bool, approval: str | None, env_approval: str | None) -> bool:
     return bool(submit and approval and approval == manifest.get("deployment_id") == env_approval)
 
@@ -464,11 +477,11 @@ def main() -> None:
             subprocess.run([sys.executable, str(Path(__file__).with_name("build_idl.py")), "--idl", str(args.idl), "--error-catalog", str(args.idl.with_name("aerosettle-error-catalog.json"))], cwd=ROOT, check=True)
             result = artifact_manifest(config, args.binary, args.idl)
             require(args.output is not None, "--output required")
-            write_immutable(args.output, result)
+            result = write_prepared_manifest(config, args.output, result)
         elif args.command == "prepare-artifacts":
             require(args.output is not None, "--output required")
             result = artifact_manifest(config, args.binary, args.idl)
-            write_immutable(args.output, result)
+            result = write_prepared_manifest(config, args.output, result)
         elif args.command == "verify-artifacts":
             require(manifest is not None, "--manifest required")
             verify_artifacts(config, manifest)

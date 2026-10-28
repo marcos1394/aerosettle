@@ -63,7 +63,7 @@ def main() -> None:
         output = args.raw_output.read_text()
     else:
         result = subprocess.run(
-            ["cargo", "test", "__anchor_private_print_idl", "--features", "idl-build", "--", "--show-output", "--quiet"],
+            ["cargo", "test", "--lib", "__anchor_private_print_idl", "--features", "idl-build", "--", "--show-output", "--quiet"],
             cwd=PROGRAM, text=True, capture_output=True, check=False,
             env={**__import__("os").environ, "ANCHOR_IDL_BUILD_RESOLUTION": "FALSE"},
         )

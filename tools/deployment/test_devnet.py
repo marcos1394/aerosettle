@@ -119,6 +119,12 @@ class DevnetTests(unittest.TestCase):
             with patch.object(devnet, "version", return_value="test-toolchain"):
                 manifest = devnet.artifact_manifest(CONFIG, binary, idl)
             devnet.verify_artifacts(CONFIG, manifest)
+            manifest_path = root / "manifest.json"
+            devnet.write_prepared_manifest(CONFIG, manifest_path, manifest)
+            retry = devnet.seal({**manifest, "build_timestamp": "later"})
+            self.assertEqual(devnet.write_prepared_manifest(CONFIG, manifest_path, retry), manifest)
+            with self.assertRaisesRegex(devnet.DeploymentError, "different artifacts or context"):
+                devnet.write_prepared_manifest(CONFIG, manifest_path, devnet.seal({**retry, "source_commit": "other"}))
             altered = {**manifest, "verification_status": "VERIFIED"}
             with self.assertRaisesRegex(devnet.DeploymentError, "integrity"):
                 devnet.verify_artifacts(CONFIG, altered)

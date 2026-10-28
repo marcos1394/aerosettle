@@ -13,7 +13,7 @@ for build in one two; do
     cargo build-sbf --manifest-path programs/aerosettle/Cargo.toml \
     --sbf-out-dir "$scratch/$build"
   test -s "$scratch/$build/aerosettle.so"
-  python3 tools/deployment/build_idl.py \
+  CARGO_TARGET_DIR="$scratch/target-$build" python3 tools/deployment/build_idl.py \
     --idl "$scratch/$build/aerosettle-idl.json" \
     --error-catalog "$scratch/$build/aerosettle-error-catalog.json"
   rm -rf "$scratch/target-$build"
