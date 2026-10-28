@@ -1,0 +1,43 @@
+name: CON-35 read-only Devnet post-deploy verification
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Successful CON-35 preparation run containing the approved manifest
+        required: true
+        type: string
+      deployment_signature:
+        description: Final deploy transaction signature
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: con35-prepared-devnet-artifacts
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          path: target/deploy/con35
+      - name: Verify actual Devnet RPC state
+        env:
+          DEPLOYMENT_SIGNATURE: ${{ inputs.deployment_signature }}
+        run: |
+          python tools/deployment/devnet.py post-deploy-verification \
+            --manifest target/deploy/con35/manifest.json \
+            --signature "$DEPLOYMENT_SIGNATURE" \
+            --output "$RUNNER_TEMP/con35-verified.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con35-verified-devnet-evidence
+          path: ${{ runner.temp }}/con35-verified.json
+          retention-days: 90

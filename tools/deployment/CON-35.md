@@ -1,0 +1,61 @@
+# CON-35 — Devnet deployment preparation and verification
+
+## Baseline and identity
+
+The starting point is `origin/master` at merge `644a132` (CON-34, PR #17). Its [Localnet E2E run](https://github.com/marcos1394/aerosettle/actions/runs/40456131320) passed all five settlement scenarios, persistent JSON-RPC history and SQLite reconciliation; [regressions](https://github.com/marcos1394/aerosettle/actions/runs/40456131307) passed. This work does not change the Anchor instructions, settlement arithmetic, SPL reconciler, marketplace APIs, SDKs or application RPC defaults.
+
+`Anchor.toml` currently declares Anchor 1.2.0, Solana/Agave 4.1.2, and localnet program ID `CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy`. `lib.rs` declares the same ID. `Cargo.lock` pins Rust dependencies. The program seeds are `protocol_config`, `agent`, `work_order` and `escrow`; the canonical derivations are already in `tools/economic_ledger/spl_reconciler.py`. `ProtocolConfig` carries its separate protocol authority. The local runner uses temporary test wallets/mint and a genesis deployed program; those local accounts, balances and historical signatures have no Devnet identity.
+
+`tools/deployment/devnet.json` is a separate Devnet configuration. It deliberately reuses the program **public ID** because Anchor's `declare_id!` is compiled into the binary. Network and economic identity remain separate: Devnet's observed genesis is `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`, network is `solana:devnet`, and no Localnet account, mint, authority, funds or signature is accepted. The genesis was queried on 2026-10-27 from the [official Devnet JSON-RPC endpoint](https://solana.com/docs/rpc/http/getgenesishash), not taken from the page's example response. A read-only `getAccountInfo` query on that endpoint returned `null` for the program ID at finalized commitment: **there is currently no verified CON-35 deployment**. The script pins the official endpoint and the observed genesis; unknown RPC, Mainnet and mismatched genesis fail closed. It never edits `Anchor.toml`'s provider or the web application's RPC defaults.
+
+## Build and IDL
+
+`build_idl.py` runs Anchor's compiled `__anchor_private_print_idl` test and parses its machine output. `anchor idl build` 1.2.0 was reproduced failing with `Multiple error definitions are not allowed`: the source has `ErrorCode`, `IdentityError` and `WorkOrderError`, all generated with overlapping numeric codes beginning at 6000. Flattening them into one IDL error list would make a code ambiguous. The generator retains the compiled program ID, instructions, account layouts, discriminators and types, leaves `errors` empty as in the already validated CON-34 IDL, and emits a separate named error catalog. A fresh generated IDL was compared structurally with `tools/integration/localnet/aerosettle-idl.json` and matched. No on-chain error codes or ABI were changed. The upstream Anchor CLI limitation remains documented; the deployable IDL is now rebuilt from compiled source rather than maintained by hand.
+
+`compare_clean_builds.sh` runs two isolated `cargo build-sbf` builds with the pinned source/toolchain, compares the resulting `.so` byte for byte and compares independently generated IDL and error catalog files. It writes a reproducibility attestation with source commit, Cargo.lock and artifact hashes. The binary and IDL hashes are independent of the build timestamp. `devnet.py prepare-artifacts` seals an immutable manifest containing source commit, Rust/Solana/Anchor versions, Cargo.lock hash, program ID, binary/IDL hashes, genesis, authorities, deployment ID and status `PREPARED`. `verify-artifacts` checks the artifact hashes, exact validated IDL, authority/mint bindings, reproducibility attestation and manifest digest. The manifest digest detects accidental alteration; source review and the approved CI artifact are the trust boundary for deliberate replacement.
+
+On macOS or Linux with the pinned toolchain:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 tools/deployment/devnet.py preflight
+python3 tools/deployment/devnet.py inspect
+CON35_OUTPUT_DIR=target/deploy/con35 bash tools/deployment/compare_clean_builds.sh
+python3 tools/deployment/devnet.py prepare-artifacts \
+  --binary target/deploy/con35/aerosettle.so \
+  --idl target/deploy/con35/aerosettle-idl.json \
+  --output target/deploy/con35/manifest.json
+python3 tools/deployment/devnet.py verify-artifacts \
+  --manifest target/deploy/con35/manifest.json
+```
+
+`devnet.py build --output <new-manifest-path>` is the one-command alternative for a single SBF/IDL build. Its manifest is marked `NOT_COMPARED` and cannot be deployed until the two-build comparison passes and a new prepared manifest is created. The [PR preparation workflow](../../.github/workflows/con35-devnet.yml) runs the two clean builds, Rust/IDL compatibility checks, negative tests and a credential-free Devnet identity check; it uploads the public binary, IDL, catalog, comparison attestation and sealed manifest. No deploy runs on PR or push.
+
+## Authorities, wallets and test assets
+
+The deploy signer (program keypair), upgrade authority, fee payer and protocol administrator are separate roles. Before any state-changing operation, set their **public** keys in `devnet.json` and review that change. Keep their keypair files and per-role binding JSON outside Git. A binding contains exactly `environment`, `genesis_hash`, `role` and `pubkey`; `solana-keygen pubkey` must match the configured public key. The private wallet map supplied via `--wallets` names the `fee_payer`, `upgrade_authority`, `protocol_admin` and `program_signer` keypair/binding paths. The three operational authorities must have distinct public keys. The program signer must equal the compiled program ID. No keypair, seed phrase or access token is printed or committed.
+
+The fee payer needs at least 0.05 test SOL at preflight. `request-test-funds` permits at most 0.1 test SOL per request and a resulting wallet balance of at most 2 test SOL; it requires the RPC request transaction to finalize. A failure never counts as funding. This is Devnet test SOL, not a commercial asset. If a test SPL mint is created independently, record its Devnet pubkey, decimals, mint authority and token owner in an immutable test manifest, label it `DEVNET_TEST_TOKEN`, and set `test_mint_pubkey`, `test_mint_authority_pubkey` and `test_mint_decimals` only after a Devnet RPC check. Preflight rejects a configured mint absent from Devnet, not owned by the SPL Token program, uninitialized, or with differing authority/decimals. Do not import Localnet mint balances into the Economic Ledger or call them verified production income.
+
+## Approval-gated deploy and verification
+
+`deploy` has no default network or wallet. It checks the official Devnet genesis, roles and bindings, fee payer balance, program signer, current upgrade authority, IDL and binary hashes before sending. It requires **all** of `--submit`, `--approval <deployment_id>` and an equal `CON35_APPROVED_DEPLOYMENT_ID` environment value. The command must be run only after explicit human approval of the exact prepared manifest and authority configuration. This task does not provide that approval and has sent no deploy or upgrade transaction.
+
+```bash
+CON35_APPROVED_DEPLOYMENT_ID=<approved-id> python3 tools/deployment/devnet.py deploy \
+  --manifest target/deploy/con35/manifest.json \
+  --wallets /secure/devnet-roles.json \
+  --program-keypair /secure/devnet-program-keypair.json \
+  --submit --approval <approved-id> \
+  --output /secure/manifests/submitted-<approved-id>.json
+```
+
+An exit code zero produces `SUBMITTED`, never `VERIFIED`. The read-only `finalize` command can record `FINALIZED` after recovering a real signature, status and loader deploy/upgrade instruction. A later `post-deploy-verification` requires `getSignatureStatuses(searchTransactionHistory=true)` at `finalized`, `getTransaction` with matching slot and program/loader/ProgramData accounts and actual loader instruction, the executable program account, its canonical ProgramData pointer, configured upgrade authority, exact deployed ELF bytes (allowing only zero loader padding), and a canonical ProtocolConfig PDA if initialized. When that PDA exists, its discriminator, protocol version, authority, network ID, program ID, deployment ID and bump must match the reviewed configuration. The expected `protocol_network_id_hex` and `protocol_deployment_id_hex` must be configured before initialization is accepted. It compares the approved binary/IDL manifest with the observed state and emits an immutable `VERIFIED` manifest only when every check passes. An uninitialized ProtocolConfig is explicitly recorded as such; this proves the deployment, not the full WorkOrder cycle. The [read-only post-deploy workflow](../../.github/workflows/con35-postdeploy.yml) accepts an approved preparation artifact and an actual signature after a deployment and uploads the verification result. Solana's [loader-v3 deployment model](https://solana.com/docs/core/programs/program-deployment) explains the Program/ProgramData split and zero padding.
+
+`prepare-rollback` requires a previously `VERIFIED` manifest and compares its artifacts with the current Devnet program/authority. Its output is a **plan for a new authorized upgrade**, never an automatic reversal of a finalized transaction. Historic manifests are written with exclusive-create semantics and may be repeated only with identical bytes. Re-review ABI compatibility, current upgrade authority, funding and exact deployment approval before acting on a recovery plan.
+
+## Results and acceptance boundary
+
+Local checks on 2026-10-27: read-only official Devnet genesis preflight **PASS**; program account inspection **absent/PREPARED**; two independent clean SBF/IDL builds **PASS**; binary SHA-256 `6cf3412c55c38e91b2ba0039aea24d58782c5db0d18759ffdab1c88788cdc3a2`; IDL SHA-256 `a6e436aa1c6468b4f518b742e40a2664e38dcdf7bc1419e53e1624444888e15d`; generated IDL structurally equals the CON-34 snapshot **PASS**; prepared manifest integrity verification **PASS**; 13 deployment tests **PASS**. The Economic Ledger (190), Marketplace API (65), Funding (13), Discovery (24), Organizations (14), Governance (16), Mission (5), Paper Trading (9), Transaction SDK (10), Marketplace SDK (36), Marketplace Web (43), web build and offline Rust workspace tests passed locally. The current branch's Localnet E2E and PR workflow results are added below after completion.
+
+No Devnet deployment signature, slot, ProgramData account or on-chain hash exists to report. Thus CON-35 is **prepared, not complete** until the authorized deploy and real post-deploy verification pass. CON-36 remains the owner of a complete Devnet WorkOrder E2E claim.

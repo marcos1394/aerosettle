@@ -1,0 +1,71 @@
+name: CON-35 Devnet deployment preparation
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con35-devnet.yml
+      - tools/deployment/**
+      - programs/aerosettle/**
+      - Cargo.lock
+      - Anchor.toml
+      - requirements.txt
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  negative-tests-and-preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest discover -s tools/deployment -v
+      - name: Read-only Devnet genesis and program inspection
+        run: |
+          python tools/deployment/devnet.py preflight
+          python tools/deployment/devnet.py inspect
+  reproducible-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: rustup default 1.89.0
+      - name: Install pinned Agave CLI
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/agave.tar.bz2" \
+            https://github.com/anza-xyz/agave/releases/download/v4.1.2/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo '5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770  '"$RUNNER_TEMP/agave.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - name: Compare two clean SBF and IDL builds
+        env:
+          CON35_OUTPUT_DIR: target/deploy/con35
+        run: bash tools/deployment/compare_clean_builds.sh
+      - name: Rust workspace regression
+        run: cargo test --workspace --offline
+      - name: Verify generated IDL and seal manifest
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          generated = json.loads(Path('target/deploy/con35/aerosettle-idl.json').read_text())
+          tracked = json.loads(Path('tools/integration/localnet/aerosettle-idl.json').read_text())
+          assert generated == tracked, 'Generated IDL differs from validated CON-34 ABI'
+          PY
+          python tools/deployment/devnet.py prepare-artifacts \
+            --binary target/deploy/con35/aerosettle.so \
+            --idl target/deploy/con35/aerosettle-idl.json \
+            --output target/deploy/con35/manifest.json
+          python tools/deployment/devnet.py verify-artifacts --manifest target/deploy/con35/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con35-prepared-devnet-artifacts
+          path: target/deploy/con35/*
+          retention-days: 30
