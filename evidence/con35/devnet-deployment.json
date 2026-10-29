@@ -1,0 +1,17 @@
+{
+  "artifact_run_id": 40627013459,
+  "binary_sha256": "6cf3412c55c38e91b2ba0039aea24d58782c5db0d18759ffdab1c88788cdc3a2",
+  "deployment_id": "06c7dfa7528460969a5ca1e8bd001f9c9f1f1f0df3d69fe36649e413e0b14ae6",
+  "deployment_slot": 516258865,
+  "deployment_transaction": "3FdinSa8F8VBsP3a1fM6so64K9X7QBUbR5Ay7z6Zv32mXQJx27SWhGddPK67pnLN5KBEYTkX25DsQgZWLdWfVDEA",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "idl_sha256": "a6e436aa1c6468b4f518b742e40a2664e38dcdf7bc1419e53e1624444888e15d",
+  "network": "solana:devnet",
+  "program_data_address": "7kYZxnujXJ9sKGhG9CbDwThJECb693WvvqVFHGmNSsrr",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "protocol_config_pda": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+  "protocol_config_status": "UNINITIALIZED",
+  "source_commit": "b95c7bfd7c760558a0a7b87ee25b0a4b67aa6f14",
+  "upgrade_authority_pubkey": "DdHrtAxE5SwcVQUgoKRzoWatZ5yw9UdtBQnRwBizPK2D",
+  "verification_status": "VERIFIED"
+}

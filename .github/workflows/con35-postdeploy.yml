@@ -1,5 +1,10 @@
 name: CON-35 read-only Devnet post-deploy verification
 on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con35-postdeploy.yml
+      - evidence/con35/**
   workflow_dispatch:
     inputs:
       artifact_run_id:
@@ -22,20 +27,59 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
+      - name: Resolve public deployment evidence
+        id: evidence
+        env:
+          INPUT_ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
+          INPUT_DEPLOYMENT_SIGNATURE: ${{ inputs.deployment_signature }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
+              evidence = json.loads(Path('evidence/con35/devnet-deployment.json').read_text())
+              run_id = str(evidence['artifact_run_id'])
+              signature = evidence['deployment_signature']
+          else:
+              run_id = os.environ['INPUT_ARTIFACT_RUN_ID']
+              signature = os.environ['INPUT_DEPLOYMENT_SIGNATURE']
+          assert re.fullmatch(r'[0-9]+', run_id), 'Invalid preparation run ID'
+          assert re.fullmatch(r'[1-9A-HJ-NP-Za-km-z]{80,90}', signature), 'Invalid deployment signature'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'artifact_run_id={run_id}\n')
+              output.write(f'deployment_signature={signature}\n')
+          PY
       - uses: actions/download-artifact@v4
         with:
           name: con35-prepared-devnet-artifacts
-          run-id: ${{ inputs.artifact_run_id }}
+          run-id: ${{ steps.evidence.outputs.artifact_run_id }}
           github-token: ${{ github.token }}
           path: target/deploy/con35
       - name: Verify actual Devnet RPC state
         env:
-          DEPLOYMENT_SIGNATURE: ${{ inputs.deployment_signature }}
+          DEPLOYMENT_SIGNATURE: ${{ steps.evidence.outputs.deployment_signature }}
         run: |
           python tools/deployment/devnet.py post-deploy-verification \
             --manifest target/deploy/con35/manifest.json \
             --signature "$DEPLOYMENT_SIGNATURE" \
             --output "$RUNNER_TEMP/con35-verified.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          verified = json.loads((Path(os.environ['RUNNER_TEMP']) / 'con35-verified.json').read_text())
+          assert verified['verification_status'] == 'VERIFIED'
+          if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
+              evidence = json.loads(Path('evidence/con35/devnet-deployment.json').read_text())
+              for key in ('deployment_id', 'deployment_transaction', 'deployment_slot',
+                          'program_id', 'program_data_address', 'upgrade_authority_pubkey',
+                          'binary_sha256', 'idl_sha256', 'genesis_hash'):
+                  assert verified[key] == evidence[key], f'Public evidence mismatch: {key}'
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: con35-verified-devnet-evidence
