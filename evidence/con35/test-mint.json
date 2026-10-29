@@ -1,0 +1,18 @@
+{
+  "asset_label": "DEVNET_TEST_TOKEN",
+  "creation_id": "8044d0f4fea6cb5c87014c08a80867b509596fd8b69c22afcd66544b557ec5d5",
+  "creation_signature": null,
+  "creation_slot": null,
+  "decimals": 6,
+  "environment": "devnet",
+  "fee_payer_pubkey": "HRwPNBPzArvdCULMH1EFuUpxGw31CbRjyf1cGBz2zE2x",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "manifest_integrity_sha256": "6f1f1c8d3b5c0067cc3e9d7197f3304cc6b9aa1c6c8a4098fde35f42b016ef8e",
+  "mint_authority_pubkey": "4om6LcFXaZ2Wtbn3P2ZvvyqssXFQs1xjNmE2Fnj7mRHa",
+  "mint_pubkey": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "network": "solana:devnet",
+  "rpc_url": "https://api.devnet.solana.com",
+  "schema_version": 1,
+  "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "verification_status": "PREPARED"
+}

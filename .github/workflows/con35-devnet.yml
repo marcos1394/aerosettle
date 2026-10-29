@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/con35-devnet.yml
       - tools/deployment/**
+      - evidence/con35/test-mint*.json
       - programs/aerosettle/**
       - Cargo.lock
       - Anchor.toml
@@ -28,6 +29,21 @@ jobs:
         run: |
           python tools/deployment/devnet.py preflight
           python tools/deployment/devnet.py inspect
+      - name: Verify dedicated test mint evidence without submitting transactions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from tools.deployment import devnet, test_mint
+
+          prepared = devnet.load_json(Path('evidence/con35/test-mint.json'))
+          rpc = devnet.Rpc(devnet.OFFICIAL_RPC)
+          verified_path = Path('evidence/con35/test-mint-verified.json')
+          if verified_path.exists():
+              verified = devnet.load_json(verified_path)
+              assert verified == test_mint.verify(prepared, rpc, verified['creation_signature'])
+          else:
+              assert test_mint.preflight(prepared, rpc)['transaction_submitted'] is False
+          PY
   reproducible-build:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
