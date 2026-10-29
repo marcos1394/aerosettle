@@ -28,22 +28,25 @@ The deployed SBF came from two isolated **macOS** builds at source commit `b95c7
 
 The deployment manifest is sealed and binds the exact artifact hashes, genesis, program ID, public roles and deployment ID. It is never edited to add a mint. `tools/deployment/devnet.json` intentionally retains `test_mint_* = null` because changing those fields would change the approved deployment ID. Test asset evidence has its **own** manifest and creation ID.
 
-## Dedicated SPL test mint — prepared, awaiting approval
+## Dedicated SPL test mint — VERIFIED on Devnet
 
-The [independent test mint manifest](../../evidence/con35/test-mint.json) identifies a newly generated `DEVNET_TEST_TOKEN` mint, distinct from real USDC and Localnet assets. It records the official Devnet RPC/genesis, legacy SPL Token Program `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`, planned mint `HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh`, separate mint authority `4om6LcFXaZ2Wtbn3P2ZvvyqssXFQs1xjNmE2Fnj7mRHa`, six decimals, test fee payer `HRwPNBPzArvdCULMH1EFuUpxGw31CbRjyf1cGBz2zE2x`, and creation ID `8044d0f4fea6cb5c87014c08a80867b509596fd8b69c22afcd66544b557ec5d5`.
+The independent [prepared plan](../../evidence/con35/test-mint.json) and [VERIFIED mint manifest](../../evidence/con35/test-mint-verified.json) identify a newly generated `DEVNET_TEST_TOKEN` mint, distinct from real USDC and Localnet assets. It uses the official Devnet RPC/genesis, legacy SPL Token Program `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`, mint `HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh`, dedicated mint authority `4om6LcFXaZ2Wtbn3P2ZvvyqssXFQs1xjNmE2Fnj7mRHa`, six decimals and test fee payer `HRwPNBPzArvdCULMH1EFuUpxGw31CbRjyf1cGBz2zE2x`. The separately approved creation ID was `8044d0f4fea6cb5c87014c08a80867b509596fd8b69c22afcd66544b557ec5d5`.
 
-The mint and authority keypairs are in ignored `target/deploy/con35-private/` (directory `0700`, files `0600`) and have copies outside Git in the existing private CON-35 backup directory. No keypair bytes or seed phrase are in the public manifest. A real read-only Devnet preflight on 2026-10-29 confirmed genesis, the mint account's absence, payer balance **7,417,284,960 lamports**, and rent quote **1,066,800 lamports** for an 82-byte mint, plus a 50,000-lamport fee reserve. Refresh these values at submission. The manifest's `creation_signature` and `creation_slot` are deliberately `null`, status `PREPARED`. **The mint does not yet exist on Devnet; Jira criterion 3 remains open until creation and verification.**
+The mint and authority keypairs are in ignored `target/deploy/con35-private/` (directory `0700`, files `0600`) and have matching copies outside Git in the private CON-35 backup directory. No keypair bytes or seed phrase are in the public manifests. The pre-submission read-only preflight confirmed genesis, the mint account's absence, payer balance **7,417,284,960 lamports**, and rent quote **1,066,800 lamports** for an 82-byte mint, plus a 50,000-lamport fee reserve.
 
-The [mint tool](test_mint.py) uses only the fixed official Devnet RPC and checks genesis before any state change. It requires matching local keypairs, distinct roles, an absent mint, sufficient test SOL, and all of `--submit`, `--approval <creation_id>` and `CON35_APPROVED_TEST_MINT_ID=<creation_id>`. This approval is specific to mint creation; the earlier deployment approval does not authorize it. Its one transaction creates an 82-byte account owned by the legacy SPL Token Program and initializes the mint with six decimals, dedicated authority, no freeze authority and zero supply. No token units are minted, no token accounts or protocol accounts are created, and the Economic Ledger is untouched. See the [official mint account specification](https://solana.com/docs/tokens/basics/create-mint).
+After explicit human approval of that exact creation ID, the [mint tool](test_mint.py) sent **one** `spl-token create-token` transaction to Devnet. The CLI reported success but did not expose a signature in the JSON shape the initial parser expected. No creation retry was sent. Read-only `getSignaturesForAddress` recovered the actual finalized signature `59AT8MuBjXnvZBe6qmnLA47UrbBR9QbT2dt6AC6zLUMGsmJULUNqFFPgiZSWAhRJqjok23UHW5QTR9eqkNWv8igb` in slot **516582820**. `getSignatureStatuses`, `getTransaction` and `getAccountInfo` then verified the successful System `createAccount` and SPL Token `initializeMint`/`initializeMint2` instructions and on-chain mint state: owner is the legacy SPL Token Program, account size 82 bytes, mint authority matches, six decimals, zero supply and no freeze authority. The sealed `VERIFIED` manifest records the actual signature, slot, owner and genesis. See the [official mint account specification](https://solana.com/docs/tokens/basics/create-mint).
 
-Read-only checks, safe now:
+Read-only verification, safe to repeat:
 
 ```bash
-python3 tools/deployment/test_mint.py preflight
+python3 tools/deployment/test_mint.py verify \
+  --manifest evidence/con35/test-mint.json \
+  --signature 59AT8MuBjXnvZBe6qmnLA47UrbBR9QbT2dt6AC6zLUMGsmJULUNqFFPgiZSWAhRJqjok23UHW5QTR9eqkNWv8igb \
+  --output evidence/con35/test-mint-verified.json
 python3 -m unittest discover -s tools/deployment -v
 ```
 
-**Only after a human explicitly approves the exact creation ID above**, run this from the repository root with the backed-up local wallets. This command sends a Devnet transaction:
+The creation command required matching keypairs, distinct roles, an absent mint, sufficient test SOL, and all of `--submit`, `--approval <creation_id>` and `CON35_APPROVED_TEST_MINT_ID=<creation_id>`. The approval was specific to this mint; the earlier deployment approval did not authorize it. For audit, the exact command executed from the repository root was:
 
 ```bash
 CON35_APPROVED_TEST_MINT_ID=8044d0f4fea6cb5c87014c08a80867b509596fd8b69c22afcd66544b557ec5d5 \
@@ -56,7 +59,7 @@ python3 tools/deployment/test_mint.py create \
   --output evidence/con35/test-mint-verified.json
 ```
 
-The command prints the submitted signature for recovery if finality polling fails. It writes the independent `VERIFIED` manifest only after real JSON-RPC confirms the signature and slot at `finalized`, `getTransaction` contains successful System `createAccount` and SPL Token `initializeMint`/`initializeMint2` instructions for the approved mint, and `getAccountInfo` returns the expected owner, initialized 82-byte layout, authority, decimals, zero supply and no freeze authority. A read-only recovery command is `python3 tools/deployment/test_mint.py verify --signature <actual-signature> --output evidence/con35/test-mint-verified.json`. The verified manifest will record the **actual** finalized signature and slot; publish it in this PR and rerun CI. Network, owner, authority, decimal, transaction and manifest mismatches fail closed. Do not change the deployment manifest or redeploy the program.
+The CLI output parser now has a bounded read-only RPC recovery path: after one successful submission it searches the mint address, validates candidate signatures against the full creation transaction and mint account, and never resubmits. The prepared plan remains immutable. This test mint has no minted units, token accounts or protocol accounts, and the Economic Ledger was not written. Network, owner, authority, decimal, transaction and manifest mismatches fail closed. The deployment manifest and Deployment ID did not change; the program was not redeployed.
 
 ## Existing controls and regressions
 

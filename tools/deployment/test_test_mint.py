@@ -1,4 +1,7 @@
 import base64
+import contextlib
+import io
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -41,6 +44,8 @@ class MintRpc:
             return {"value": self.mint}
         if method == "getSignatureStatuses":
             return self.status
+        if method == "getSignaturesForAddress":
+            return [{"signature": SIGNATURE, "slot": 42, "confirmationStatus": "finalized", "err": None}]
         if method == "getTransaction":
             return self.transaction
         if method == "getMinimumBalanceForRentExemption":
@@ -104,6 +109,18 @@ class TestMintTests(unittest.TestCase):
                         with self.assertRaisesRegex(devnet.DeploymentError, "approval required"):
                             test_mint.submit(PLAN, rpc, Path("mint"), Path("authority"), Path("payer"), approval, submit)
             run.assert_not_called()
+
+    def test_successful_cli_without_signature_recovers_by_rpc_without_retrying_submission(self):
+        rpc = MintRpc()
+        with patch.object(test_mint, "check_wallets"), patch.object(test_mint, "preflight"), \
+             patch.object(test_mint.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "{}", "")) as run, \
+             patch.dict(test_mint.os.environ, {"CON35_APPROVED_TEST_MINT_ID": PLAN["creation_id"]}), \
+             contextlib.redirect_stdout(io.StringIO()):
+            result = test_mint.submit(PLAN, rpc, Path("mint"), Path("authority"),
+                                      Path("payer"), PLAN["creation_id"], True)
+        self.assertEqual(result["creation_signature"], SIGNATURE)
+        self.assertEqual(run.call_count, 1)
+        self.assertIn("getSignaturesForAddress", [method for method, _ in rpc.calls])
 
 
 if __name__ == "__main__":

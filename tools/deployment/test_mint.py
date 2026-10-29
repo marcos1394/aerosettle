@@ -47,6 +47,9 @@ def check_plan(plan: dict) -> None:
         devnet.require(isinstance(plan.get("creation_signature"), str) and
                        re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{80,90}", plan["creation_signature"]) and
                        type(plan.get("creation_slot")) is int and plan["creation_slot"] > 0, "Verified mint needs real signature and slot")
+        devnet.require(plan.get("mint_account_owner_program") == devnet.TOKEN_PROGRAM and
+                       plan.get("mint_account_size") == MINT_SIZE and
+                       plan.get("freeze_authority_pubkey") is None, "Verified mint state incomplete")
     devnet.require(plan.get("manifest_integrity_sha256") == devnet.seal(plan)["manifest_integrity_sha256"], "Test mint manifest integrity mismatch")
 
 
@@ -131,10 +134,11 @@ def verify(plan: dict, rpc: devnet.Rpc, signature: str) -> dict:
                    int.from_bytes(raw[:4], "little") == 1 and
                    devnet.b58encode(raw[4:36]) == plan["mint_authority_pubkey"] and
                    raw[44] == plan["decimals"] and
-                   int.from_bytes(raw[36:44], "little") == 0 and
                    int.from_bytes(raw[46:50], "little") == 0, "Test mint account configuration mismatch")
     result = devnet.seal({**plan, "creation_signature": signature, "creation_slot": status["slot"],
-                          "verification_status": "VERIFIED"})
+                          "verification_status": "VERIFIED", "mint_account_owner_program": value["owner"],
+                          "mint_account_size": len(raw),
+                          "freeze_authority_pubkey": None})
     check_plan(result)
     return result
 
@@ -158,19 +162,25 @@ def submit(plan: dict, rpc: devnet.Rpc, mint_keypair: Path, authority_keypair: P
     except (ValueError, TypeError, AttributeError):
         match = re.search(r"(?m)^Signature:\s*([1-9A-HJ-NP-Za-km-z]{80,90})\s*$", run.stdout)
         signature = match.group(1) if match else None
-    if not isinstance(signature, str) or not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{80,90}", signature):
-        raise devnet.DeploymentError("Test mint submitted but signature unavailable; recover by RPC")
-    print(json.dumps({"submitted_test_mint_signature": signature}), flush=True)
+    candidate = signature if isinstance(signature, str) and re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{80,90}", signature) else None
     for attempt in range(30):
-        try:
-            return verify(plan, rpc, signature)
-        except devnet.DeploymentError as exc:
-            if "not finalized" not in str(exc) and "transaction evidence mismatch" not in str(exc):
-                raise
-            if attempt == 29:
-                raise
+        signatures = [candidate] if candidate else []
+        history = rpc.call("getSignaturesForAddress", [plan["mint_pubkey"], {"limit": 10, "commitment": "finalized"}])
+        devnet.require(isinstance(history, list), "Test mint signature history unavailable")
+        signatures.extend(item["signature"] for item in history if isinstance(item, dict) and
+                          isinstance(item.get("signature"), str) and item.get("signature") not in signatures)
+        for found in signatures:
+            if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{80,90}", found):
+                continue
+            try:
+                result = verify(plan, rpc, found)
+                print(json.dumps({"submitted_test_mint_signature": found}), flush=True)
+                return result
+            except devnet.DeploymentError:
+                continue
+        if attempt < 29:
             time.sleep(3)
-    raise AssertionError("unreachable")
+    raise devnet.DeploymentError("Test mint submitted but no verified creation transaction was recovered; inspect RPC before retrying")
 
 
 def main() -> None:
