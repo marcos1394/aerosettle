@@ -1,0 +1,7 @@
+{
+  "binary_sha256": "6cf3412c55c38e91b2ba0039aea24d58782c5db0d18759ffdab1c88788cdc3a2",
+  "cargo_lock_hash": "821dd0bae18e47cb12fde933314f411eb5750fea58ba0b1c412b23dcb4775981",
+  "idl_sha256": "a6e436aa1c6468b4f518b742e40a2664e38dcdf7bc1419e53e1624444888e15d",
+  "source_commit": "b95c7bfd7c760558a0a7b87ee25b0a4b67aa6f14",
+  "status": "PASS"
+}

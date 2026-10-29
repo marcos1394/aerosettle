@@ -1,0 +1,1590 @@
+{
+  "accounts": [
+    {
+      "discriminator": [
+        241,
+        119,
+        69,
+        140,
+        233,
+        9,
+        112,
+        50
+      ],
+      "name": "aerosettle::identity::AgentAccount"
+    },
+    {
+      "discriminator": [
+        207,
+        91,
+        250,
+        28,
+        152,
+        179,
+        215,
+        209
+      ],
+      "name": "aerosettle::identity::ProtocolConfig"
+    },
+    {
+      "discriminator": [
+        255,
+        176,
+        4,
+        245,
+        188,
+        253,
+        124,
+        25
+      ],
+      "name": "aerosettle::state::Counter"
+    },
+    {
+      "discriminator": [
+        200,
+        252,
+        180,
+        124,
+        6,
+        47,
+        174,
+        229
+      ],
+      "name": "aerosettle::work_order_account::WorkOrderAccount"
+    }
+  ],
+  "address": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "errors": [],
+  "instructions": [
+    {
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "counter",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "name": "initialize"
+    },
+    {
+      "accounts": [
+        {
+          "name": "counter",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        11,
+        18,
+        104,
+        9,
+        104,
+        174,
+        59,
+        33
+      ],
+      "name": "increment"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "network_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "deployment_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ],
+      "discriminator": [
+        188,
+        233,
+        252,
+        106,
+        134,
+        146,
+        202,
+        91
+      ],
+      "name": "initialize_protocol"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config",
+          "writable": true
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "agent_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "signing_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "agent_type",
+          "type": {
+            "defined": {
+              "name": "aerosettle::protocol::AgentType"
+            }
+          }
+        },
+        {
+          "name": "capabilities",
+          "type": "u64"
+        },
+        {
+          "name": "metadata_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ],
+      "discriminator": [
+        135,
+        157,
+        66,
+        195,
+        2,
+        113,
+        175,
+        30
+      ],
+      "name": "register_agent"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "actor",
+          "signer": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        242,
+        28,
+        54,
+        59,
+        247,
+        20,
+        59,
+        110
+      ],
+      "name": "suspend_agent"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "actor",
+          "signer": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        231,
+        7,
+        179,
+        97,
+        210,
+        24,
+        209,
+        12
+      ],
+      "name": "reactivate_agent"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "actor",
+          "signer": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        227,
+        60,
+        209,
+        125,
+        240,
+        117,
+        163,
+        73
+      ],
+      "name": "revoke_agent"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_signing_authority",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        245,
+        146,
+        97,
+        163,
+        216,
+        136,
+        116,
+        50
+      ],
+      "name": "rotate_signing_authority"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "metadata_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ],
+      "discriminator": [
+        80,
+        63,
+        141,
+        214,
+        125,
+        25,
+        174,
+        106
+      ],
+      "name": "update_agent_metadata"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "capabilities",
+          "type": "u64"
+        }
+      ],
+      "discriminator": [
+        138,
+        23,
+        94,
+        120,
+        222,
+        75,
+        58,
+        217
+      ],
+      "name": "update_agent_capabilities"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "current_owner",
+          "signer": true
+        },
+        {
+          "docs": [
+            "The receiving owner must explicitly sign the transfer."
+          ],
+          "name": "new_owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_signing_authority",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        216,
+        78,
+        134,
+        193,
+        175,
+        186,
+        233,
+        25
+      ],
+      "name": "transfer_agent_ownership"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "work_order",
+          "writable": true
+        },
+        {
+          "name": "creator",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "aerosettle::work_order_account::CreateWorkOrderArgs"
+            }
+          }
+        }
+      ],
+      "discriminator": [
+        143,
+        17,
+        248,
+        200,
+        217,
+        85,
+        10,
+        175
+      ],
+      "name": "create_work_order"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "work_order",
+          "writable": true
+        },
+        {
+          "name": "agent_account"
+        },
+        {
+          "name": "agent_signer",
+          "signer": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        238,
+        142,
+        73,
+        48,
+        178,
+        5,
+        111,
+        195
+      ],
+      "name": "claim_work_order"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "work_order",
+          "writable": true
+        },
+        {
+          "name": "creator",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "creator_token_account",
+          "writable": true
+        },
+        {
+          "docs": [
+            "Program-controlled token vault.",
+            "",
+            "Its address and its token authority are the same PDA."
+          ],
+          "name": "escrow_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        120,
+        115,
+        121,
+        49,
+        250,
+        17,
+        18,
+        89
+      ],
+      "name": "fund_work_order"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "work_order",
+          "writable": true
+        },
+        {
+          "name": "agent_account",
+          "writable": true
+        },
+        {
+          "name": "agent_signer",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "aerosettle::execution::SubmitExecutionArgs"
+            }
+          }
+        }
+      ],
+      "discriminator": [
+        11,
+        145,
+        188,
+        223,
+        10,
+        80,
+        67,
+        161
+      ],
+      "name": "submit_execution"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "work_order",
+          "writable": true
+        },
+        {
+          "name": "verifier",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "aerosettle::verification::VerifyExecutionArgs"
+            }
+          }
+        }
+      ],
+      "discriminator": [
+        221,
+        72,
+        46,
+        212,
+        236,
+        200,
+        175,
+        138
+      ],
+      "name": "verify_execution"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "work_order",
+          "writable": true
+        },
+        {
+          "name": "escrow_vault",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "operator_token_account",
+          "writable": true
+        },
+        {
+          "name": "creator_refund_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        162,
+        70,
+        45,
+        61,
+        234,
+        188,
+        12,
+        118
+      ],
+      "name": "settle_work_order"
+    },
+    {
+      "accounts": [
+        {
+          "name": "protocol_config"
+        },
+        {
+          "name": "work_order"
+        },
+        {
+          "name": "escrow_vault",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "docs": [
+            "equal the persisted WorkOrder.creator; it never signs this instruction."
+          ],
+          "name": "creator",
+          "writable": true
+        },
+        {
+          "name": "creator_refund_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        231,
+        4,
+        26,
+        215,
+        230,
+        104,
+        87,
+        139
+      ],
+      "name": "close_settled_vault"
+    }
+  ],
+  "metadata": {
+    "description": "Created with Anchor",
+    "name": "aerosettle",
+    "spec": "0.1.0",
+    "version": "0.1.0"
+  },
+  "types": [
+    {
+      "docs": [
+        "Final interpretation produced by an authorized verifier."
+      ],
+      "name": "aerosettle::evidence::VerificationStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Accepted"
+          },
+          {
+            "name": "Rejected"
+          }
+        ]
+      }
+    },
+    {
+      "docs": [
+        "Data committed on-chain when a physical agent finishes execution.",
+        "",
+        "Large telemetry/images/video remain off-chain. AeroSettle persists",
+        "their cryptographic commitments and enough metadata to enforce the",
+        "WorkOrder lifecycle."
+      ],
+      "name": "aerosettle::execution::SubmitExecutionArgs",
+      "type": {
+        "fields": [
+          {
+            "docs": [
+              "Commitment produced by ExecutionReceipt::commitment_hash()."
+            ],
+            "name": "execution_receipt_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "docs": [
+              "Commitment produced by EvidenceManifest::commitment_hash()."
+            ],
+            "name": "evidence_manifest_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "docs": [
+              "EvidenceRequirement bitmask actually supplied."
+            ],
+            "name": "provided_evidence",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Physical execution interval."
+            ],
+            "name": "execution_started_at",
+            "type": "i64"
+          },
+          {
+            "name": "execution_ended_at",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "Must equal AgentAccount.next_signature_sequence.",
+              "",
+              "Successful submission atomically consumes this sequence."
+            ],
+            "name": "signature_sequence",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Persistent on-chain identity of one intelligent machine.",
+        "",
+        "PDA:",
+        "[",
+        "b\"agent\",",
+        "protocol_config,",
+        "agent_id",
+        "]",
+        "",
+        "Notice that owner is intentionally NOT part of the PDA.",
+        "",
+        "This allows ownership to change later without changing the",
+        "machine's canonical AeroSettle identity."
+      ],
+      "name": "aerosettle::identity::AgentAccount",
+      "type": {
+        "fields": [
+          {
+            "name": "protocol_version",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "Deployment this agent belongs to."
+            ],
+            "name": "protocol_config",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Stable machine/application identity."
+            ],
+            "name": "agent_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "docs": [
+              "Economic/legal owner of the agent."
+            ],
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Public key used by the physical device to sign execution data.",
+              "",
+              "It is deliberately separate from owner."
+            ],
+            "name": "signing_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent_type",
+            "type": {
+              "defined": {
+                "name": "aerosettle::protocol::AgentType"
+              }
+            }
+          },
+          {
+            "docs": [
+              "Capability bitset defined by AeroSettle protocol v1."
+            ],
+            "name": "capabilities",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Commitment of canonical off-chain Agent Manifest."
+            ],
+            "name": "metadata_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "aerosettle::identity::AgentStatus"
+              }
+            }
+          },
+          {
+            "docs": [
+              "Monotonic sequence reserved for replay protection.",
+              "",
+              "Later instructions will derive/consume signature nonces using",
+              "this sequence."
+            ],
+            "name": "next_signature_sequence",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "registered_at",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Lifecycle state of a registered physical agent.",
+        "",
+        "Variant order is persistent protocol data.",
+        "Never reorder existing variants in protocol v1."
+      ],
+      "name": "aerosettle::identity::AgentStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Active"
+          },
+          {
+            "name": "OwnerSuspended"
+          },
+          {
+            "name": "AdminSuspended"
+          },
+          {
+            "name": "Revoked"
+          }
+        ]
+      }
+    },
+    {
+      "docs": [
+        "Persistent configuration for one AeroSettle deployment.",
+        "",
+        "PDA:",
+        "[b\"protocol_config\"]"
+      ],
+      "name": "aerosettle::identity::ProtocolConfig",
+      "type": {
+        "fields": [
+          {
+            "name": "protocol_version",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "Administrative authority for this deployment."
+            ],
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Cluster/network identity."
+            ],
+            "name": "network_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "docs": [
+              "Program ID this deployment belongs to."
+            ],
+            "name": "program_id",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Unique identity for this deployment instance."
+            ],
+            "name": "deployment_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "Number of agents successfully registered."
+            ],
+            "name": "agent_count",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Emergency/configuration pause flag."
+            ],
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "docs": [
+              "Unix timestamp when the deployment was initialized."
+            ],
+            "name": "created_at",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Generic classification of an intelligent physical or edge agent.",
+        "",
+        "IMPORTANT:",
+        "Variant ordering is part of the serialized protocol representation.",
+        "Do not reorder existing variants in protocol v1."
+      ],
+      "name": "aerosettle::protocol::AgentType",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Drone"
+          },
+          {
+            "name": "Ugv"
+          },
+          {
+            "name": "Amr"
+          },
+          {
+            "name": "RobotArm"
+          },
+          {
+            "name": "Camera"
+          },
+          {
+            "name": "IotSensor"
+          },
+          {
+            "name": "Vehicle"
+          },
+          {
+            "name": "IndustrialMachine"
+          },
+          {
+            "name": "EdgeCompute"
+          },
+          {
+            "name": "EnergyAsset"
+          }
+        ]
+      }
+    },
+    {
+      "name": "aerosettle::state::Counter",
+      "type": {
+        "fields": [
+          {
+            "name": "count",
+            "type": "u64"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Data supplied by the authorized verifier.",
+        "",
+        "`verified_at` is part of the signed/canonical attestation rather than",
+        "being generated from the current Solana Clock. The program still checks",
+        "that it is not in the future and falls inside the valid verification",
+        "window."
+      ],
+      "name": "aerosettle::verification::VerifyExecutionArgs",
+      "type": {
+        "fields": [
+          {
+            "name": "verification_attestation_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "aerosettle::evidence::VerificationStatus"
+              }
+            }
+          },
+          {
+            "name": "completion_bps",
+            "type": "u16"
+          },
+          {
+            "name": "verified_at",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Settlement algorithm selected by the WorkOrder creator."
+      ],
+      "name": "aerosettle::work_order::PaymentModel",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Fixed"
+          },
+          {
+            "name": "Proportional"
+          }
+        ]
+      }
+    },
+    {
+      "docs": [
+        "Financial rules for a WorkOrder.",
+        "",
+        "No token transfer occurs yet. EPIC 1/escrow will enforce these terms",
+        "on-chain."
+      ],
+      "name": "aerosettle::work_order::SettlementTerms",
+      "type": {
+        "fields": [
+          {
+            "docs": [
+              "Token mint used for settlement."
+            ],
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Maximum amount locked for this WorkOrder in token base units."
+            ],
+            "name": "total_amount",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Settlement algorithm."
+            ],
+            "name": "payment_model",
+            "type": {
+              "defined": {
+                "name": "aerosettle::work_order::PaymentModel"
+              }
+            }
+          },
+          {
+            "docs": [
+              "Oracle/verifier allowed to attest work completion."
+            ],
+            "name": "verifier",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Classification of physical or digital work.",
+        "",
+        "Variant ordering is protocol data.",
+        "Never reorder existing variants in protocol v1."
+      ],
+      "name": "aerosettle::work_order::WorkType",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Inspection"
+          },
+          {
+            "name": "Monitoring"
+          },
+          {
+            "name": "Mapping"
+          },
+          {
+            "name": "Delivery"
+          },
+          {
+            "name": "Transport"
+          },
+          {
+            "name": "Measurement"
+          },
+          {
+            "name": "Actuation"
+          },
+          {
+            "name": "Manufacturing"
+          },
+          {
+            "name": "Compute"
+          },
+          {
+            "name": "EnergyService"
+          }
+        ]
+      }
+    },
+    {
+      "docs": [
+        "Arguments used to create the persistent WorkOrder.",
+        "",
+        "Creator is deliberately not included because it comes from the",
+        "transaction signer."
+      ],
+      "name": "aerosettle::work_order_account::CreateWorkOrderArgs",
+      "type": {
+        "fields": [
+          {
+            "name": "work_order_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "work_type",
+            "type": {
+              "defined": {
+                "name": "aerosettle::work_order::WorkType"
+              }
+            }
+          },
+          {
+            "name": "required_capabilities",
+            "type": "u64"
+          },
+          {
+            "name": "evidence_requirements",
+            "type": "u64"
+          },
+          {
+            "name": "manifest_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "settlement",
+            "type": {
+              "defined": {
+                "name": "aerosettle::work_order::SettlementTerms"
+              }
+            }
+          },
+          {
+            "name": "execution_deadline",
+            "type": "i64"
+          },
+          {
+            "name": "verification_deadline",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Persistent economic task in one AeroSettle deployment.",
+        "",
+        "PDA:",
+        "",
+        "[",
+        "b\"work_order\",",
+        "protocol_config,",
+        "creator,",
+        "work_order_id",
+        "]"
+      ],
+      "name": "aerosettle::work_order_account::WorkOrderAccount",
+      "type": {
+        "fields": [
+          {
+            "name": "protocol_version",
+            "type": "u8"
+          },
+          {
+            "name": "protocol_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "work_order_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "work_type",
+            "type": {
+              "defined": {
+                "name": "aerosettle::work_order::WorkType"
+              }
+            }
+          },
+          {
+            "name": "required_capabilities",
+            "type": "u64"
+          },
+          {
+            "name": "evidence_requirements",
+            "type": "u64"
+          },
+          {
+            "name": "manifest_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_amount",
+            "type": "u64"
+          },
+          {
+            "name": "payment_model",
+            "type": {
+              "defined": {
+                "name": "aerosettle::work_order::PaymentModel"
+              }
+            }
+          },
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Token account holding the economically committed funds.",
+              "Default Pubkey while the WorkOrder is still Draft."
+            ],
+            "name": "escrow_vault",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "SPL Token or Token-2022 program controlling the escrow mint.",
+              "Default Pubkey while the WorkOrder is still Draft."
+            ],
+            "name": "token_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "execution_deadline",
+            "type": "i64"
+          },
+          {
+            "name": "verification_deadline",
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "aerosettle::work_order_account::WorkOrderStatus"
+              }
+            }
+          },
+          {
+            "docs": [
+              "AgentAccount PDA. Default Pubkey means unclaimed."
+            ],
+            "name": "claimed_agent",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Economic beneficiary frozen when the agent claims."
+            ],
+            "name": "settlement_beneficiary",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Populated when execution is submitted."
+            ],
+            "name": "execution_receipt_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "evidence_manifest_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "docs": [
+              "Device signing key that authorized the submitted execution.",
+              "",
+              "Persisting this matters because the AgentAccount signing key may",
+              "be rotated later."
+            ],
+            "name": "execution_signer",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Agent signature sequence consumed by this execution."
+            ],
+            "name": "execution_sequence",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "EvidenceRequirement bitmask supplied by the execution."
+            ],
+            "name": "provided_evidence",
+            "type": "u64"
+          },
+          {
+            "name": "execution_started_at",
+            "type": "i64"
+          },
+          {
+            "name": "execution_ended_at",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "Populated after verifier acceptance/rejection."
+            ],
+            "name": "verification_attestation_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "docs": [
+              "None until an authorized verifier records a decision."
+            ],
+            "name": "verification_status",
+            "type": {
+              "option": {
+                "defined": {
+                  "name": "aerosettle::evidence::VerificationStatus"
+                }
+              }
+            }
+          },
+          {
+            "name": "completion_bps",
+            "type": "u16"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "Timestamp when full escrow funding was confirmed."
+            ],
+            "name": "funded_at",
+            "type": "i64"
+          },
+          {
+            "name": "claimed_at",
+            "type": "i64"
+          },
+          {
+            "name": "submitted_at",
+            "type": "i64"
+          },
+          {
+            "name": "verified_at",
+            "type": "i64"
+          },
+          {
+            "name": "settled_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "aerosettle::work_order_account::WorkOrderStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Draft"
+          },
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Claimed"
+          },
+          {
+            "name": "Submitted"
+          },
+          {
+            "name": "Verified"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Cancelled"
+          },
+          {
+            "name": "Expired"
+          }
+        ]
+      }
+    }
+  ]
+}

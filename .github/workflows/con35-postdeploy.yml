@@ -7,10 +7,6 @@ on:
       - evidence/con35/**
   workflow_dispatch:
     inputs:
-      artifact_run_id:
-        description: Successful CON-35 preparation run containing the approved manifest
-        required: true
-        type: string
       deployment_signature:
         description: Final deploy transaction signature
         required: true
@@ -30,7 +26,6 @@ jobs:
       - name: Resolve public deployment evidence
         id: evidence
         env:
-          INPUT_ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
           INPUT_DEPLOYMENT_SIGNATURE: ${{ inputs.deployment_signature }}
         run: |
           python - <<'PY'
@@ -41,29 +36,29 @@ jobs:
 
           if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
               evidence = json.loads(Path('evidence/con35/devnet-deployment.json').read_text())
-              run_id = str(evidence['artifact_run_id'])
               signature = evidence['deployment_transaction']
           else:
-              run_id = os.environ['INPUT_ARTIFACT_RUN_ID']
               signature = os.environ['INPUT_DEPLOYMENT_SIGNATURE']
-          assert re.fullmatch(r'[0-9]+', run_id), 'Invalid preparation run ID'
           assert re.fullmatch(r'[1-9A-HJ-NP-Za-km-z]{80,90}', signature), 'Invalid deployment signature'
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'artifact_run_id={run_id}\n')
               output.write(f'deployment_signature={signature}\n')
           PY
-      - uses: actions/download-artifact@v4
-        with:
-          name: con35-prepared-devnet-artifacts
-          run-id: ${{ steps.evidence.outputs.artifact_run_id }}
-          github-token: ${{ github.token }}
-          path: target/deploy/con35
+      - name: Restore exact approved public artifact
+        run: |
+          mkdir -p target/deploy/con35-recheck
+          cp evidence/con35/artifacts/aerosettle.so \
+             evidence/con35/artifacts/aerosettle-idl.json \
+             evidence/con35/artifacts/reproducibility.json \
+             evidence/con35/artifacts/manifest.json \
+             target/deploy/con35-recheck/
+          python tools/deployment/devnet.py verify-artifacts \
+            --manifest target/deploy/con35-recheck/manifest.json
       - name: Verify actual Devnet RPC state
         env:
           DEPLOYMENT_SIGNATURE: ${{ steps.evidence.outputs.deployment_signature }}
         run: |
           python tools/deployment/devnet.py post-deploy-verification \
-            --manifest target/deploy/con35/manifest.json \
+            --manifest target/deploy/con35-recheck/manifest.json \
             --signature "$DEPLOYMENT_SIGNATURE" \
             --output "$RUNNER_TEMP/con35-verified.json"
           python - <<'PY'

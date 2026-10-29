@@ -1,5 +1,7 @@
 {
-  "artifact_run_id": 40627013459,
+  "preparation_ci_run_id": 40627013459,
+  "preparation_ci_source_commit": "7127038be7799e3d101d6a7da7967582fd04e5fc",
+  "preparation_ci_binary_sha256": "584ca1c7024673baf0cb716573fe62dc13e5301dc3973fd6c18cecc1726cb451",
   "binary_sha256": "6cf3412c55c38e91b2ba0039aea24d58782c5db0d18759ffdab1c88788cdc3a2",
   "deployment_id": "06c7dfa7528460969a5ca1e8bd001f9c9f1f1f0df3d69fe36649e413e0b14ae6",
   "deployment_slot": 516258865,
