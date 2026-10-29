@@ -42,7 +42,7 @@ jobs:
           if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
               evidence = json.loads(Path('evidence/con35/devnet-deployment.json').read_text())
               run_id = str(evidence['artifact_run_id'])
-              signature = evidence['deployment_signature']
+              signature = evidence['deployment_transaction']
           else:
               run_id = os.environ['INPUT_ARTIFACT_RUN_ID']
               signature = os.environ['INPUT_DEPLOYMENT_SIGNATURE']
