@@ -1,0 +1,17 @@
+{
+  "approval_id": "5dbc0681980e3fcf78ad35f1548ccf6dd0751eb3a697b6dcc0bc0a6f137c21a6",
+  "signature": "3vn3dkM7k4JCZTxBWU1bnQZ4VUGyXMA5HCa52rte8WbUfb98w2jPGVYKHPtSa1ska9yFFq7H2FUkvHToKVLo1htR",
+  "slot": 516678954,
+  "fee_lamports": 10000,
+  "payer_debit_lamports": 3010000,
+  "admin_post_balance_lamports": 1562360,
+  "protocol_config_rent_lamports": 1437640,
+  "protocol_config_pda": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+  "current_agent_count": "0",
+  "current_paused": false,
+  "network_id_hex": "ce59db5080fc2c6d3bcf7ca90712d3c2e5e6c28f27f0dfbb9953bdb0894c03ab",
+  "protocol_deployment_id_hex": "06c7dfa7528460969a5ca1e8bd001f9c9f1f1f0df3d69fe36649e413e0b14ae6",
+  "verification_status": "VERIFIED",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "network": "solana:devnet"
+}

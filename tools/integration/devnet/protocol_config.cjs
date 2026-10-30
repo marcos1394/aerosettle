@@ -210,6 +210,20 @@ async function verify(prepared, current, signature) {
   required(keys[0] === PAYER && instructions.length === 2 &&
     tx.meta.fee + prepared.funding_lamports <= prepared.max_payer_debit_lamports,
     'Transaction fee payer, instruction count or debit exceeds approved plan');
+  const balancePair = address => {
+    const index = keys.indexOf(address);
+    required(index >= 0, `Initialization account missing from transaction: ${address}`);
+    return [tx.meta.preBalances[index], tx.meta.postBalances[index]];
+  };
+  const payerBalances = balancePair(PAYER);
+  const adminBalances = balancePair(ADMIN);
+  const protocolBalances = balancePair(prepared.protocol_config_pda);
+  required(payerBalances[0] - payerBalances[1] ===
+    prepared.funding_lamports + tx.meta.fee &&
+    adminBalances[0] === 0 &&
+    adminBalances[1] === prepared.funding_lamports - prepared.rent_lamports &&
+    protocolBalances[0] === 0 && protocolBalances[1] === prepared.rent_lamports,
+    'Initialization SOL balances differ from approved plan');
   const init = instructions.find(x => keys[x.programIdIndex] === PROGRAM);
   required(init && init.accounts.map(i => keys[i]).join(',') ===
     [prepared.protocol_config_pda, ADMIN, SystemProgram.programId.toBase58()].join(','),
@@ -233,10 +247,16 @@ async function verify(prepared, current, signature) {
     raw.subarray(41, 73).toString('hex') === prepared.network_id_hex &&
     new PublicKey(raw.subarray(73, 105)).toBase58() === PROGRAM &&
     raw.subarray(105, 137).toString('hex') === prepared.protocol_deployment_id_hex &&
-    raw[137] === 255 && raw.readBigUInt64LE(138) === 0n && raw[146] === 0,
+    raw[137] === 255 && [0, 1].includes(raw[146]),
     'ProtocolConfig on-chain state differs from approved plan');
   return {approval_id: prepared.approval_id, signature, slot: status.slot,
-    fee_lamports: tx.meta.fee, protocol_config_pda: prepared.protocol_config_pda,
+    fee_lamports: tx.meta.fee,
+    payer_debit_lamports: payerBalances[0] - payerBalances[1],
+    admin_post_balance_lamports: adminBalances[1],
+    protocol_config_rent_lamports: protocolBalances[1],
+    protocol_config_pda: prepared.protocol_config_pda,
+    current_agent_count: raw.readBigUInt64LE(138).toString(),
+    current_paused: raw[146] === 1,
     network_id_hex: prepared.network_id_hex,
     protocol_deployment_id_hex: prepared.protocol_deployment_id_hex,
     verification_status: 'VERIFIED', genesis_hash: GENESIS, network: 'solana:devnet'};
