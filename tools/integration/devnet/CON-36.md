@@ -45,6 +45,12 @@ node tools/integration/devnet/asset_funding.cjs verify \
 
 No CI or pull request job executes `submit`.
 
+## First WorkOrder preparation
+
+The first scenario (`E2E-01-full`) has a separate [creation manifest](../../../evidence/con36/e2e-01-create-plan.json), approval ID `e53ac47d6c2bc32c7fabdb7f0d7a1b9299dbb6039802f5cd603fd1733353c0ad`. It fixes the creator, verifier, test mint, 1,000,000 base-unit fixed settlement amount, capabilities and evidence masks, manifest hash, deadlines, and WorkOrder PDA `2M2gMx8n5jDJ7ivKnLRxGVJepBAUst74vDuYZid4xRPr`. The official Devnet RPC quoted 3,622,040 lamports rent for the 585-byte account and a 5,000-lamport fee. The manifest caps the creator's debit at **3,632,040 lamports (0.00363204 test SOL)**. Creating the order does not move SPL tokens or make it claimable. A signed Devnet simulation succeeded using 13,928 compute units. The manifest remains `PREPARED_NOT_AUTHORIZED`; **no WorkOrder transaction has been submitted**. The earlier asset and ProtocolConfig approvals do not authorize this step.
+
+`workorder_create.cjs` binds the instruction to the approved CON-35 IDL, rechecks genesis, active ProtocolConfig, account absence, rent, source token ownership and balances before simulation or submission, and requires the exact new approval ID in both the CLI and `CON36_APPROVED_WORKORDER_CREATE_ID` for submission. Its `verify` action checks a finalized JSON-RPC transaction, exact approved instruction and accounts, SOL balances, and the on-chain WorkOrder fields. The CI workflow only inspects the WorkOrder PDA and runs negative manifest tests; it has no transaction submission step.
+
 ## Outstanding gates
 
 ProtocolConfig is initialized and the mint holds 7.1 test tokens, with no WorkOrder funded. The full eight-scenario Devnet matrix, genuine negative transactions, settlement SPL balances, finalized WorkOrder signatures and slots, LIVE_RPC reconciliation, SQLite restart checks and historical settlement RPC recovery remain pending. Each new Devnet state-changing operation needs its own exact manifest, spending bounds and human approval. No WorkOrder result or productive economic provenance is claimed from preparatory simulations. CON-36 is **not complete**.

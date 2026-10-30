@@ -83,10 +83,31 @@ jobs:
           else
             node tools/integration/devnet/asset_funding.cjs prepare
           fi
+      - name: Inspect first WorkOrder without submitting transactions
+        run: |
+          node tools/integration/devnet/workorder_create.cjs inspect \
+            > "$RUNNER_TEMP/con36-workorder-inspect.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          observed = json.loads((Path(os.environ['RUNNER_TEMP']) / 'con36-workorder-inspect.json').read_text())
+          plan = json.loads(Path('evidence/con36/e2e-01-create-plan.json').read_text())
+          assert observed['genesis_hash'] == plan['genesis_hash']
+          assert observed['work_order_pda'] == plan['work_order_pda']
+          if observed['work_order_present']:
+              assert Path('evidence/con36/e2e-01-create-verified.json').exists(), \
+                  'On-chain WorkOrder requires finalized transaction evidence'
+          else:
+              assert plan['status'] == 'PREPARED_NOT_AUTHORIZED'
+              assert plan['transaction_submitted'] is False
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: con36-read-only-devnet-inspection
-          path: ${{ runner.temp }}/con36-inspect.json
+          path: |
+            ${{ runner.temp }}/con36-inspect.json
+            ${{ runner.temp }}/con36-workorder-inspect.json
           retention-days: 90
   python-regressions:
     runs-on: ubuntu-24.04
