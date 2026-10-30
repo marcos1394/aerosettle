@@ -48,6 +48,17 @@ function run() {
       fs.writeFileSync(b, bytes, {flag: 'wx', mode: 0o600});
     }
     keys[role] = identicalProtectedCopies(name).publicKey.toBase58();
+    const bindingName = `${role}.binding.json`;
+    const binding = JSON.stringify({environment: 'devnet', genesis_hash: GENESIS,
+      role, pubkey: keys[role]}, null, 2) + '\n';
+    for (const directory of [local, backup]) {
+      const bindingPath = path.join(directory, bindingName);
+      if (fs.existsSync(bindingPath)) required(fs.readFileSync(bindingPath, 'utf8') === binding,
+        'Wallet binding differs from protected identity');
+      else fs.writeFileSync(bindingPath, binding, {flag: 'wx', mode: 0o600});
+      required((fs.statSync(bindingPath).mode & 0o077) === 0,
+        'Wallet binding permissions too broad');
+    }
   }
   const manifest = {schema_version: 1, environment: 'devnet', network: 'solana:devnet',
     genesis_hash: GENESIS, program_id: 'CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy',

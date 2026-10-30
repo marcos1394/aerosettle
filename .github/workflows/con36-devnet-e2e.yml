@@ -73,6 +73,16 @@ jobs:
           else
             node tools/integration/devnet/protocol_config.cjs prepare
           fi
+      - name: Check bounded test asset plan or finalized historical minting evidence
+        run: |
+          if test -f evidence/con36/test-asset-verified.json; then
+            signature="$(python -c "import json; print(json.load(open('evidence/con36/test-asset-verified.json'))['signature'])")"
+            node tools/integration/devnet/asset_funding.cjs verify \
+              evidence/con36/test-asset-plan.json "$signature" \
+              > "$RUNNER_TEMP/con36-test-asset-verified.json"
+          else
+            node tools/integration/devnet/asset_funding.cjs prepare
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: con36-read-only-devnet-inspection
@@ -85,7 +95,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
       - run: rustup toolchain install 1.89.0 --profile minimal
       - run: cargo +1.89.0 build --example marketplace_match_bridge
       - run: python -m unittest discover -s tools/economic_ledger

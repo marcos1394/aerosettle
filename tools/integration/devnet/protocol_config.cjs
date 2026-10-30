@@ -191,6 +191,10 @@ async function simulate(actual, current) {
 }
 
 async function verify(prepared, current, signature) {
+  required(canonical(prepared) === canonical(plan({evidence: current.evidence,
+    rent: prepared.rent_lamports,
+    systemRent: prepared.admin_system_rent_lamports})),
+  'ProtocolConfig public approval plan integrity mismatch');
   required(/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(signature), 'Invalid signature');
   const status = (await connection.getSignatureStatuses([signature],
     {searchTransactionHistory: true})).value[0];
@@ -293,4 +297,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
-module.exports = {plan, validatePlan, buildTransaction, approvalValid, approvedEvidence};
+module.exports = {plan, validatePlan, buildTransaction, approvalValid, approvedEvidence, inspect};
