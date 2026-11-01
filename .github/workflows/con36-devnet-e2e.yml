@@ -29,6 +29,7 @@ jobs:
       - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
       - run: npm ci --prefix tools/bootstrap
       - run: node --test tools/integration/devnet/test_*.cjs
+      - run: python -m unittest tools.integration.devnet.test_verify_matrix
       - run: node tools/integration/devnet/prepare_scenarios.cjs
       - name: Verify approved deployment and test mint using real Devnet JSON-RPC
         run: |
@@ -102,12 +103,54 @@ jobs:
               assert plan['status'] == 'PREPARED_NOT_AUTHORIZED'
               assert plan['transaction_submitted'] is False
           PY
+          if test -f evidence/con36/e2e-01-create-verified.json; then
+            signature="$(python -c "import json; print(json.load(open('evidence/con36/e2e-01-create-verified.json'))['signature'])")"
+            node tools/integration/devnet/workorder_create.cjs verify \
+              evidence/con36/e2e-01-create-plan.json "$signature" \
+              > "$RUNNER_TEMP/con36-workorder-create-verified.json"
+          fi
+      - name: Recover finalized matrix and replay Economic Ledger from real Devnet RPC
+        timeout-minutes: 30
+        run: |
+          python -m tools.integration.devnet.verify_matrix \
+            "$RUNNER_TEMP/con36-ledger.sqlite" \
+            "$RUNNER_TEMP/con36-verified-matrix.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = json.loads(Path('evidence/con36/verified-matrix.json').read_text())
+          actual = json.loads((Path(os.environ['RUNNER_TEMP']) / 'con36-verified-matrix.json').read_text())
+          stable = ('scenario', 'transaction_signature', 'slot', 'effect_id',
+                    'evidence_hash', 'ledger_status', 'provenance',
+                    'operator_payout', 'creator_refund')
+          assert expected['network'] == actual['network'] == 'solana:devnet'
+          assert expected['genesis_hash'] == actual['genesis_hash']
+          assert expected['scenario_count'] == actual['scenario_count'] == 8
+          assert expected['settlement_count'] == actual['settlement_count'] == 7
+          assert expected['economic_movement_count'] == actual['economic_movement_count'] == 7
+          assert expected['rejected_transaction_count'] == actual['rejected_transaction_count'] == 4
+          for field, value in (
+              ('creator_final_base_units', 2_900_000),
+              ('operator_final_base_units', 4_200_000),
+              ('zero_escrow_vault_count', 7),
+              ('mint_supply_base_units', 7_100_000),
+          ):
+              assert expected[field] == actual[field] == value
+          assert all({key: old[key] for key in stable} ==
+                     {key: fresh[key] for key in stable}
+                     for old, fresh in zip(expected['receipts'], actual['receipts'], strict=True))
+          assert actual['sqlite_restart_idempotent'] and actual['concurrent_retry_idempotent']
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: con36-read-only-devnet-inspection
           path: |
             ${{ runner.temp }}/con36-inspect.json
             ${{ runner.temp }}/con36-workorder-inspect.json
+            ${{ runner.temp }}/con36-workorder-create-verified.json
+            ${{ runner.temp }}/con36-verified-matrix.json
           retention-days: 90
   python-regressions:
     runs-on: ubuntu-24.04

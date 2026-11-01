@@ -1,0 +1,416 @@
+{
+  "schema_version": 1,
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "scenario": "E2E-06-invalid-mint",
+  "work_order_pda": "EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2",
+  "token_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "events": [
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "phase": "create",
+      "manifest_id": "a19906cf3b395dff340c83093682254db56ed5148ceb28f1d7a390c2c3726cad",
+      "manifest_file": "evidence/con36/matrix/plans/E2E-06-invalid-mint-create.json",
+      "expected_failure": null,
+      "simulated": true,
+      "simulation_units": 16928,
+      "fee_quote_lamports": 5000,
+      "max_payer_debit_lamports": 3642040,
+      "signature": "4gcKprNTkQfV5CtYeSteV1fd4fXp3m7AihJwExrvgosZRZdLRQj3oRRWzRMA4Fmos8TZ42MevtDhwfXP9RmhNSFM",
+      "state": "FINALIZED",
+      "slot": 516891564,
+      "fee_lamports": 5000,
+      "transaction_error": null,
+      "anchor_error_code": null,
+      "post_status_index": 0,
+      "pre_token_balances": [],
+      "post_token_balances": [],
+      "settlement_balances_before": null,
+      "settlement_balances_after": null,
+      "log_messages": [
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy invoke [1]",
+        "Program log: Instruction: CreateWorkOrder",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program log: AeroSettle WorkOrder created as Draft: EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy consumed 16928 of 200000 compute units",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy success"
+      ]
+    },
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "phase": "wrong_mint",
+      "manifest_id": "d0d260f97cc7ce672579ecfe7becb2a6d6e9407077cb1fb38589bc69a4357b46",
+      "manifest_file": "evidence/con36/matrix/plans/E2E-06-invalid-mint-wrong_mint.json",
+      "expected_failure": "InvalidTokenMint",
+      "simulated": true,
+      "simulation_units": 19279,
+      "fee_quote_lamports": 5000,
+      "max_payer_debit_lamports": 20000,
+      "signature": "3M3Hk59S1JPmvFRsEfPi59s6fKR3p4uW2xPvEntJr7QNLidXHhRbzUFuw76eNA3iYyW8iFwmDsxGQCMpJo5acUrQ",
+      "state": "FINALIZED_REJECTED",
+      "slot": 516891573,
+      "fee_lamports": 5000,
+      "transaction_error": {
+        "InstructionError": [
+          0,
+          {
+            "Custom": 6004
+          }
+        ]
+      },
+      "anchor_error_code": "InvalidTokenMint",
+      "post_status_index": 0,
+      "pre_token_balances": [
+        {
+          "accountIndex": 3,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "4900000",
+            "decimals": 6,
+            "uiAmount": 4.9,
+            "uiAmountString": "4.9"
+          }
+        }
+      ],
+      "post_token_balances": [
+        {
+          "accountIndex": 3,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "4900000",
+            "decimals": 6,
+            "uiAmount": 4.9,
+            "uiAmountString": "4.9"
+          }
+        }
+      ],
+      "settlement_balances_before": null,
+      "settlement_balances_after": null,
+      "log_messages": [
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy invoke [1]",
+        "Program log: Instruction: FundWorkOrder",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 229 of 187829 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program log: AnchorError caused by account: mint. Error Code: InvalidTokenMint. Error Number: 6004. Error Message: Settlement token mint cannot be the default public key..",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy consumed 19279 of 200000 compute units",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy failed: custom program error: 0x1774"
+      ]
+    },
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "phase": "fund",
+      "manifest_id": "52d865d6c843bbe932123956553fe2c8d4a395fa85937e70845265d56c6f4eb6",
+      "manifest_file": "evidence/con36/matrix/plans/E2E-06-invalid-mint-fund.json",
+      "expected_failure": null,
+      "simulated": true,
+      "simulation_units": 24659,
+      "fee_quote_lamports": 5000,
+      "max_payer_debit_lamports": 1508440,
+      "signature": "5uUbXFypivSZxM5y5oXthHCwLur3t19TdZgodCPoW8E6TiQYvsR1CWcLYVuLEgbwdwXqvz6xEhKhPk5jqjq2iydF",
+      "state": "FINALIZED",
+      "slot": 516891607,
+      "fee_lamports": 5000,
+      "transaction_error": null,
+      "anchor_error_code": null,
+      "post_status_index": 1,
+      "pre_token_balances": [
+        {
+          "accountIndex": 3,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "4900000",
+            "decimals": 6,
+            "uiAmount": 4.9,
+            "uiAmountString": "4.9"
+          }
+        }
+      ],
+      "post_token_balances": [
+        {
+          "accountIndex": 2,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "GJuCa6CWTrUnLE839rjtymow9oTY1jZKfUT6zjtzFyXc",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "1000000",
+            "decimals": 6,
+            "uiAmount": 1,
+            "uiAmountString": "1"
+          }
+        },
+        {
+          "accountIndex": 3,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "3900000",
+            "decimals": 6,
+            "uiAmount": 3.9,
+            "uiAmountString": "3.9"
+          }
+        }
+      ],
+      "settlement_balances_before": null,
+      "settlement_balances_after": null,
+      "log_messages": [
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy invoke [1]",
+        "Program log: Instruction: FundWorkOrder",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 233 of 187822 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 105 of 180058 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program log: WorkOrder EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2 funded with 1000000 base units; status=Open",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy consumed 24659 of 200000 compute units",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy success"
+      ]
+    },
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "phase": "register",
+      "manifest_id": "18c274e229215da1e9b3895240b5b94d7bee6ca2811fb144ea61841ef2a1a5d8",
+      "manifest_file": "evidence/con36/matrix/plans/E2E-06-invalid-mint-register.json",
+      "expected_failure": null,
+      "simulated": true,
+      "simulation_units": 12727,
+      "fee_quote_lamports": 5000,
+      "max_payer_debit_lamports": 1665920,
+      "signature": "2XfX5RNGNcmEDna5yf3ge4gxEsyYyE55kwYDut1nBKMBHzeUFrwxhjaRxuNdSgr7jRzHHtwgesQNB4ge1E3B56CM",
+      "state": "FINALIZED",
+      "slot": 516891628,
+      "fee_lamports": 5000,
+      "transaction_error": null,
+      "anchor_error_code": null,
+      "post_status_index": 1,
+      "pre_token_balances": [],
+      "post_token_balances": [],
+      "settlement_balances_before": null,
+      "settlement_balances_after": null,
+      "log_messages": [
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy invoke [1]",
+        "Program log: Instruction: RegisterAgent",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program log: AeroSettle agent registered: GhD8ez34CR9XAUAXdfWUi1Ggd2xGFtHx5s2B4oDaXFTC",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy consumed 12727 of 200000 compute units",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy success"
+      ]
+    },
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "phase": "claim",
+      "manifest_id": "2f53e73d18d6e07e01d4145b6058580a2fb05931db34d4676196313e61868246",
+      "manifest_file": "evidence/con36/matrix/plans/E2E-06-invalid-mint-claim.json",
+      "expected_failure": null,
+      "simulated": true,
+      "simulation_units": 14363,
+      "fee_quote_lamports": 10000,
+      "max_payer_debit_lamports": 20000,
+      "signature": "2Pjud3m9SWdLzq4dFakNPB4tNXNme5zoB5BRPs42TWg9vp6R7Jfp5Q5T7oZTbnirh9ZYuHKMPppHQRRCj65epn2Q",
+      "state": "FINALIZED",
+      "slot": 516891644,
+      "fee_lamports": 10000,
+      "transaction_error": null,
+      "anchor_error_code": null,
+      "post_status_index": 2,
+      "pre_token_balances": [],
+      "post_token_balances": [],
+      "settlement_balances_before": null,
+      "settlement_balances_after": null,
+      "log_messages": [
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy invoke [1]",
+        "Program log: Instruction: ClaimWorkOrder",
+        "Program log: WorkOrder EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2 claimed by agent GhD8ez34CR9XAUAXdfWUi1Ggd2xGFtHx5s2B4oDaXFTC",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy consumed 14363 of 200000 compute units",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy success"
+      ]
+    },
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "phase": "submit",
+      "manifest_id": "15fb4935d1e49ecd69bb5d06eb0ad3c4d3f49842ce6972d620f21a8b34aead76",
+      "manifest_file": "evidence/con36/matrix/plans/E2E-06-invalid-mint-submit.json",
+      "expected_failure": null,
+      "simulated": true,
+      "simulation_units": 15630,
+      "fee_quote_lamports": 10000,
+      "max_payer_debit_lamports": 20000,
+      "signature": "3X6uahPXSogUzdD7ctxocWRyZ3ZTXtFY383KwHNCfyk8ErSH6EWkETJW2BQ35AftHRshUmaAcEwppLvUZCJvw56p",
+      "state": "FINALIZED",
+      "slot": 516891664,
+      "fee_lamports": 10000,
+      "transaction_error": null,
+      "anchor_error_code": null,
+      "post_status_index": 3,
+      "pre_token_balances": [],
+      "post_token_balances": [],
+      "settlement_balances_before": null,
+      "settlement_balances_after": null,
+      "log_messages": [
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy invoke [1]",
+        "Program log: Instruction: SubmitExecution",
+        "Program log: WorkOrder EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2 execution submitted by agent GhD8ez34CR9XAUAXdfWUi1Ggd2xGFtHx5s2B4oDaXFTC; sequence=0",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy consumed 15630 of 200000 compute units",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy success"
+      ]
+    },
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "phase": "verify",
+      "manifest_id": "db55828d4aa05f9b43657bcffb3390593b08258efc2c10da2599f90cbdb61be9",
+      "manifest_file": "evidence/con36/matrix/plans/E2E-06-invalid-mint-verify.json",
+      "expected_failure": null,
+      "simulated": true,
+      "simulation_units": 31175,
+      "fee_quote_lamports": 10000,
+      "max_payer_debit_lamports": 20000,
+      "signature": "2MSjdgqsB26P5efx8E8v3cp5VG8pHPwN2FCrC7kyD8BrXo9dy4Qkv34isrJCWASu8CLGfLfN3yrMbuyUxXZcNN8C",
+      "state": "FINALIZED",
+      "slot": 516891684,
+      "fee_lamports": 10000,
+      "transaction_error": null,
+      "anchor_error_code": null,
+      "post_status_index": 4,
+      "pre_token_balances": [],
+      "post_token_balances": [],
+      "settlement_balances_before": null,
+      "settlement_balances_after": null,
+      "log_messages": [
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy invoke [1]",
+        "Program log: Instruction: VerifyExecution",
+        "Program log: WorkOrder EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2 verified; completion_bps=10000",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy consumed 31175 of 200000 compute units",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy success"
+      ]
+    },
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "phase": "settle",
+      "manifest_id": "20506750336fe16a75b0918cd7add052dc892f248d562ce6a110cf360c21263f",
+      "manifest_file": "evidence/con36/matrix/plans/E2E-06-invalid-mint-settle.json",
+      "expected_failure": null,
+      "simulated": true,
+      "simulation_units": 22434,
+      "fee_quote_lamports": 5000,
+      "max_payer_debit_lamports": 20000,
+      "signature": "5bcHkXtveMXLdSUhjSHQdJQFSCv7SaZUjHBRVAfSoFek4KZ9wEAXWrMkdCytHjMfdU7VS5sFfSVW6otGgGBrGQJ7",
+      "state": "FINALIZED",
+      "slot": 516891707,
+      "fee_lamports": 5000,
+      "transaction_error": null,
+      "anchor_error_code": null,
+      "post_status_index": 5,
+      "pre_token_balances": [
+        {
+          "accountIndex": 1,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "2200000",
+            "decimals": 6,
+            "uiAmount": 2.2,
+            "uiAmountString": "2.2"
+          }
+        },
+        {
+          "accountIndex": 3,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "GJuCa6CWTrUnLE839rjtymow9oTY1jZKfUT6zjtzFyXc",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "1000000",
+            "decimals": 6,
+            "uiAmount": 1,
+            "uiAmountString": "1"
+          }
+        },
+        {
+          "accountIndex": 4,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "3900000",
+            "decimals": 6,
+            "uiAmount": 3.9,
+            "uiAmountString": "3.9"
+          }
+        }
+      ],
+      "post_token_balances": [
+        {
+          "accountIndex": 1,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "3200000",
+            "decimals": 6,
+            "uiAmount": 3.2,
+            "uiAmountString": "3.2"
+          }
+        },
+        {
+          "accountIndex": 3,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "GJuCa6CWTrUnLE839rjtymow9oTY1jZKfUT6zjtzFyXc",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "0",
+            "decimals": 6,
+            "uiAmount": null,
+            "uiAmountString": "0"
+          }
+        },
+        {
+          "accountIndex": 4,
+          "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+          "owner": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+          "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "uiTokenAmount": {
+            "amount": "3900000",
+            "decimals": 6,
+            "uiAmount": 3.9,
+            "uiAmountString": "3.9"
+          }
+        }
+      ],
+      "settlement_balances_before": {
+        "vault": "1000000",
+        "operator": "2200000",
+        "refund": "3900000"
+      },
+      "settlement_balances_after": {
+        "vault": "0",
+        "operator": "3200000",
+        "refund": "3900000"
+      },
+      "log_messages": [
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy invoke [1]",
+        "Program log: Instruction: SettleWorkOrder",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 187 of 181762 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program log: AeroSettle settlement completed: operator=1000000, creator_refund=0, surplus=0",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy consumed 22434 of 200000 compute units",
+        "Program CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy success"
+      ]
+    }
+  ]
+}

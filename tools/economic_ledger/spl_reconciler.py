@@ -775,13 +775,20 @@ class SolanaRpcClient:
             data=body,
             headers={"Content-Type": "application/json"},
         )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.URLError as exc:
-            raise RpcError(f"RPC connection failed to '{self.rpc_url}': {exc}") from exc
-        except Exception as exc:
-            raise RpcError(f"RPC error during '{method}': {exc}") from exc
+        for attempt in range(6):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code in (429, 500, 502, 503, 504) and attempt < 5:
+                    time.sleep(min(0.5 * (2 ** attempt), 8.0))
+                    continue
+                raise RpcError(f"RPC HTTP error during '{method}': {exc}") from exc
+            except urllib.error.URLError as exc:
+                raise RpcError(f"RPC connection failed to '{self.rpc_url}': {exc}") from exc
+            except Exception as exc:
+                raise RpcError(f"RPC error during '{method}': {exc}") from exc
 
         if "error" in data:
             err = data["error"]

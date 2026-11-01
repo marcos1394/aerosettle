@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "test_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "scenario": "E2E-07-wrong-beneficiary",
+  "phase": "register",
+  "work_order_pda": "7K1PXXAkyjVQsz8mDDPuGajnBhCDJ1TBXY1RKsfUrB3c",
+  "agent_account_pda": "8QTtkq6b4WBmre9cjLf5376fdm6GdjoLpZXpW1C78aB9",
+  "escrow_vault": "3HUQAfcaqiawBCJJmKpmdL8sRRY4uP15aVRvAr5Zjp96",
+  "creator": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "beneficiary": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+  "payment_model": "Fixed",
+  "completion_bps": 10000,
+  "amount_base_units": 1000000,
+  "donated_surplus_base_units": 0,
+  "expected_operator_payout_base_units": 1000000,
+  "expected_creator_refund_base_units": 0,
+  "payer": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+  "instruction_program": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "instruction_accounts": [
+    {
+      "pubkey": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "8QTtkq6b4WBmre9cjLf5376fdm6GdjoLpZXpW1C78aB9",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+      "is_signer": true,
+      "is_writable": true
+    },
+    {
+      "pubkey": "11111111111111111111111111111111",
+      "is_signer": false,
+      "is_writable": false
+    }
+  ],
+  "instruction_data_hex": "879d42c30271af1e4326cbf961b6bc2361555609d1dbe720ed4dc346f896bc566ac2dc4f156c295c8e0bb58f7fed05ad8a51cd55f13f8e080d4c4a673d1a6d9e1bbb30384269578f00218000000000000035f63045e8fa7da4fab50f6123c6ce89ce7be1730b3e0897e8ede85b36268f75",
+  "max_fee_lamports": 20000,
+  "max_rent_lamports": 1645920,
+  "max_payer_debit_lamports": 1665920,
+  "expected_pre_status": 1,
+  "expected_post_status": 1,
+  "manifest_id": "09cbe81c9a39af202223b9bf9a7eacf721e07afe319bef3babf848be21d60636"
+}

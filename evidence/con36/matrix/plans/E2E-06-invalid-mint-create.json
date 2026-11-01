@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "test_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "scenario": "E2E-06-invalid-mint",
+  "phase": "create",
+  "work_order_pda": "EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2",
+  "agent_account_pda": "GhD8ez34CR9XAUAXdfWUi1Ggd2xGFtHx5s2B4oDaXFTC",
+  "escrow_vault": "GJuCa6CWTrUnLE839rjtymow9oTY1jZKfUT6zjtzFyXc",
+  "creator": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "beneficiary": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+  "payment_model": "Fixed",
+  "completion_bps": 10000,
+  "amount_base_units": 1000000,
+  "donated_surplus_base_units": 0,
+  "expected_operator_payout_base_units": 1000000,
+  "expected_creator_refund_base_units": 0,
+  "payer": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "instruction_program": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "instruction_accounts": [
+    {
+      "pubkey": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+      "is_signer": false,
+      "is_writable": false
+    },
+    {
+      "pubkey": "EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+      "is_signer": true,
+      "is_writable": true
+    },
+    {
+      "pubkey": "11111111111111111111111111111111",
+      "is_signer": false,
+      "is_writable": false
+    }
+  ],
+  "instruction_data_hex": "8f11f8c8d9550aafcd5c484035018cf13369071f31eea0b325b2ef47f49ca2db1cd01671c72531f600210000000000000047000000000000006e6d1d4f80cb1774917ab6588a5a77f3f204be34f1a6313c14c220ec86518e51f9f0e88b83e349c8732ee1eddbdf1c4fe204ea68c921861067f37766588924fc40420f00000000000072364bd46bb40d770eb6751e66ff1412ed1c49f35d509103755846486ffc868a6f6df76a00000000efbef86a00000000",
+  "max_fee_lamports": 20000,
+  "max_rent_lamports": 3622040,
+  "max_payer_debit_lamports": 3642040,
+  "expected_pre_status": null,
+  "expected_post_status": 0,
+  "manifest_id": "a19906cf3b395dff340c83093682254db56ed5148ceb28f1d7a390c2c3726cad"
+}

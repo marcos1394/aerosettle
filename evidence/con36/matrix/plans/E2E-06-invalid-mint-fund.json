@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "test_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "scenario": "E2E-06-invalid-mint",
+  "phase": "fund",
+  "work_order_pda": "EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2",
+  "agent_account_pda": "GhD8ez34CR9XAUAXdfWUi1Ggd2xGFtHx5s2B4oDaXFTC",
+  "escrow_vault": "GJuCa6CWTrUnLE839rjtymow9oTY1jZKfUT6zjtzFyXc",
+  "creator": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "beneficiary": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+  "payment_model": "Fixed",
+  "completion_bps": 10000,
+  "amount_base_units": 1000000,
+  "donated_surplus_base_units": 0,
+  "expected_operator_payout_base_units": 1000000,
+  "expected_creator_refund_base_units": 0,
+  "payer": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "instruction_program": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "instruction_accounts": [
+    {
+      "pubkey": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+      "is_signer": false,
+      "is_writable": false
+    },
+    {
+      "pubkey": "EqgwoWTCKTxGSJWUhZ7RudHnV4yAyCCsJuSE9MfzamJ2",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+      "is_signer": true,
+      "is_writable": true
+    },
+    {
+      "pubkey": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+      "is_signer": false,
+      "is_writable": false
+    },
+    {
+      "pubkey": "GWUiSE1Ani84vm36SgUFFPRAdP1qwvHP4eL3fgidpVyn",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "GJuCa6CWTrUnLE839rjtymow9oTY1jZKfUT6zjtzFyXc",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "is_signer": false,
+      "is_writable": false
+    },
+    {
+      "pubkey": "11111111111111111111111111111111",
+      "is_signer": false,
+      "is_writable": false
+    }
+  ],
+  "instruction_data_hex": "78737931fa111259",
+  "max_fee_lamports": 20000,
+  "max_rent_lamports": 1488440,
+  "max_payer_debit_lamports": 1508440,
+  "expected_pre_status": 0,
+  "expected_post_status": 1,
+  "manifest_id": "52d865d6c843bbe932123956553fe2c8d4a395fa85937e70845265d56c6f4eb6"
+}

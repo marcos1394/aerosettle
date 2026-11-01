@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "test_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "scenario": "E2E-03-proportional",
+  "phase": "submit",
+  "work_order_pda": "HDnpA8PkkTf9k5zYdJ8kiaw5g13pFn8sR3f3ijZBgwj7",
+  "agent_account_pda": "EU1uHTTZsyEeSm83VdPnecBa4rBZGvcbDWtRsmSz8RkU",
+  "escrow_vault": "FnnqB8Mdppm6bybeu3e8M6F61EscS5reGy1dZuB97Tar",
+  "creator": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "beneficiary": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+  "payment_model": "Proportional",
+  "completion_bps": 6000,
+  "amount_base_units": 1000000,
+  "donated_surplus_base_units": 100000,
+  "expected_operator_payout_base_units": 600000,
+  "expected_creator_refund_base_units": 500000,
+  "payer": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "instruction_program": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "instruction_accounts": [
+    {
+      "pubkey": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+      "is_signer": false,
+      "is_writable": false
+    },
+    {
+      "pubkey": "HDnpA8PkkTf9k5zYdJ8kiaw5g13pFn8sR3f3ijZBgwj7",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "EU1uHTTZsyEeSm83VdPnecBa4rBZGvcbDWtRsmSz8RkU",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "AZVFRtGBEKRGFbkipvDdAEt1PgP7rZPa7jYwPT7ZPrEA",
+      "is_signer": true,
+      "is_writable": false
+    }
+  ],
+  "instruction_data_hex": "0b91bcdf0a5043a130f07ae01a7d030322a19851dad687a97e7cfabec431cbca72950d8af6be999958369aae6500b7e4c263477f185e00a68960a152de805f837c41e25d14343480470000000000000074fae46a0000000074fae46a000000000000000000000000",
+  "max_fee_lamports": 20000,
+  "max_rent_lamports": 0,
+  "max_payer_debit_lamports": 20000,
+  "expected_pre_status": 2,
+  "expected_post_status": 3,
+  "manifest_id": "6c641590366b25ebcba859dca95d13643ef9d75749c34c53dde10665db55ce69"
+}
