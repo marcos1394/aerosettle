@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "test_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "scenario": "E2E-05-valid-shared",
+  "phase": "register",
+  "work_order_pda": "9i3wFEuCnLaCc215B8T7pPCXXfWAJNbm82fFXu2Vf5nL",
+  "agent_account_pda": "Ad6HmJtBK2nkDRF3Z9tMVHiZkck6GTHzvZnr4jWSeva9",
+  "escrow_vault": "2NsGHF3nGghHM7vWmuaPmYWkd7wx1S4dJBqiEchuidqB",
+  "creator": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "beneficiary": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "payment_model": "Proportional",
+  "completion_bps": 6000,
+  "amount_base_units": 1000000,
+  "donated_surplus_base_units": 0,
+  "expected_operator_payout_base_units": 600000,
+  "expected_creator_refund_base_units": 400000,
+  "payer": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "instruction_program": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "instruction_accounts": [
+    {
+      "pubkey": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "Ad6HmJtBK2nkDRF3Z9tMVHiZkck6GTHzvZnr4jWSeva9",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+      "is_signer": true,
+      "is_writable": true
+    },
+    {
+      "pubkey": "11111111111111111111111111111111",
+      "is_signer": false,
+      "is_writable": false
+    }
+  ],
+  "instruction_data_hex": "879d42c30271af1e2778b15cf71397b8667a28e94646daa9df1f87912fe782193eda56288cb6b4d52d72615be08728d7389369076992092a5a8c421854c6ac7b0d0c893f6f89bcdb002180000000000000b3f8d10a02d380125fac0071a3b68ecde045eb9307ada7907179a7e8c554a66a",
+  "max_fee_lamports": 20000,
+  "max_rent_lamports": 1645920,
+  "max_payer_debit_lamports": 1665920,
+  "expected_pre_status": 1,
+  "expected_post_status": 1,
+  "manifest_id": "f31efc1e646053fe0fd1f4fae99c242c1d2203f78ee30643088d7acd396f73b7"
+}

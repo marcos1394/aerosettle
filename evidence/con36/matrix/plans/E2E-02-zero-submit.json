@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "test_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "scenario": "E2E-02-zero",
+  "phase": "submit",
+  "work_order_pda": "BrD1ctgKaB6kvwtSFRAypCzrHGmL2h27FYhhcd9P3PRq",
+  "agent_account_pda": "BzZAhZbv6Ca4yV6gmcac3X6GZ6dERP1hx7iqYVnzaCYR",
+  "escrow_vault": "iiepYm3zZfL8jQnZLUEab531jtCUHMBGGZjQBHVsGSi",
+  "creator": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "beneficiary": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+  "payment_model": "Fixed",
+  "completion_bps": 6000,
+  "amount_base_units": 1000000,
+  "donated_surplus_base_units": 0,
+  "expected_operator_payout_base_units": 0,
+  "expected_creator_refund_base_units": 1000000,
+  "payer": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "instruction_program": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "instruction_accounts": [
+    {
+      "pubkey": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+      "is_signer": false,
+      "is_writable": false
+    },
+    {
+      "pubkey": "BrD1ctgKaB6kvwtSFRAypCzrHGmL2h27FYhhcd9P3PRq",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "BzZAhZbv6Ca4yV6gmcac3X6GZ6dERP1hx7iqYVnzaCYR",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "AZVFRtGBEKRGFbkipvDdAEt1PgP7rZPa7jYwPT7ZPrEA",
+      "is_signer": true,
+      "is_writable": false
+    }
+  ],
+  "instruction_data_hex": "0b91bcdf0a5043a1c36b034a3c72d15685ff2d2fadfaff1aef065d3a559655578280a2aa1dc857351285befe4ddbad04b4f8215f43731a8b32821b649dd161cc888d4284f18a7b95470000000000000041fae46a0000000041fae46a000000000000000000000000",
+  "max_fee_lamports": 20000,
+  "max_rent_lamports": 0,
+  "max_payer_debit_lamports": 20000,
+  "expected_pre_status": 2,
+  "expected_post_status": 3,
+  "manifest_id": "b691ee23cce55214add27c8212773d05b0d1d0403f366e5875016f4cc87a57ff"
+}

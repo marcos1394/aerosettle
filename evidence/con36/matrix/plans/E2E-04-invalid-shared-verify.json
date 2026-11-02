@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "test_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "scenario": "E2E-04-invalid-shared",
+  "phase": "verify",
+  "work_order_pda": "7syLfGsgooZSTWnT1bhq7BwaFBiQphQg5s5WEhpRbJth",
+  "agent_account_pda": "FCXqLPEb3SeNX1XFTnXYabJsizpXC4t7FS6Jdgj6Z2yy",
+  "escrow_vault": "G1xFLW26iwjyroAK9kFaYnKDumXxrM8JpEsVPykdaFN6",
+  "creator": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "beneficiary": "ERkvDkcPwAqhWTYoEC3v7TMk6dgpzVm9FgBYNzJd8Rsd",
+  "payment_model": "Proportional",
+  "completion_bps": 6000,
+  "amount_base_units": 1000000,
+  "donated_surplus_base_units": 0,
+  "expected_operator_payout_base_units": 600000,
+  "expected_creator_refund_base_units": 400000,
+  "payer": "E9oJS2xuREA3QPsc1GM1Q2vtPQ5nFWTM9tFep1WtjeU1",
+  "instruction_program": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "instruction_accounts": [
+    {
+      "pubkey": "C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn",
+      "is_signer": false,
+      "is_writable": false
+    },
+    {
+      "pubkey": "7syLfGsgooZSTWnT1bhq7BwaFBiQphQg5s5WEhpRbJth",
+      "is_signer": false,
+      "is_writable": true
+    },
+    {
+      "pubkey": "8gqVrDQPa4F3dtVSMX1ofdKR93THAFpu6F7eNBvzFkMP",
+      "is_signer": true,
+      "is_writable": false
+    }
+  ],
+  "instruction_data_hex": "dd482ed4ecc8af8af661d23dd6df2deeaaf644d5a1749ecaf6e5852f86b8e6331891634123e9bfbf007017affae46a00000000",
+  "max_fee_lamports": 20000,
+  "max_rent_lamports": 0,
+  "max_payer_debit_lamports": 20000,
+  "expected_pre_status": 3,
+  "expected_post_status": 4,
+  "manifest_id": "d6e638b126e452fc8ababc0b2073924414c1e0dd2be071dac1143b6aae9adc24"
+}

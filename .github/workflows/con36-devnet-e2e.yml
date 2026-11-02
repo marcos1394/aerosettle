@@ -1,0 +1,207 @@
+name: CON-36 read-only Devnet E2E gates
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con36-devnet-e2e.yml
+      - tools/integration/devnet/**
+      - evidence/con36/**
+      - evidence/con35/**
+      - programs/aerosettle/**
+      - tools/economic_ledger/**
+      - packages/**
+      - apps/marketplace-web/**
+      - Cargo.lock
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  devnet-read-only:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
+      - run: npm ci --prefix tools/bootstrap
+      - run: node --test tools/integration/devnet/test_*.cjs
+      - run: python -m unittest tools.integration.devnet.test_verify_matrix
+      - run: node tools/integration/devnet/prepare_scenarios.cjs
+      - name: Verify approved deployment and test mint using real Devnet JSON-RPC
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from tools.deployment import devnet, test_mint
+
+          config = devnet.load_json(Path('tools/deployment/devnet.json'))
+          rpc = devnet.Rpc(devnet.OFFICIAL_RPC)
+          program = devnet.inspect_program(config, rpc)
+          assert program['exists']
+          assert devnet.binary_matches_deployed(rpc, program['program_data_address'],
+                                                Path('evidence/con35/artifacts/aerosettle.so').read_bytes())
+          prepared = devnet.load_json(Path('evidence/con35/test-mint.json'))
+          verified = devnet.load_json(Path('evidence/con35/test-mint-verified.json'))
+          assert verified == test_mint.verify(prepared, rpc, verified['creation_signature'])
+          print(json.dumps({'genesis_hash': config['genesis_hash'], 'program': program,
+                            'test_mint': verified['mint_pubkey'],
+                            'mint_creation_signature': verified['creation_signature']}, sort_keys=True))
+          PY
+      - name: Inspect ProtocolConfig without submitting transactions
+        run: |
+          node tools/integration/devnet/protocol_config.cjs inspect > "$RUNNER_TEMP/con36-inspect.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          observed = json.loads((Path(os.environ['RUNNER_TEMP']) / 'con36-inspect.json').read_text())
+          assert observed['genesis_hash'] == 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'
+          if observed['protocol_config_initialized']:
+              evidence = Path('evidence/con36/protocol-config-verified.json')
+              assert evidence.exists(), 'Initialized PDA requires finalized public evidence'
+          else:
+              assert Path('evidence/con36/protocol-config-plan.json').exists()
+          PY
+          if test -f evidence/con36/protocol-config-verified.json; then
+            signature="$(python -c "import json; print(json.load(open('evidence/con36/protocol-config-verified.json'))['signature'])")"
+            node tools/integration/devnet/protocol_config.cjs verify \
+              evidence/con36/protocol-config-plan.json "$signature" \
+              > "$RUNNER_TEMP/con36-protocol-verified.json"
+          else
+            node tools/integration/devnet/protocol_config.cjs prepare
+          fi
+      - name: Check bounded test asset plan or finalized historical minting evidence
+        run: |
+          if test -f evidence/con36/test-asset-verified.json; then
+            signature="$(python -c "import json; print(json.load(open('evidence/con36/test-asset-verified.json'))['signature'])")"
+            node tools/integration/devnet/asset_funding.cjs verify \
+              evidence/con36/test-asset-plan.json "$signature" \
+              > "$RUNNER_TEMP/con36-test-asset-verified.json"
+          else
+            node tools/integration/devnet/asset_funding.cjs prepare
+          fi
+      - name: Inspect first WorkOrder without submitting transactions
+        run: |
+          node tools/integration/devnet/workorder_create.cjs inspect \
+            > "$RUNNER_TEMP/con36-workorder-inspect.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          observed = json.loads((Path(os.environ['RUNNER_TEMP']) / 'con36-workorder-inspect.json').read_text())
+          plan = json.loads(Path('evidence/con36/e2e-01-create-plan.json').read_text())
+          assert observed['genesis_hash'] == plan['genesis_hash']
+          assert observed['work_order_pda'] == plan['work_order_pda']
+          if observed['work_order_present']:
+              assert Path('evidence/con36/e2e-01-create-verified.json').exists(), \
+                  'On-chain WorkOrder requires finalized transaction evidence'
+          else:
+              assert plan['status'] == 'PREPARED_NOT_AUTHORIZED'
+              assert plan['transaction_submitted'] is False
+          PY
+          if test -f evidence/con36/e2e-01-create-verified.json; then
+            signature="$(python -c "import json; print(json.load(open('evidence/con36/e2e-01-create-verified.json'))['signature'])")"
+            node tools/integration/devnet/workorder_create.cjs verify \
+              evidence/con36/e2e-01-create-plan.json "$signature" \
+              > "$RUNNER_TEMP/con36-workorder-create-verified.json"
+          fi
+      - name: Recover finalized matrix and replay Economic Ledger from real Devnet RPC
+        timeout-minutes: 30
+        run: |
+          python -m tools.integration.devnet.verify_matrix \
+            "$RUNNER_TEMP/con36-ledger.sqlite" \
+            "$RUNNER_TEMP/con36-verified-matrix.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = json.loads(Path('evidence/con36/verified-matrix.json').read_text())
+          actual = json.loads((Path(os.environ['RUNNER_TEMP']) / 'con36-verified-matrix.json').read_text())
+          stable = ('scenario', 'transaction_signature', 'slot', 'effect_id',
+                    'evidence_hash', 'ledger_status', 'provenance',
+                    'operator_payout', 'creator_refund')
+          assert expected['network'] == actual['network'] == 'solana:devnet'
+          assert expected['genesis_hash'] == actual['genesis_hash']
+          assert expected['scenario_count'] == actual['scenario_count'] == 8
+          assert expected['settlement_count'] == actual['settlement_count'] == 7
+          assert expected['economic_movement_count'] == actual['economic_movement_count'] == 7
+          assert expected['rejected_transaction_count'] == actual['rejected_transaction_count'] == 4
+          for field, value in (
+              ('creator_final_base_units', 2_900_000),
+              ('operator_final_base_units', 4_200_000),
+              ('zero_escrow_vault_count', 7),
+              ('mint_supply_base_units', 7_100_000),
+          ):
+              assert expected[field] == actual[field] == value
+          assert all({key: old[key] for key in stable} ==
+                     {key: fresh[key] for key in stable}
+                     for old, fresh in zip(expected['receipts'], actual['receipts'], strict=True))
+          assert actual['sqlite_restart_idempotent'] and actual['concurrent_retry_idempotent']
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con36-read-only-devnet-inspection
+          path: |
+            ${{ runner.temp }}/con36-inspect.json
+            ${{ runner.temp }}/con36-workorder-inspect.json
+            ${{ runner.temp }}/con36-workorder-create-verified.json
+            ${{ runner.temp }}/con36-verified-matrix.json
+          retention-days: 90
+  python-regressions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: cargo +1.89.0 build --example marketplace_match_bridge
+      - run: python -m unittest discover -s tools/economic_ledger
+      - run: PYTHONPATH=tools/marketplace_api:tools/discovery:. python -m unittest discover -s tools/marketplace_api
+      - run: python -m unittest discover -s tools/funding
+      - run: python -m unittest discover -s tools/discovery
+      - run: python -m unittest discover -s tools/organizations
+      - run: python -m unittest discover -s tools/governance
+      - run: python -m unittest discover -s tools/mission
+      - run: python -m unittest discover -s tools/paper_trading
+      - run: python -m unittest discover -s tools/deployment
+  javascript-regressions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix packages/transaction-sdk --omit=optional
+      - run: npm ci --prefix packages/marketplace-sdk
+      - run: npm ci --prefix apps/marketplace-web
+      - name: Prepare ignored Localnet web fixtures
+        run: |
+          cp tools/integration/localnet/aerosettle-idl.json apps/marketplace-web/src/localnet-idl.json
+          cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
+      - run: npm test --prefix packages/transaction-sdk
+      - run: npm test --prefix packages/marketplace-sdk
+      - run: npm test --prefix apps/marketplace-web
+      - run: npm run build --prefix apps/marketplace-web
+  rust-regressions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: rustup default 1.89.0
+      - name: Install pinned Agave CLI
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/agave.tar.bz2" \
+            https://github.com/anza-xyz/agave/releases/download/v4.1.2/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo '5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770  '"$RUNNER_TEMP/agave.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - run: cargo build-sbf --manifest-path programs/aerosettle/Cargo.toml
+      - run: cargo fetch --locked
+      - run: cargo test --workspace --offline

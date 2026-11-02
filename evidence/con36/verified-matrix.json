@@ -1,0 +1,102 @@
+{
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "scenario_count": 8,
+  "settlement_count": 7,
+  "economic_movement_count": 7,
+  "rejected_transaction_count": 4,
+  "creator_final_base_units": 2900000,
+  "operator_final_base_units": 4200000,
+  "zero_escrow_vault_count": 7,
+  "mint_supply_base_units": 7100000,
+  "sqlite_restart_idempotent": true,
+  "concurrent_retry_idempotent": true,
+  "receipts": [
+    {
+      "scenario": "E2E-01-full",
+      "transaction_signature": "3m7dEPJttpqdRNNBnDP6Rh1GoVnkdMnbh5Ub4ajyC8Ek4K8XnaSWXihLRqGx5poN3YCyXbZVcfsouSxtHboPUfSg",
+      "slot": 516890572,
+      "effect_id": "solana:devnet:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG:3m7dEPJttpqdRNNBnDP6Rh1GoVnkdMnbh5Ub4ajyC8Ek4K8XnaSWXihLRqGx5poN3YCyXbZVcfsouSxtHboPUfSg:0:BtVjXviRCkt1ezoKKmHvpbcWkfr5WDRTnNuJJDznLJPc:HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+      "evidence_hash": "018105f9903f0e8d72487e4bcba4322dff25ef918aaf780be53f7d8fb27a2d24",
+      "movement_id": "b0796814-378d-4bfa-adf1-69c5594fda4b",
+      "ledger_status": "RECONCILED",
+      "provenance": "LIVE_RPC",
+      "operator_payout": 1000000,
+      "creator_refund": 0
+    },
+    {
+      "scenario": "E2E-02-zero",
+      "transaction_signature": "2bpLiA8RN5uDDS9gB6VGjLiioLJ2wQ6cZE3KyDqrLFufuWUBoepbqkwE7bC735mzytdRgyY3BN6NreccWmTnDBvk",
+      "slot": 516890840,
+      "effect_id": "solana:devnet:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG:2bpLiA8RN5uDDS9gB6VGjLiioLJ2wQ6cZE3KyDqrLFufuWUBoepbqkwE7bC735mzytdRgyY3BN6NreccWmTnDBvk:0:BtVjXviRCkt1ezoKKmHvpbcWkfr5WDRTnNuJJDznLJPc:HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+      "evidence_hash": "4f1ec21e719d836e2ddf16b2b9b7c8716aba4892de235cb131205740ce4c075f",
+      "movement_id": "3c59f97e-6803-41d2-8dfc-21761edac786",
+      "ledger_status": "RECONCILED",
+      "provenance": "LIVE_RPC",
+      "operator_payout": 0,
+      "creator_refund": 1000000
+    },
+    {
+      "scenario": "E2E-03-proportional",
+      "transaction_signature": "32oL1EWWyU65VuJrMoBUmFzpQ5T4Vphimt3Xn4udBs4h3NewVe7pvhfWzFbbsdGYdhS7DyBFekQVFWoxazpZ6NUC",
+      "slot": 516891051,
+      "effect_id": "solana:devnet:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG:32oL1EWWyU65VuJrMoBUmFzpQ5T4Vphimt3Xn4udBs4h3NewVe7pvhfWzFbbsdGYdhS7DyBFekQVFWoxazpZ6NUC:0:BtVjXviRCkt1ezoKKmHvpbcWkfr5WDRTnNuJJDznLJPc:HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+      "evidence_hash": "bcdec0cc676b936b3f1b87a39bce3493a554a4a38ca24d345359604c4d64b6f0",
+      "movement_id": "254a46e4-30e1-4772-aef3-38cd9e27793d",
+      "ledger_status": "RECONCILED",
+      "provenance": "LIVE_RPC",
+      "operator_payout": 600000,
+      "creator_refund": 500000
+    },
+    {
+      "scenario": "E2E-04-invalid-shared",
+      "transaction_signature": "2HjoJvRwWF7QDBaqyArQ7Nitk3h44qLERBsBvRvjvaFqgZRaooPuy4gDCc6HVwLjhWAAnsQN4Qex4YWDoNXRLySC",
+      "slot": 516891303,
+      "effect_id": "solana:devnet:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG:2HjoJvRwWF7QDBaqyArQ7Nitk3h44qLERBsBvRvjvaFqgZRaooPuy4gDCc6HVwLjhWAAnsQN4Qex4YWDoNXRLySC:0:BtVjXviRCkt1ezoKKmHvpbcWkfr5WDRTnNuJJDznLJPc:HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+      "evidence_hash": "04b8568ecd3f09188d6fd8c428d5d6ceea5ca2cfaca660e3a1660e4471649b91",
+      "movement_id": "722d2e67-a7b0-4dfa-a695-ca2862d727fd",
+      "ledger_status": "RECONCILED",
+      "provenance": "LIVE_RPC",
+      "operator_payout": 600000,
+      "creator_refund": 400000
+    },
+    {
+      "scenario": "E2E-05-valid-shared",
+      "transaction_signature": "3ynvvT8Usnkr6GogpcPgeammWRa3LLXbRMBozNsXiiuHBZ2G8BM8uhwEa9pif9QSod9oG3MSrkH2XDqDgWXQqK5Z",
+      "slot": 516891488,
+      "effect_id": "solana:devnet:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG:3ynvvT8Usnkr6GogpcPgeammWRa3LLXbRMBozNsXiiuHBZ2G8BM8uhwEa9pif9QSod9oG3MSrkH2XDqDgWXQqK5Z:0:GWUiSE1Ani84vm36SgUFFPRAdP1qwvHP4eL3fgidpVyn:HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+      "evidence_hash": "3c2390b67d15026030b6d0941092ad8c6b666eedde259bd3a426aecd29b2cdbc",
+      "movement_id": "17f49e41-9609-4109-9392-677ae4c37342",
+      "ledger_status": "RECONCILED",
+      "provenance": "LIVE_RPC",
+      "operator_payout": 600000,
+      "creator_refund": 400000
+    },
+    {
+      "scenario": "E2E-06-invalid-mint",
+      "transaction_signature": "5bcHkXtveMXLdSUhjSHQdJQFSCv7SaZUjHBRVAfSoFek4KZ9wEAXWrMkdCytHjMfdU7VS5sFfSVW6otGgGBrGQJ7",
+      "slot": 516891707,
+      "effect_id": "solana:devnet:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG:5bcHkXtveMXLdSUhjSHQdJQFSCv7SaZUjHBRVAfSoFek4KZ9wEAXWrMkdCytHjMfdU7VS5sFfSVW6otGgGBrGQJ7:0:BtVjXviRCkt1ezoKKmHvpbcWkfr5WDRTnNuJJDznLJPc:HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+      "evidence_hash": "0ab280e4f41cd87ebfcb241ad86a32cf69b3c3161725b3db6cab181a5b0d6ae8",
+      "movement_id": "cc03930e-87e0-4709-8710-f82e57968998",
+      "ledger_status": "RECONCILED",
+      "provenance": "LIVE_RPC",
+      "operator_payout": 1000000,
+      "creator_refund": 0
+    },
+    {
+      "scenario": "E2E-07-wrong-beneficiary",
+      "transaction_signature": "4jDLSTB1fZKGoh2GW6zLMGHJy2PqRDU42MPogwx1ArTvKFwuAEnqvDRCqH3S77pwoinraFZKpoJmNZ93xn37gXiJ",
+      "slot": 517615528,
+      "effect_id": "solana:devnet:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG:4jDLSTB1fZKGoh2GW6zLMGHJy2PqRDU42MPogwx1ArTvKFwuAEnqvDRCqH3S77pwoinraFZKpoJmNZ93xn37gXiJ:0:BtVjXviRCkt1ezoKKmHvpbcWkfr5WDRTnNuJJDznLJPc:HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+      "evidence_hash": "0d6226a9fcd38ef687649dd51e8781fa0c9d03400d5b6d516a93e314820a485d",
+      "movement_id": "3c5b70e4-6102-436f-969a-b35b4614713a",
+      "ledger_status": "RECONCILED",
+      "provenance": "LIVE_RPC",
+      "operator_payout": 1000000,
+      "creator_refund": 0
+    }
+  ]
+}

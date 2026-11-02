@@ -1,0 +1,16 @@
+{
+  "approval_id": "997090b69bfab57932e714a7f73581d94be08ee23948d83baeebf766d669915d",
+  "signature": "4PW579j2PXvUjUZirK1K6JAyeibbTwMKwAHHgNJ4ozp5tkqjcUd9JNnxE9iMFM6eJm3TuWpZ18Yetv4LMEaahL1q",
+  "slot": 516676887,
+  "fee_lamports": 10000,
+  "payer_debit_lamports": 202986880,
+  "creator_funding_lamports": 100000000,
+  "agent_owner_funding_lamports": 100000000,
+  "ata_rent_lamports_each": 1488440,
+  "mint_pubkey": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "minted_base_units": "7100000",
+  "creator_ata": "GWUiSE1Ani84vm36SgUFFPRAdP1qwvHP4eL3fgidpVyn",
+  "agent_owner_ata": "BtVjXviRCkt1ezoKKmHvpbcWkfr5WDRTnNuJJDznLJPc",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "verification_status": "VERIFIED"
+}

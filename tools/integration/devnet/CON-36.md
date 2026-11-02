@@ -1,0 +1,87 @@
+# CON-36 — Devnet WorkOrder E2E
+
+## Baseline and reuse
+
+This work starts from `origin/master` commit `20ad98f7e3d39a78ca3d2379b53ef503d2a23b7b`, the CON-35 merge. The Anchor program, SPL settlement contract, Localnet five-scenario runner and CON-23/34 `SplSettlementReconciler` remain unchanged. The Localnet runner already supplies IDL encoding, PDA derivation, attestation hashing, balance checks and finalized transaction retrieval. The Devnet flow will reuse those patterns with explicit approval gates and the official Devnet RPC.
+
+## Read-only Devnet audit
+
+The official `https://api.devnet.solana.com` RPC returned genesis `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`. Program `CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy` is executable. Its canonical ProgramData is `7kYZxnujXJ9sKGhG9CbDwThJECb693WvvqVFHGmNSsrr`, upgrade authority `DdHrtAxE5SwcVQUgoKRzoWatZ5yw9UdtBQnRwBizPK2D`, and deployed bytes match the exact CON-35 approved SBF SHA-256 `6cf3412c55c38e91b2ba0039aea24d58782c5db0d18759ffdab1c88788cdc3a2` (zero loader padding excluded). The approved IDL SHA-256 is `a6e436aa1c6468b4f518b742e40a2664e38dcdf7bc1419e53e1624444888e15d`.
+
+The dedicated Devnet SPL test mint `HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh` is owned by legacy SPL Token Program `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`, has mint authority `4om6LcFXaZ2Wtbn3P2ZvvyqssXFQs1xjNmE2Fnj7mRHa`, six decimals and zero supply at this audit. It is neither USDC nor a production asset. `ProtocolConfig` PDA `C8HiYzxKjRcDFHoWSZ84smUsxnMQ7ipxPnQ96GK5qZVn` is absent. Fee payer `HRwPNBPzArvdCULMH1EFuUpxGw31CbRjyf1cGBz2zE2x` has 7,416,208,160 lamports; protocol admin `27cyzd58RswQRbSuR3cKh4xv2gWgZ7awb3tUtoT7hYLB` has zero. These balances and supply are point-in-time observations; the runner rechecks them.
+
+## ProtocolConfig initialization plan
+
+`initialize_protocol` initializes the singleton PDA with its own signer as authority and payer. It requires nonzero 32-byte `network_id` and `deployment_id`; it does not require the upgrade authority to sign. The planned authority is the preexisting CON-35 protocol admin, not the fee payer. The 32-byte network ID is the raw decoded Devnet genesis hash. The protocol deployment ID is the already approved CON-35 deployment fingerprint `06c7dfa7528460969a5ca1e8bd001f9c9f1f1f0df3d69fe36649e413e0b14ae6`: this is a unique deployment instance hash, independent of the Program ID, as described by `DeploymentContext`. Its use here was checked against that semantic meaning and the sealed deployment evidence; the CON-35 manifest is not modified.
+
+The [exact public plan](../../../evidence/con36/protocol-config-plan.json) has approval ID `5dbc0681980e3fcf78ad35f1548ccf6dd0751eb3a697b6dcc0bc0a6f137c21a6`. It combines a 3,000,000-lamport transfer from fee payer to admin and the Anchor initialization in **one atomic transaction**. The 155-byte PDA rent quote is 1,437,640 lamports; the minimum zero-data system-account rent quote is 650,240 lamports. An earlier 2,000,000-lamport simulation failed with `InsufficientFundsForRent` because the admin's remaining balance was too low; that plan was discarded before publication, with no submitted transaction. The corrected plan simulated successfully with two signatures, a 10,000-lamport fee quote and 7,716 compute units. The maximum fee allowed by the plan is 20,000 lamports, giving a **maximum payer debit of 3,020,000 lamports (0.00302 test SOL)**. The transfer is internal between test wallets; after account creation, 1,562,360 lamports remain with the admin if the quoted rent is unchanged.
+
+The admin and fee payer private keypairs are ignored by Git, stored in a `0700` directory as `0600` files, and have matching protected copies outside the repository. The runner checks both copies, bindings, pubkeys and genesis before signing. It sends nothing by default. `submit` required the exact approval ID as both a CLI argument and `CON36_APPROVED_PROTOCOL_CONFIG_ID`, rechecked live state and simulated before transmission. CON-35 deployment and mint approvals could not pass this gate. After explicit user approval, the one authorized Devnet transaction finalized with signature `3vn3dkM7k4JCZTxBWU1bnQZ4VUGyXMA5HCa52rte8WbUfb98w2jPGVYKHPtSa1ska9yFFq7H2FUkvHToKVLo1htR` in slot **516678954**. Its [public RPC evidence](../../../evidence/con36/protocol-config-verified.json) records a **10,000-lamport** fee, **3,010,000-lamport** payer debit, **1,437,640-lamport** PDA rent and **1,562,360-lamport** remaining admin balance. The verifier checked the finalized signature, both exact outer instructions, pre/post SOL balances and current on-chain account fields. Protocol version is 1, authority is the preexisting admin, network ID is the decoded Devnet genesis, deployment ID matches the approved CON-35 instance, agent count is zero and the protocol is unpaused. No second initialization was sent.
+
+Five additional test identities (creator, agent owner, device, shared-beneficiary device and verifier) were generated with [public role bindings](../../../evidence/con36/test-identities.json). Their private keypairs are ignored under `target/deploy/con36-private/`, backed up outside Git in the protected CON-36 wallet backup directory, and never printed. The [seven-order scenario inventory](../../../evidence/con36/scenario-plan.json) fixes distinct WorkOrder, agent and escrow PDAs, creator/operator token ATA addresses, payment models, expected exact base-unit allocations, and a duplicate-settlement target. Its `PREPARED_NOT_AUTHORIZED` field records the state when that immutable planning file was created; actual finalized operations are recorded separately below. Seven WorkOrders each needed 1,000,000 test-token base units, and a 100,000-unit escrow donation was assigned to the proportional scenario. Thus **7,100,000 base units (7.1 test tokens)** were reserved for the matrix.
+
+The separate [test asset funding plan](../../../evidence/con36/test-asset-plan.json) has approval ID `997090b69bfab57932e714a7f73581d94be08ee23948d83baeebf766d669915d`. It atomically funds the creator and agent owner with 100,000,000 lamports each, creates their two associated SPL Token accounts, and mints exactly 7,100,000 base units of the approved test mint to the creator ATA. The official RPC quoted 1,488,440 lamports of rent per ATA and a 10,000-lamport two-signature fee; the maximum payer debit was **202,996,880 lamports (0.20299688 test SOL)**, including a 20,000-lamport maximum fee. The signed transaction simulated successfully on Devnet, consuming 30,479 compute units. The fee payer and mint authority keypairs and matching backups are protected. `submit` required this second exact approval ID in both CLI and environment, with a live recheck and repeat simulation.
+
+After explicit approval of that exact ID, **one** transaction was sent exclusively to Devnet. [Its public RPC evidence](../../../evidence/con36/test-asset-verified.json) records signature `4PW579j2PXvUjUZirK1K6JAyeibbTwMKwAHHgNJ4ozp5tkqjcUd9JNnxE9iMFM6eJm3TuWpZ18Yetv4LMEaahL1q`, finalized slot **516676887**, fee **10,000 lamports** and actual payer debit **202,986,880 lamports**. The verifier checked all five outer instructions against the approved plan, pre/post SOL balances (both recipients received exactly 100,000,000 lamports; both ATAs were created with 1,488,440 lamports of rent), historical SPL token balances, current mint authority and supply. The creator ATA received exactly 7,100,000 base units; the owner ATA held zero. No other test asset transaction was sent. This approval did not cover ProtocolConfig or WorkOrder instructions.
+
+Inspection, verification and local preparation commands (none submits a transaction):
+
+```bash
+npm ci --prefix tools/bootstrap
+node --test tools/integration/devnet/test_*.cjs
+node tools/integration/devnet/prepare_wallets.cjs
+node tools/integration/devnet/prepare_scenarios.cjs
+node tools/integration/devnet/protocol_config.cjs inspect
+node tools/integration/devnet/protocol_config.cjs verify \
+  evidence/con36/protocol-config-plan.json \
+  3vn3dkM7k4JCZTxBWU1bnQZ4VUGyXMA5HCa52rte8WbUfb98w2jPGVYKHPtSa1ska9yFFq7H2FUkvHToKVLo1htR
+node tools/integration/devnet/asset_funding.cjs inspect
+node tools/integration/devnet/asset_funding.cjs verify \
+  evidence/con36/test-asset-plan.json \
+  4PW579j2PXvUjUZirK1K6JAyeibbTwMKwAHHgNJ4ozp5tkqjcUd9JNnxE9iMFM6eJm3TuWpZ18Yetv4LMEaahL1q
+```
+
+`prepare_wallets.cjs` only writes local protected keypairs and backups. The test asset and ProtocolConfig `prepare` and `simulate` gates correctly refuse to run again now that their target accounts exist. Their `verify` commands recheck finalized historical transactions without sending a second operation.
+
+No CI or pull request job executes `submit`.
+
+## First WorkOrder preparation
+
+The first scenario (`E2E-01-full`) has a separate [creation manifest](../../../evidence/con36/e2e-01-create-plan.json), approval ID `e53ac47d6c2bc32c7fabdb7f0d7a1b9299dbb6039802f5cd603fd1733353c0ad`. It fixes the creator, verifier, test mint, 1,000,000 base-unit fixed settlement amount, capabilities and evidence masks, manifest hash, deadlines, and WorkOrder PDA `2M2gMx8n5jDJ7ivKnLRxGVJepBAUst74vDuYZid4xRPr`. The official Devnet RPC quoted 3,622,040 lamports rent for the 585-byte account and a 5,000-lamport fee. The manifest caps the creator's debit at **3,632,040 lamports (0.00363204 test SOL)**. Creating the order does not move SPL tokens or make it claimable. A signed Devnet simulation succeeded using 13,928 compute units. After the user explicitly authorized this exact ID, the creation transaction finalized with signature `3xwiERTxLiVULUeEaWJvbrWTQFXc1qamxgHkhHxdMhy3f3MYg81vBv5T8TpQb5wcu5G7naAPVbFsRhPnfKDHjhXC` in slot **516889686**. The [public RPC evidence](../../../evidence/con36/e2e-01-create-verified.json) confirms a 5,000-lamport fee, 3,622,040-lamport WorkOrder rent and total creator debit of **3,627,040 lamports**. The on-chain PDA has the approved creator, verifier, mint, amount, hashes, deadlines and initial `Draft` status. No funding or subsequent phase was submitted with that authorization. The earlier asset and ProtocolConfig approvals did not authorize this step.
+
+`workorder_create.cjs` binds the instruction to the approved CON-35 IDL, rechecks genesis, active ProtocolConfig, account absence, rent, source token ownership and balances before simulation or submission, and requires the exact new approval ID in both the CLI and `CON36_APPROVED_WORKORDER_CREATE_ID` for submission. Its `verify` action checks a finalized JSON-RPC transaction, exact approved instruction and accounts, SOL balances, and the on-chain WorkOrder fields. The CI workflow rechecks that finalized creation. It has no transaction submission step.
+
+## Finalized WorkOrder matrix
+
+After authorizing the exact first creation ID, the user explicitly authorized completing the remaining CON-36 Devnet test operations. [Each transaction has a separate public manifest](../../../evidence/con36/matrix/plans/) containing genesis, program, mint, scenario, exact instruction data and accounts, payer, rent and fee limits, and a SHA-256 manifest ID. The runner checked the protected signers and live identities, simulated each instruction, bounded its fee to at most **20,000 lamports**, journaled the signature before sending, then required a finalized JSON-RPC transaction and the expected post-state. `inspect` is the default; `simulate` and `submit` are separate. `submit` requires `CON36_AUTHORIZED_MATRIX=true` and is never called by CI. A `SUBMITTING` journal entry stops automatic replay if a transmission outcome is uncertain.
+
+The final [public per-phase reports](../../../evidence/con36/matrix/) contain every signature, slot, transaction error, Anchor logs, SPL pre/post balances and fee. No local test keypair or SQLite database is committed. The total actual fee for the 53 matrix transactions was **370,000 lamports**; the separately approved first creation paid **5,000 lamports**. Each of the seven escrow vaults was created using the approved test mint and was empty after its settlement.
+
+| Scenario | Settlement slot | Operator payout | Creator refund | Additional observed result |
+| --- | ---: | ---: | ---: | --- |
+| E2E-01 full | 516890572 | 1,000,000 | 0 | Duplicate settlement rejected in slot 516890627 (`SettlementNotVerified`) |
+| E2E-02 zero | 516890840 | 0 | 1,000,000 | Fixed model did not pay for partial completion |
+| E2E-03 proportional | 516891051 | 600,000 | 500,000 | Includes 100,000 donated surplus returned to creator |
+| E2E-04 invalid shared | 516891303 | 600,000 | 400,000 | Invalid shared destination rejected in slot 516891275 (`SettlementInvalidCreatorRefund`); vault unchanged |
+| E2E-05 valid shared | 516891488 | 600,000 | 400,000 | Creator and frozen beneficiary share one ATA; it received 1,000,000 once |
+| E2E-06 invalid mint | 516891707 | 1,000,000 | 0 | Wrong mint rejected in slot 516891573 (`InvalidTokenMint`); then funded correctly |
+| E2E-07 wrong beneficiary | 517615528 | 1,000,000 | 0 | Wrong beneficiary rejected in slot 517615496 (`SettlementInvalidBeneficiary`); vault unchanged |
+
+All amounts in the table are base units of the six-decimal **Devnet-only test mint**. The wrong-mint test references the Devnet native mint only as an invalid account argument; it never holds or transfers that asset. The actual test mint supply remains **7,100,000 base units**. Finalized RPC balances are **2,900,000** in the creator ATA and **4,200,000** in the separate agent-owner ATA; together they equal the supply. The valid shared scenario returns its full escrow to the creator ATA because the creator is also the frozen beneficiary.
+
+## Read-only historical recovery and accounting
+
+`verify_matrix.py` recovers each of the 53 phase signatures with `getSignatureStatuses(searchTransactionHistory=true)` and `getTransaction(finalized)`, matches the exact manifest instruction and fee, and confirms the settlement signature in `getBlock`. It checks the four actual failed transactions and their unchanged balances. It then uses the existing CON-23/34 `SplSettlementReconciler` with the exact Devnet genesis and program to reconstruct seven `finalized` receipts. [The public reconciliation result](../../../evidence/con36/verified-matrix.json) records seven distinct effect IDs and evidence hashes, all `RECONCILED` with `LIVE_RPC` provenance. Immediate and concurrent replays returned the same movement IDs; after closing and reopening the isolated SQLite database, all seven signatures returned the same movements and hashes, with exactly seven movement rows. A later requery of the old E2E-01 signature recovered its original slot and hash. These are test-asset observations in an isolated SQLite file, **not production income**.
+
+The public RPC occasionally returned HTTP 429 during the matrix. `SolanaRpcClient` now retries only 429 and transient 5xx responses with bounded backoff; TLS validation, genesis checks, finality and all economic checks remain mandatory. On local Python 3.14, `SSL_CERT_FILE` must point to a trusted CA bundle (for example certifi) because that installation lacked its default certificate path. No certificate verification is disabled. A local Marketplace API regression initially lacked loopback socket permission in the sandbox; rerunning with loopback access passed all 65 tests.
+
+Read-only reproduction after installing the repository dependencies:
+
+```bash
+node --test tools/integration/devnet/test_*.cjs
+python3 -m unittest tools.integration.devnet.test_verify_matrix
+python3 -m tools.integration.devnet.verify_matrix \
+  target/con36/devnet-ledger.sqlite target/con36/recovered-matrix.json
+```
+
+The last command may take several minutes against the public RPC. It never signs or submits a transaction. `target/con36/` is ignored by Git. The CI workflow replays it with a fresh SQLite file, compares stable receipt fields to the committed public evidence, and uploads a read-only verification artifact.
