@@ -30,6 +30,8 @@ import json
 import logging
 import struct
 import time
+import random
+import threading
 from dataclasses import asdict, dataclass
 from typing import Any, Optional, Protocol, runtime_checkable
 import urllib.error
@@ -758,9 +760,24 @@ class SolanaRpcClientProtocol(Protocol):
 class SolanaRpcClient:
     """Production JSON-RPC client for querying authentic Solana nodes."""
 
-    def __init__(self, rpc_url: str = "http://127.0.0.1:8899", timeout: float = 10.0) -> None:
+    _pace_lock = threading.Lock()
+    _last_paced_request = 0.0
+
+    def __init__(self, rpc_url: str = "http://127.0.0.1:8899", timeout: float = 10.0,
+                 min_interval: float = 0.0) -> None:
         self.rpc_url = rpc_url.rstrip("/")
         self.timeout = timeout
+        self.min_interval = max(0.0, min_interval)
+
+    def _pace(self) -> None:
+        if not self.min_interval:
+            return
+        with SolanaRpcClient._pace_lock:
+            now = time.monotonic()
+            wait = SolanaRpcClient._last_paced_request + self.min_interval - now
+            if wait > 0:
+                time.sleep(wait)
+            SolanaRpcClient._last_paced_request = time.monotonic()
 
     def _call(self, method: str, params: Optional[list[Any]] = None) -> Any:
         body = json.dumps({
@@ -777,16 +794,25 @@ class SolanaRpcClient:
         )
         for attempt in range(6):
             try:
+                self._pace()
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 break
             except urllib.error.HTTPError as exc:
                 if exc.code in (429, 500, 502, 503, 504) and attempt < 5:
-                    time.sleep(min(0.5 * (2 ** attempt), 8.0))
+                    time.sleep(min(0.5 * (2 ** attempt), 8.0) * random.uniform(0.8, 1.2))
                     continue
                 raise RpcError(f"RPC HTTP error during '{method}': {exc}") from exc
             except urllib.error.URLError as exc:
+                if isinstance(exc.reason, TimeoutError) and attempt < 5:
+                    time.sleep(min(0.5 * (2 ** attempt), 8.0) * random.uniform(0.8, 1.2))
+                    continue
                 raise RpcError(f"RPC connection failed to '{self.rpc_url}': {exc}") from exc
+            except TimeoutError as exc:
+                if attempt < 5:
+                    time.sleep(min(0.5 * (2 ** attempt), 8.0) * random.uniform(0.8, 1.2))
+                    continue
+                raise RpcError(f"RPC timeout during '{method}': {exc}") from exc
             except Exception as exc:
                 raise RpcError(f"RPC error during '{method}': {exc}") from exc
 

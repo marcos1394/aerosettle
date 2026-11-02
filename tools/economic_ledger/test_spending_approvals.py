@@ -336,7 +336,7 @@ class ApprovalTests(unittest.TestCase):
                 AGENT_RECORD, proposal(old_policy), OWNER)[0]
             old.close()
         upgraded = EconomicLedger(old_path)
-        self.assertEqual(upgraded._conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 11)
+        self.assertEqual(upgraded._conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 12)
         self.assertIsNotNone(upgraded._conn.execute("SELECT name FROM sqlite_master WHERE name='spending_approvals'").fetchone())
         upgraded_policies = BudgetPolicyStore(upgraded)
         upgraded_decisions = SpendingDecisionStore(upgraded, upgraded_policies)
