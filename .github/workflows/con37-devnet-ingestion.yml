@@ -1,0 +1,54 @@
+name: CON-37 read-only Devnet ingestion
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con37-devnet-ingestion.yml
+      - tools/economic_ledger/**
+      - tools/integration/devnet/**
+      - tools/deployment/**
+      - evidence/con35/**
+      - evidence/con36/**
+      - evidence/con37/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  historical-rpc-replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
+      - run: python -m unittest tools.economic_ledger.test_devnet_ingestion
+      - run: python -m unittest tools.integration.devnet.test_verify_matrix
+      - name: Reconcile seven historical Devnet settlements with SQLite restart
+        run: |
+          python -m tools.integration.devnet.verify_ingestion \
+            "$RUNNER_TEMP/con37-ledger.sqlite" \
+            "$RUNNER_TEMP/con37-ingestion.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          expected = json.loads(Path('evidence/con37/verified-ingestion.json').read_text())
+          actual = json.loads((Path(os.environ['RUNNER_TEMP']) / 'con37-ingestion.json').read_text())
+          stable = ('network', 'genesis_hash', 'program_id', 'mint',
+                    'scenario_count', 'movement_count', 'effect_count',
+                    'observation_count', 'receipts')
+          assert {key: expected[key] for key in stable} == \
+                 {key: actual[key] for key in stable}
+          assert actual['scenario_count'] == actual['movement_count'] == 7
+          assert actual['effect_count'] == 14
+          assert all(actual[key] for key in (
+              'immediate_replay_idempotent', 'concurrent_replay_idempotent',
+              'sqlite_restart_idempotent', 'historical_rpc_reread_idempotent'))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con37-read-only-devnet-ingestion
+          path: ${{ runner.temp }}/con37-ingestion.json
+          retention-days: 90

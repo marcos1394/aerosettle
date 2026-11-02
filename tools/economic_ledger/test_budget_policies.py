@@ -282,7 +282,7 @@ class BudgetPolicyTests(unittest.TestCase):
             self.assertEqual(prior_ledger._conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 8)
             prior_ledger.close()
         upgraded = EconomicLedger(upgrade_path)
-        self.assertEqual(upgraded._conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 11)
+        self.assertEqual(upgraded._conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0], 12)
         upgraded.close()
         self.apply("CREATE", body())
         other_agent = {**AGENT_RECORD, "agent_account": MINT_TWO}
