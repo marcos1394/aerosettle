@@ -243,10 +243,11 @@ def generate_card(agent: dict, *, owner_private: Ed25519PrivateKey,
               "network": agent["network"], "genesisHash": agent["genesis_hash"],
               "programId": agent["program_id"], "organizationId": organization_id,
               "discoveryOnly": True}
+    interface_url = f"https://{host}/a2a/cards/{params['cardId']}"
     params["ownerSignature"] = b64(owner_private.sign(_binding_payload(
-        params, [skill["id"] for skill in skills], endpoint)))
+        params, [skill["id"] for skill in skills], interface_url)))
     card = {"name": name, "description": description,
-            "supportedInterfaces": [{"url": endpoint, "protocolBinding": DISCOVERY_BINDING,
+            "supportedInterfaces": [{"url": interface_url, "protocolBinding": DISCOVERY_BINDING,
                                      "protocolVersion": WIRE_VERSION}],
             "version": f"{card_version}.0.0",
             "capabilities": {"streaming": False, "pushNotifications": False,
@@ -310,7 +311,7 @@ def verify_conatus_card(card: dict, fresh_agent: dict, *, now: int | None = None
             normalized["version"] != str(params["cardVersion"]) + ".0.0" or
             len(normalized["supportedInterfaces"]) != 1 or
             interface["protocolBinding"] != DISCOVERY_BINDING or
-            urlsplit(interface["url"]).path != "/.well-known/agent-card.json" or
+            interface["url"] != f"https://{host}/a2a/cards/{params['cardId']}" or
             interface["protocolVersion"] != WIRE_VERSION):
         raise CardError("INVALID_IDENTITY")
     organization = params.get("organizationId")

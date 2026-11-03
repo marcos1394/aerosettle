@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from a2a.client import ClientFactory
 from a2a.types import AgentCard
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from google.protobuf.json_format import ParseDict
@@ -18,6 +19,10 @@ from tools.a2a.cards import (CardError, DISCOVERY_BINDING, EXTENSION_URI, b64, b
 from tools.a2a.catalog import CardCatalog, DiscoveryIdentitySource
 from tools.a2a.client import A2ADiscoveryClient, TrustAnchor
 from tools.a2a.service import route
+from tools.a2a.trust import (APPROVED_IDL, GENESIS_HASH, NETWORK, PROGRAM_ID,
+    PROGRAM_DATA_ADDRESS, RPC_URL, UPGRADE_AUTHORITY, DEPLOYMENT_SLOT,
+    VERIFIED_MANIFEST, verify_approved_identity)
+from tools.discovery.agent_discovery import find_program_address
 
 DOMAIN = "agent.example.test"
 PUBLIC_IP = "93.184.216.34"
@@ -68,6 +73,10 @@ class CardTests(unittest.TestCase):
                                                  now=100)), 1)
         self.assertEqual(route("/.well-known/agent-card.json", DOMAIN, self.catalog,
                                now=100)[0], 200)
+        self.assertEqual(route(f"/a2a/cards/{self.card_id}", DOMAIN, self.catalog,
+                               now=100)[1], self.card)
+        self.assertEqual(self.card["supportedInterfaces"][0]["url"],
+                         f"https://{DOMAIN}/a2a/cards/{self.card_id}")
         self.assertEqual(route("/a2a/cards", DOMAIN, self.catalog, now=100)[1]
                          ["is_executable"], False)
         self.assertEqual(route(f"/a2a/cards/{self.card_id}/verify", DOMAIN,
@@ -192,6 +201,14 @@ class CardTests(unittest.TestCase):
         self.assertEqual(negotiate(self.card, trusted=True, modalities=("image/png",), now=100)["status"],
                          "UNSUPPORTED_MODALITY")
         self.assertFalse(negotiate(self.card, trusted=True, now=100)["is_executable"])
+        official_model = ParseDict(self.card, AgentCard(), ignore_unknown_fields=False)
+        with self.assertRaisesRegex(ValueError, "no compatible transports"):
+            ClientFactory().create(official_model)
+        self.assertEqual(negotiate(self.card, trusted=True,
+            transports=("JSONRPC", "HTTP+JSON", "GRPC"), now=100)["status"],
+            "UNSUPPORTED_TRANSPORT")
+        self.assertFalse(verify_conatus_card(self.card, self.agent, now=100)
+                         ["is_financial_authority"])
 
     def _client(self, *, resolver=None, transport=None, anchor=None, source=True):
         anchor = anchor if anchor is not None else TrustAnchor(DOMAIN,
@@ -255,24 +272,78 @@ class CardTests(unittest.TestCase):
         finally:
             operational.close()
 
-    def test_finalized_identity_source_rejects_wrong_or_changing_genesis(self):
-        source = DiscoveryIdentitySource.__new__(DiscoveryIdentitySource)
-        source.network = "devnet"
-        source.expected_genesis = self.agent["genesis_hash"]
-        source.idl = object()
-        snapshot = {"protocol_paused": False, "agents": [self.agent],
-                    "program_id": self.agent["program_id"]}
+    def test_pinned_devnet_policy_rejects_altered_idl_and_manifest(self):
+        self.assertEqual(verify_approved_identity(APPROVED_IDL, RPC_URL)["address"],
+                         PROGRAM_ID)
+        approved = json.loads(APPROVED_IDL.read_text())
+        alternate = {**approved, "address": b58encode(b"z" * 32)}
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "alternate.json"
+            path.write_bytes(APPROVED_IDL.read_bytes())
+            pinned = DiscoveryIdentitySource(RPC_URL, path)
+            path.write_text(json.dumps(alternate))
+            with patch.object(pinned.rpc, "call") as rpc_call:
+                self.assert_code("INVALID_TRUST_POLICY", lambda:
+                    pinned(self.agent["agent_account"]))
+                rpc_call.assert_not_called()
+            path.write_text(json.dumps(alternate))
+            self.assert_code("INVALID_TRUST_POLICY", lambda:
+                DiscoveryIdentitySource(RPC_URL, path))
+            changed = deepcopy(approved)
+            changed["metadata"]["version"] = "9.9.9"
+            path.write_text(json.dumps(changed))
+            self.assert_code("INVALID_TRUST_POLICY", lambda:
+                DiscoveryIdentitySource(RPC_URL, path))
+            manifest = json.loads(VERIFIED_MANIFEST.read_text())
+            manifest["program_id"] = alternate["address"]
+            path.write_text(json.dumps(manifest))
+            with patch("tools.a2a.trust.VERIFIED_MANIFEST", path):
+                self.assert_code("INVALID_TRUST_POLICY", lambda:
+                    DiscoveryIdentitySource(RPC_URL, APPROVED_IDL))
+        self.assert_code("INVALID_TRUST_POLICY", lambda:
+            DiscoveryIdentitySource("https://unapproved-rpc.example", APPROVED_IDL))
+
+    def test_finalized_identity_source_rejects_alternate_program_same_genesis(self):
+        source = DiscoveryIdentitySource(RPC_URL, APPROVED_IDL)
+        agent = {**self.agent, "network": NETWORK, "genesis_hash": GENESIS_HASH,
+                 "program_id": PROGRAM_ID}
+        snapshot = {"protocol_paused": False, "agents": [agent],
+                    "program_id": PROGRAM_ID, "commitment": "finalized",
+                    "protocol_config": find_program_address([b"protocol_config"], PROGRAM_ID)}
         class FakeRpc:
-            genesis = self.agent["genesis_hash"]
+            genesis = GENESIS_HASH
+            url = RPC_URL
             def call(self, *_):
                 return self.genesis
         source.rpc = FakeRpc()
-        with patch("tools.a2a.catalog.discover", return_value=snapshot) as discovery:
+        observed = {"exists": True, "program_id": PROGRAM_ID,
+                    "program_data_address": PROGRAM_DATA_ADDRESS,
+                    "upgrade_authority_pubkey": UPGRADE_AUTHORITY,
+                    "deployment_slot": DEPLOYMENT_SLOT, "executable": True}
+        with patch("tools.a2a.catalog.discover", return_value=snapshot) as discovery, \
+             patch("tools.a2a.trust.inspect_program", return_value=observed):
             self.assertEqual(source(self.agent["agent_account"])["agent_id"],
                              self.agent["agent_id"])
             self.assertEqual(discovery.call_args.kwargs["commitment"], "finalized")
+            snapshot["program_id"] = b58encode(b"z" * 32)
+            self.assert_code("INVALID_IDENTITY", lambda: source(self.agent["agent_account"]))
+            snapshot["program_id"] = PROGRAM_ID
             source.rpc.genesis = b58encode(b"z" * 32)
             self.assert_code("INVALID_NETWORK", lambda: source(self.agent["agent_account"]))
+            source.rpc.genesis = GENESIS_HASH
+            observed["upgrade_authority_pubkey"] = b58encode(b"z" * 32)
+            self.assert_code("INVALID_IDENTITY", lambda: source(self.agent["agent_account"]))
+            observed["upgrade_authority_pubkey"] = UPGRADE_AUTHORITY
+            altered_program = {**observed, "deployment_slot": DEPLOYMENT_SLOT + 1}
+            with patch("tools.a2a.trust.inspect_program",
+                       side_effect=[observed, altered_program]):
+                self.assert_code("INVALID_IDENTITY", lambda:
+                    source(self.agent["agent_account"]))
+            with patch("tools.a2a.catalog.verify_approved_identity",
+                       side_effect=[approved := verify_approved_identity(APPROVED_IDL, RPC_URL),
+                                    CardError("INVALID_TRUST_POLICY")]):
+                self.assert_code("INVALID_TRUST_POLICY", lambda:
+                    source(self.agent["agent_account"]))
 
 
 if __name__ == "__main__":

@@ -11,37 +11,51 @@ import time
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from tools.discovery.agent_discovery import DiscoveryError, Idl, Rpc, b58decode, discover
+from tools.discovery.agent_discovery import (DiscoveryError, Idl,
+    b58decode, find_program_address, discover)
+from tools.deployment.devnet import Rpc
 from tools.operations.structured_logs import correlation_id, emit, new_trace_id
 from .cards import (CardError, b64, canonical, identity_params, unb64,
                     validate_card, verify_conatus_card)
+from .trust import (GENESIS_HASH, NETWORK, PROGRAM_ID, RPC_URL,
+    verify_approved_identity, verify_live_program)
 
 
 class DiscoveryIdentitySource:
     """Reuse CON-18/21 IDL/PDA validation at finalized commitment."""
-    def __init__(self, rpc_url: str, idl_path: Path, network: str,
-                 expected_genesis: str):
+    def __init__(self, rpc_url: str, idl_path: Path):
+        self.idl_path = Path(idl_path)
+        self.idl = Idl(verify_approved_identity(self.idl_path, rpc_url))
+        if self.idl.address != PROGRAM_ID:
+            raise CardError("INVALID_TRUST_POLICY")
         self.rpc = Rpc(rpc_url)
-        self.idl = Idl(json.loads(Path(idl_path).read_text()))
-        self.network = network
-        b58decode(expected_genesis, 32)
-        self.expected_genesis = expected_genesis
 
     def __call__(self, agent_account: str) -> dict | None:
-        if self.rpc.call("getGenesisHash", []) != self.expected_genesis:
+        verify_approved_identity(self.idl_path, self.rpc.url)
+        if self.idl.address != PROGRAM_ID or self.rpc.url != RPC_URL:
+            raise CardError("INVALID_TRUST_POLICY")
+        if self.rpc.call("getGenesisHash", []) != GENESIS_HASH:
             raise CardError("INVALID_NETWORK")
+        verify_live_program(self.rpc)
         snapshot = discover(self.rpc, self.idl, commitment="finalized")
+        if (snapshot.get("program_id") != PROGRAM_ID or
+                snapshot.get("protocol_config") !=
+                find_program_address([b"protocol_config"], PROGRAM_ID) or
+                snapshot.get("commitment") != "finalized"):
+            raise CardError("INVALID_IDENTITY")
         if snapshot["protocol_paused"]:
             return None
         genesis = self.rpc.call("getGenesisHash", [])
-        if genesis != self.expected_genesis:
+        verify_approved_identity(self.idl_path, self.rpc.url)
+        verify_live_program(self.rpc)
+        if genesis != GENESIS_HASH:
             raise CardError("INVALID_NETWORK")
         matches = [item for item in snapshot["agents"]
                    if item["agent_account"] == agent_account]
         if len(matches) != 1:
             return None
-        return {**matches[0], "network": self.network, "genesis_hash": genesis,
-                "program_id": snapshot["program_id"]}
+        return {**matches[0], "network": NETWORK, "genesis_hash": GENESIS_HASH,
+                "program_id": PROGRAM_ID}
 
 
 class CardCatalog:

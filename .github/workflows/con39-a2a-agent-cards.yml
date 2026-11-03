@@ -35,6 +35,10 @@ jobs:
           result = json.load(open('con39-demo.json'))
           assert result['verification_status'] == 'VERIFIED_DISCOVERY_ONLY'
           assert result['is_executable'] is False
+          assert result['is_financial_authority'] is False
+          assert result['standard_client_status'] == 'UNSUPPORTED_TRANSPORT'
+          assert result['binding_get_verified'] is True
+          assert result['binding_post_status'] == 405
           assert result['funds_transferred'] is False
           assert result['skills']
           PY

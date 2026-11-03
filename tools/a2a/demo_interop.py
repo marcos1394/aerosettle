@@ -7,8 +7,10 @@ import json
 from pathlib import Path
 import tempfile
 import threading
+import urllib.error
 import urllib.request
 
+from a2a.client import ClientFactory
 from a2a.types import AgentCard
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from google.protobuf.json_format import ParseDict
@@ -54,13 +56,41 @@ def demonstrate() -> dict:
                 selected = negotiate(fetched, trusted=True)
                 if selected["status"] != "SUPPORTED" or selected["is_executable"]:
                     raise AssertionError("Discovery-only interface negotiation failed")
+                try:
+                    ClientFactory().create(independent)
+                except ValueError as exc:
+                    if "no compatible transports" not in str(exc):
+                        raise
+                else:
+                    raise AssertionError("A standard task client accepted a discovery-only binding")
+                binding_path = selected["interface"]["url"].split(HOST, 1)[1]
+                binding_request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}{binding_path}",
+                    headers={"Host": HOST, "Accept": "application/json"})
+                with urllib.request.urlopen(binding_request, timeout=3) as response:
+                    if json.loads(response.read()) != fetched:
+                        raise AssertionError("Custom GET binding returned a different card")
+                task_request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}{binding_path}",
+                    data=b"{}", headers={"Host": HOST, "Content-Type": "application/json"})
+                try:
+                    urllib.request.urlopen(task_request, timeout=3)
+                except urllib.error.HTTPError as exc:
+                    if exc.code != 405:
+                        raise AssertionError("Custom binding did not reject POST") from exc
+                else:
+                    raise AssertionError("Custom binding accepted a POST")
                 return {"schema": "A2A AgentCard 1.0", "sdk": "a2a-sdk 1.3.0",
                         "well_known": "/.well-known/agent-card.json",
                         "card_sha256": hashlib.sha256(canonical(fetched)).hexdigest(),
                         "card_id": identity_params(fetched)["cardId"],
                         "verification_status": verified["status"],
                         "selected_binding": selected["interface"]["protocolBinding"],
+                        "standard_client_status": "UNSUPPORTED_TRANSPORT",
+                        "binding_get_verified": True,
+                        "binding_post_status": 405,
                         "skills": selected["skills"], "is_executable": False,
+                        "is_financial_authority": False,
                         "funds_transferred": False}
             finally:
                 server.shutdown()
