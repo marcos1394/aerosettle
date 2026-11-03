@@ -11,7 +11,7 @@ from unittest.mock import patch
 from tools.economic_ledger.devnet_ingestion import (
     DevnetIngestor, IngestionError, IngestionGap, IngestionIntegrityError,
     PendingFinality, Scope, UnavailableHistory, discover,
-    validate_scope,
+    validate_scope, _failed_anchor_code,
 )
 from tools.economic_ledger.spl_reconciler import (
     MockRpcClient, RpcError, SolanaRpcClient, SETTLE_WORK_ORDER_DISCRIMINATOR,
@@ -91,6 +91,16 @@ class DiscoveryTests(unittest.TestCase):
                 rpc.get_genesis_hash()
         self.assertEqual(send.call_count, 6)
         self.assertEqual(pause.call_count, 5)
+
+    def test_anchor_error_code_requires_program_and_log_evidence(self) -> None:
+        tx = {"transaction": {"message": {"accountKeys": [
+            "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"],
+            "instructions": [{"programIdIndex": 0}]}},
+            "meta": {"err": {"InstructionError": [0, {"Custom": 6001}]},
+                     "logMessages": ["Program log: AnchorError occurred. Error Number: 6001"]}}
+        self.assertEqual(_failed_anchor_code(tx), "ANCHOR_6001")
+        tx["transaction"]["message"]["accountKeys"] = ["foreign-program"]
+        self.assertIsNone(_failed_anchor_code(tx))
 
 
 class PersistenceTests(unittest.TestCase):

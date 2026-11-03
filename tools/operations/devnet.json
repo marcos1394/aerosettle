@@ -1,0 +1,39 @@
+{
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "rpc_url": "https://api.devnet.solana.com",
+  "provider_id": "official-devnet",
+  "low_balance_lamports": 50000000,
+  "checkpoint_stall_seconds": 3600,
+  "sample_retention_seconds": 604800,
+  "active_scope_ids": [],
+  "rpc": {
+    "max_requests_per_minute": 120,
+    "max_concurrency": 2,
+    "failure_threshold": 3,
+    "cooldown_seconds": 30,
+    "retry_budget": 2,
+    "timeout_seconds": 20,
+    "min_interval_seconds": 0.3
+  },
+  "rules": [
+    {"rule_id":"rpc_error_rate","metric":"rpc_error_fraction","comparison":"GT","threshold":0.05,"severity":"WARNING","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"persistent_429","metric":"rpc_429_window_count","comparison":"GTE","threshold":3,"severity":"WARNING","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"rpc_latency","metric":"rpc_p95_ms","comparison":"GT","threshold":2000,"severity":"WARNING","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"index_backlog","metric":"known_backlog_age_seconds","comparison":"GT","threshold":300,"severity":"WARNING","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"checkpoint_stalled","metric":"checkpoint_stalled_count","comparison":"GT","threshold":0,"severity":"WARNING","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"economic_difference","metric":"economic_difference_count","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"reconciliation_error","metric":"reconciliation_error_count","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"duplicate_effect","metric":"duplicate_effect_count","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"rpc_gap","metric":"rpc_gap_count","comparison":"GT","threshold":0,"severity":"WARNING","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"test_wallet_low","metric":"test_wallet_balance_lamports","comparison":"LT","threshold":50000000,"severity":"WARNING","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"genesis_changed","metric":"genesis_mismatch","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"program_changed","metric":"program_mismatch","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"programdata_changed","metric":"programdata_mismatch","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"upgrade_authority_changed","metric":"upgrade_authority_mismatch","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"mint_changed","metric":"mint_mismatch","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1},
+    {"rule_id":"protocol_config_changed","metric":"protocol_config_mismatch","comparison":"GT","threshold":0,"severity":"CRITICAL","window_seconds":300,"min_samples":1,"enabled":1}
+  ]
+}
