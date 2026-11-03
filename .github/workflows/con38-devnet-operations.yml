@@ -1,0 +1,99 @@
+name: CON-38 read-only Devnet operations
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con38-devnet-operations.yml
+      - tools/operations/**
+      - tools/economic_ledger/**
+      - tools/deployment/**
+      - evidence/con35/**
+      - evidence/con36/**
+      - requirements.txt
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  operational-safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt -r tools/deployment/requirements.txt
+      - run: python -m unittest discover -s tools/operations
+      - run: python -m unittest discover -s tools/economic_ledger
+      - run: python -m unittest discover -s tools/deployment
+      - run: python -m unittest tools.integration.devnet.test_verify_matrix
+      - name: Health without an RPC dependency
+        run: python -m tools.operations.cli health --output "$RUNNER_TEMP/con38-health.json"
+      - name: Inspect approved Devnet identity with real read-only JSON-RPC
+        run: |
+          python -m tools.operations.cli inspect \
+            --db "$RUNNER_TEMP/con38-operations.sqlite" \
+            --output "$RUNNER_TEMP/con38-inspect.json"
+      - name: Missing Economic Ledger must fail readiness closed
+        run: |
+          set +e
+          python -m tools.operations.cli readiness \
+            --db "$RUNNER_TEMP/con38-operations.sqlite" \
+            --ledger-db "$RUNNER_TEMP/absent-ledger.sqlite" \
+            --output "$RUNNER_TEMP/con38-readiness.json"
+          status=$?
+          set -e
+          test "$status" -eq 2
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          base = Path(os.environ['RUNNER_TEMP'])
+          health = json.loads((base / 'con38-health.json').read_text())
+          inspect = json.loads((base / 'con38-inspect.json').read_text())
+          readiness = json.loads((base / 'con38-readiness.json').read_text())
+          assert health['status'] == 'HEALTHY'
+          assert all(item['status'] == 'MATCH' for item in inspect['identity_checks'].values())
+          assert readiness['status'] == 'NOT_READY'
+          assert readiness['checks']['economic_ledger'] == 'FAILED'
+          PY
+      - name: Export bounded operational evidence
+        run: |
+          python -m tools.integration.devnet.verify_ingestion \
+            "$RUNNER_TEMP/con38-ledger.sqlite" \
+            "$RUNNER_TEMP/con38-ingestion.json"
+          python -m tools.operations.cli readiness \
+            --db "$RUNNER_TEMP/con38-operations.sqlite" \
+            --ledger-db "$RUNNER_TEMP/con38-ledger.sqlite" \
+            --output "$RUNNER_TEMP/con38-positive-readiness.json"
+          python -m tools.operations.cli alerts \
+            --db "$RUNNER_TEMP/con38-operations.sqlite" \
+            --ledger-db "$RUNNER_TEMP/con38-ledger.sqlite" \
+            --output "$RUNNER_TEMP/con38-alerts.json"
+          python -m tools.operations.cli metrics \
+            --db "$RUNNER_TEMP/con38-operations.sqlite" \
+            --ledger-db "$RUNNER_TEMP/con38-ledger.sqlite" \
+            --output "$RUNNER_TEMP/con38-metrics.json"
+          python -m tools.operations.cli report \
+            --db "$RUNNER_TEMP/con38-operations.sqlite" \
+            --ledger-db "$RUNNER_TEMP/con38-ledger.sqlite" \
+            --output "$RUNNER_TEMP/con38-report.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          base = Path(os.environ['RUNNER_TEMP'])
+          ready = json.loads((base / 'con38-positive-readiness.json').read_text())
+          alerts = json.loads((base / 'con38-alerts.json').read_text())
+          metrics = json.loads((base / 'con38-metrics.json').read_text())
+          assert ready['status'] == 'HEALTHY'
+          assert alerts['alerts'] == []
+          assert metrics['ledger']['metrics']['movements_reconciled']['value'] == 7
+          assert metrics['ledger']['metrics']['economic_effects']['value'] == 14
+          assert metrics['ledger']['metrics']['duplicate_effect_count']['value'] == 0
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con38-read-only-devnet-operations
+          path: ${{ runner.temp }}/con38-*.json
+          retention-days: 90

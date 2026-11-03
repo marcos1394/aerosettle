@@ -10,9 +10,11 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 import sqlite3
 import sys
 import time
+import uuid
 from typing import Any
 
 from tools.deployment import devnet, test_mint
@@ -210,6 +212,32 @@ def _settlement_indices(tx: dict, program_id: str) -> list[int]:
     return result
 
 
+def _failed_anchor_code(tx: dict) -> str | None:
+    error = tx.get("meta", {}).get("err")
+    if not isinstance(error, dict) or not isinstance(error.get("InstructionError"), list):
+        return None
+    values = error["InstructionError"]
+    if len(values) != 2 or type(values[0]) is not int:
+        return None
+    message = tx.get("transaction", {}).get("message", {})
+    keys = [key.get("pubkey") if isinstance(key, dict) else key
+            for key in message.get("accountKeys", [])]
+    instructions = message.get("instructions", [])
+    if not 0 <= values[0] < len(instructions):
+        return None
+    program_index = instructions[values[0]].get("programIdIndex")
+    if type(program_index) is not int or not 0 <= program_index < len(keys) or \
+            keys[program_index] != PROGRAM:
+        return None
+    for line in tx["meta"].get("logMessages") or []:
+        if not isinstance(line, str) or "AnchorError" not in line:
+            continue
+        match = re.search(r"Error Number: ([0-9]{1,6})\b", line)
+        if match:
+            return "ANCHOR_" + match.group(1)
+    return None
+
+
 class DevnetIngestor:
     def __init__(self, db_path: Path, rpc: SolanaRpcClient | None = None) -> None:
         self.rpc = rpc or SolanaRpcClient(RPC_URL, timeout=20, min_interval=0.3)
@@ -222,6 +250,7 @@ class DevnetIngestor:
                                      reconciliation_verifier=self.reconciler)
         self.db = self.ledger._conn
         self._preflight_done = False
+        self.trace_id = uuid.uuid4().hex
 
     def close(self) -> None:
         self.ledger.close()
@@ -368,13 +397,23 @@ class DevnetIngestor:
             raise
 
     def _log_observation(self, scope: Scope, item: dict, status: str,
-                         *, duplicate: bool = False, category: str | None = None) -> None:
+                         *, duplicate: bool = False, category: str | None = None,
+                         duration_ms: float | None = None) -> None:
         observation = self.db.execute("""SELECT attempt_count,event_count FROM
             ingestion_observations WHERE scope_id=? AND signature=?""",
             (scope.scope_id, item["signature"])).fetchone()
         checkpoint = self.db.execute("""SELECT last_processed_signature,checkpoint_status
             FROM ingestion_checkpoints WHERE scope_id=?""", (scope.scope_id,)).fetchone()
-        print(json.dumps({"ingestion_scope": scope.label, "network": NETWORK,
+        correlation = hashlib.sha256(
+            f"{scope.label}|{item['signature']}".encode()).hexdigest()[:32]
+        print(json.dumps({"timestamp": time.time(), "severity":
+            "ERROR" if category else "INFO", "component": "devnet_ingestion",
+            "operation": "process_signature", "correlation_id": correlation,
+            "trace_id": self.trace_id, "genesis_hash": GENESIS,
+            "program_id": PROGRAM, "work_order_pda": scope.work_order,
+            "transaction_signature": item["signature"], "checkpoint_id": scope.scope_id,
+            "duration_ms": duration_ms, "status": status, "error_code": category,
+            "ingestion_scope": scope.label, "network": NETWORK,
             "slot": item["slot"], "signature": item["signature"],
             "processing_status": status, "attempt_count": observation[0],
             "event_count": observation[1], "duplicate": duplicate,
@@ -403,7 +442,8 @@ class DevnetIngestor:
         lag_seconds = max(0, int(time.time()) - block_time) if type(block_time) is int else None
         if tx["meta"]["err"] is not None:
             duplicate = self._store(scope, signature, slot, "UNVERIFIABLE",
-                                    category="TRANSACTION_FAILED", lag_seconds=lag_seconds)
+                                    category=_failed_anchor_code(tx) or "TRANSACTION_FAILED",
+                                    lag_seconds=lag_seconds)
             return "UNVERIFIABLE", duplicate
         indices = _settlement_indices(tx, PROGRAM)
         if not indices:
@@ -461,6 +501,7 @@ class DevnetIngestor:
         metrics["discovered"] = len(items)
         self._stage_discovered(scope, items)
         for item in items:
+            started = time.monotonic()
             try:
                 outcome, duplicate = self._process(scope, item)
                 metrics["duplicates"] += int(duplicate)
@@ -468,7 +509,8 @@ class DevnetIngestor:
                     metrics["reconciled"] += 1
                 else:
                     metrics["finalized"] += 1
-                self._log_observation(scope, item, outcome, duplicate=duplicate)
+                self._log_observation(scope, item, outcome, duplicate=duplicate,
+                                      duration_ms=(time.monotonic() - started) * 1000)
             except Exception as exc:
                 category = ("RPC_ERROR" if isinstance(exc, RpcError) else
                             "GAP" if isinstance(exc, IngestionGap) else
@@ -481,7 +523,8 @@ class DevnetIngestor:
                 self._incident(scope, item["signature"], item["slot"], category,
                                f"{type(exc).__name__}: {exc}",
                                observation_status=observation_status)
-                self._log_observation(scope, item, observation_status, category=category)
+                self._log_observation(scope, item, observation_status, category=category,
+                                      duration_ms=(time.monotonic() - started) * 1000)
                 break
         if not items:
             self.db.execute("""UPDATE ingestion_checkpoints SET

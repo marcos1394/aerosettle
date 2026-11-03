@@ -764,10 +764,16 @@ class SolanaRpcClient:
     _last_paced_request = 0.0
 
     def __init__(self, rpc_url: str = "http://127.0.0.1:8899", timeout: float = 10.0,
-                 min_interval: float = 0.0) -> None:
+                 min_interval: float = 0.0, *, max_attempts: int = 6,
+                 request_gate: Any = None, request_observer: Any = None) -> None:
+        if not 1 <= max_attempts <= 6:
+            raise ValueError("RPC max_attempts must be between 1 and 6")
         self.rpc_url = rpc_url.rstrip("/")
         self.timeout = timeout
         self.min_interval = max(0.0, min_interval)
+        self.max_attempts = max_attempts
+        self.request_gate = request_gate
+        self.request_observer = request_observer
 
     def _pace(self) -> None:
         if not self.min_interval:
@@ -780,6 +786,35 @@ class SolanaRpcClient:
             SolanaRpcClient._last_paced_request = time.monotonic()
 
     def _call(self, method: str, params: Optional[list[Any]] = None) -> Any:
+        if self.request_gate is not None:
+            self.request_gate.before_call()
+        started = time.monotonic()
+        counters = {"retries": 0, "http_429": 0, "http_5xx": 0, "timeouts": 0}
+        error_code = None
+        success = False
+        try:
+            result = self._transport_call(method, params, counters)
+            success = True
+            return result
+        except RpcError as exc:
+            error_code = ("HTTP_429" if counters["http_429"] else
+                          "HTTP_5XX" if counters["http_5xx"] else
+                          "TIMEOUT" if counters["timeouts"] else
+                          "RPC_ERROR")
+            raise
+        finally:
+            elapsed_ms = (time.monotonic() - started) * 1000
+            if self.request_gate is not None:
+                self.request_gate.after_call(success, error_code)
+            if self.request_observer is not None:
+                try:
+                    self.request_observer(method, elapsed_ms, success, error_code,
+                                          dict(counters))
+                except Exception:
+                    pass  # Telemetry must not change the RPC result.
+
+    def _transport_call(self, method: str, params: Optional[list[Any]],
+                        counters: dict[str, int]) -> Any:
         body = json.dumps({
             "jsonrpc": "2.0",
             "id": int(time.time() * 1000) % 1_000_000,
@@ -792,24 +827,34 @@ class SolanaRpcClient:
             data=body,
             headers={"Content-Type": "application/json"},
         )
-        for attempt in range(6):
+        for attempt in range(self.max_attempts):
             try:
                 self._pace()
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 break
             except urllib.error.HTTPError as exc:
-                if exc.code in (429, 500, 502, 503, 504) and attempt < 5:
+                if exc.code == 429:
+                    counters["http_429"] += 1
+                elif exc.code in (500, 502, 503, 504):
+                    counters["http_5xx"] += 1
+                if exc.code in (429, 500, 502, 503, 504) and attempt + 1 < self.max_attempts:
+                    counters["retries"] += 1
                     time.sleep(min(0.5 * (2 ** attempt), 8.0) * random.uniform(0.8, 1.2))
                     continue
                 raise RpcError(f"RPC HTTP error during '{method}': {exc}") from exc
             except urllib.error.URLError as exc:
-                if isinstance(exc.reason, TimeoutError) and attempt < 5:
+                if isinstance(exc.reason, TimeoutError):
+                    counters["timeouts"] += 1
+                if isinstance(exc.reason, TimeoutError) and attempt + 1 < self.max_attempts:
+                    counters["retries"] += 1
                     time.sleep(min(0.5 * (2 ** attempt), 8.0) * random.uniform(0.8, 1.2))
                     continue
                 raise RpcError(f"RPC connection failed to '{self.rpc_url}': {exc}") from exc
             except TimeoutError as exc:
-                if attempt < 5:
+                counters["timeouts"] += 1
+                if attempt + 1 < self.max_attempts:
+                    counters["retries"] += 1
                     time.sleep(min(0.5 * (2 ** attempt), 8.0) * random.uniform(0.8, 1.2))
                     continue
                 raise RpcError(f"RPC timeout during '{method}': {exc}") from exc
