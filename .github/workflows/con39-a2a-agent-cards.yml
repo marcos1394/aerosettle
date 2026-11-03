@@ -1,0 +1,91 @@
+name: CON-39 A2A Agent Cards
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con39-a2a-agent-cards.yml
+      - requirements.txt
+      - tools/a2a/**
+      - tools/discovery/**
+      - tools/organizations/**
+      - tools/operations/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: cargo +1.89.0 build --example marketplace_match_bridge
+      - name: A2A schema, authenticity, catalog, client and adversarial tests
+        run: python -m unittest discover -s tools/a2a
+      - name: Independent A2A SDK discovery demonstration
+        run: python -m tools.a2a.demo_interop > con39-demo.json
+      - name: Assert discovery only, with no financial authority
+        run: |
+          python - <<'PY'
+          import json
+          result = json.load(open('con39-demo.json'))
+          assert result['verification_status'] == 'VERIFIED_DISCOVERY_ONLY'
+          assert result['is_executable'] is False
+          assert result['is_financial_authority'] is False
+          assert result['standard_client_status'] == 'UNSUPPORTED_TRANSPORT'
+          assert result['binding_get_verified'] is True
+          assert result['binding_post_status'] == 405
+          assert result['funds_transferred'] is False
+          assert result['skills']
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con39-offline-interop-demo
+          path: con39-demo.json
+      - name: CON-34 through CON-38 Python regressions
+        run: |
+          python -m unittest discover -s tools/discovery
+          python -m unittest discover -s tools/organizations
+          python -m unittest discover -s tools/governance
+          python -m unittest discover -s tools/economic_ledger
+          python -m unittest discover -s tools/operations
+          python -m unittest discover -s tools/integration/devnet
+          PYTHONPATH=tools/marketplace_api:tools/discovery:. python -m unittest discover -s tools/marketplace_api
+  javascript:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix packages/transaction-sdk --omit=optional
+      - run: npm ci --prefix packages/marketplace-sdk
+      - run: npm ci --prefix apps/marketplace-web
+      - name: Prepare ignored Localnet web fixtures
+        run: |
+          cp tools/integration/localnet/aerosettle-idl.json apps/marketplace-web/src/localnet-idl.json
+          cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
+      - run: npm test --prefix packages/transaction-sdk
+      - run: npm test --prefix packages/marketplace-sdk
+      - run: npm test --prefix apps/marketplace-web
+      - run: npm run build --prefix apps/marketplace-web
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: rustup default 1.89.0
+      - name: Install pinned Agave CLI
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/agave.tar.bz2" \
+            https://github.com/anza-xyz/agave/releases/download/v4.1.2/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo '5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770  '"$RUNNER_TEMP/agave.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - run: cargo build-sbf --manifest-path programs/aerosettle/Cargo.toml
+      - run: cargo fetch --locked
+      - run: cargo test --workspace --offline

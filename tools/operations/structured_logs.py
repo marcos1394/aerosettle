@@ -11,7 +11,9 @@ import uuid
 SAFE = re.compile(r"^[A-Za-z0-9_:/.*-]{1,180}$")
 FIELDS = {"component", "operation", "correlation_id", "trace_id", "network",
           "genesis_hash", "program_id", "work_order_pda", "transaction_signature",
-          "checkpoint_id", "error_code", "status"}
+          "checkpoint_id", "error_code", "status", "agent_id", "card_id",
+          "card_version", "publisher_id", "discovery_source", "verification_status",
+          "schema_version", "error_category"}
 
 
 def correlation_id(scope: str, signature: str | None = None) -> str:
