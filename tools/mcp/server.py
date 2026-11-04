@@ -118,8 +118,9 @@ class EvidenceItem(BaseModel):
 
 class MCPReadService:
     def __init__(self, backend, *, cursor_key: bytes | None = None,
-                 rate_limit: int = 60):
+                 rate_limit: int = 60, operational_store=None):
         self.backend = backend
+        self.operational_store = operational_store
         self.cursor_key = cursor_key or secrets.token_bytes(32)
         self.limiter = RateLimiter(rate_limit)
         self.metrics: Counter[str] = Counter()
@@ -138,6 +139,12 @@ class MCPReadService:
     def _metric(self, name: str, value: int = 1) -> None:
         with self.metrics_lock:
             self.metrics[name] += value
+        if self.operational_store is not None:
+            try:
+                unit = "milliseconds" if name == "mcp_tool_duration_ms_total" else "count"
+                self.operational_store.sample(name, value, unit, "mcp")
+            except Exception:
+                pass  # Observability must never grant or deny tool access.
 
     def metrics_snapshot(self) -> dict[str, int]:
         with self.metrics_lock:
@@ -398,6 +405,7 @@ def main() -> None:
     parser.add_argument("--fixture", type=Path)
     parser.add_argument("--catalog", type=Path)
     parser.add_argument("--access-index", type=Path)
+    parser.add_argument("--operations-db", type=Path)
     parser.add_argument("--public-key", type=Path)
     parser.add_argument("--issuer")
     parser.add_argument("--audience", default="http://127.0.0.1:8090/mcp")
@@ -414,7 +422,12 @@ def main() -> None:
         catalog = (CardCatalog(args.catalog, DiscoveryIdentitySource(RPC_URL, APPROVED_IDL))
                    if args.catalog else None)
         backend = DevnetBackend(catalog, access_index=args.access_index)
-    service = MCPReadService(backend)
+    if args.operations_db:
+        from tools.operations.store import OperationalStore
+        operational_store = OperationalStore(args.operations_db)
+    else:
+        operational_store = None
+    service = MCPReadService(backend, operational_store=operational_store)
     if args.transport == "stdio":
         service.mcp.run("stdio")  # Local stdio is anonymous: private tools fail closed.
         return

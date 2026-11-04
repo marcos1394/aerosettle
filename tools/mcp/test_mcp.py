@@ -21,6 +21,7 @@ from tools.mcp.backend import FixtureBackend
 from tools.mcp.demo_interop import FIXTURE, ISSUER, URL, client, issue_test_token, run_demo
 from tools.mcp.security import AuthBoundary, Denied, TokenVerifier
 from tools.mcp.server import MCPReadService, TOOLS
+from tools.operations.store import OperationalStore
 
 
 class TokenTests(unittest.TestCase):
@@ -53,6 +54,17 @@ class TokenTests(unittest.TestCase):
             Encoding.Raw, PublicFormat.Raw), issuer="https://foreign.invalid", audience=URL)
         with self.assertRaises(Denied):
             other_issuer.verify(valid)
+
+    def test_con38_operational_metric_bridge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = OperationalStore(Path(directory) / "operations.sqlite")
+            try:
+                service = MCPReadService(FixtureBackend(FIXTURE), operational_store=store)
+                service._metric("mcp_tool_invocations")
+                self.assertEqual(service.metrics_snapshot()["mcp_tool_invocations"], 1)
+                self.assertEqual(store.latest("mcp_tool_invocations", "mcp", 0)[0]["value"], 1)
+            finally:
+                store.close()
 
 
 class ProtocolTests(unittest.IsolatedAsyncioTestCase):
