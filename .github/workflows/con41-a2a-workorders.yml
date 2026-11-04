@@ -1,0 +1,106 @@
+name: CON-41 A2A WorkOrder Tasks
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con41-a2a-workorders.yml
+      - requirements.txt
+      - tools/a2a/**
+      - tools/mcp/**
+      - tools/discovery/**
+      - tools/economic_ledger/**
+      - tools/operations/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install -r requirements.txt
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: cargo +1.89.0 build --example marketplace_match_bridge
+      - name: CON-41 protocol, persistence and adversarial task tests
+        run: python -m unittest discover -s tools/a2a
+      - name: Heterogeneous Python SDK and Node.js A2A demo
+        run: python -m tools.a2a.demo_task_lifecycle > con41-demo.json
+      - name: Assert offline provenance and financial isolation
+        run: |
+          python - <<'PY'
+          import json
+          report = json.load(open('con41-demo.json'))
+          assert report['A2A_TASK_E2E_VERIFIED'] is True
+          assert report['DEVNET_WORKORDER_E2E_VERIFIED'] is False
+          assert report['OFFLINE_FIXTURE'] is True
+          assert report['official_python_sdk_client'] is True
+          assert report['independent_node_jsonrpc_client'] is True
+          assert report['sqlite_restart_verified'] is True
+          assert report['cancellation_verified'] is True
+          assert report['idempotency_verified'] is True
+          assert report['cross_tenant_denied'] is True
+          assert report['no_scope_denied'] is True
+          assert report['settlement_verified'] is False
+          assert report['work_order_status'] == 'Open'
+          assert report['fixture_escrow_funded'] is True
+          assert report['funds_transferred'] is False
+          assert len(report['artifact_sha256']) == 64
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con41-offline-a2a-task-e2e
+          path: con41-demo.json
+      - name: CON-34 through CON-40 Python regressions
+        run: |
+          python -m unittest discover -s tools/discovery
+          python -m unittest discover -s tools/deployment
+          python -m unittest discover -s tools/funding
+          python -m unittest discover -s tools/mission
+          python -m unittest discover -s tools/organizations
+          python -m unittest discover -s tools/governance
+          python -m unittest discover -s tools/economic_ledger
+          python -m unittest discover -s tools/operations
+          python -m unittest discover -s tools/mcp
+          python -m unittest discover -s tools/integration/devnet
+          PYTHONPATH=tools/marketplace_api:tools/discovery:. python -m unittest discover -s tools/marketplace_api
+  javascript:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix packages/transaction-sdk --omit=optional
+      - run: npm ci --prefix packages/marketplace-sdk
+      - run: npm ci --prefix apps/marketplace-web
+      - name: Prepare ignored Localnet web fixtures
+        run: |
+          cp tools/integration/localnet/aerosettle-idl.json apps/marketplace-web/src/localnet-idl.json
+          cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
+      - run: npm test --prefix packages/transaction-sdk
+      - run: npm test --prefix packages/marketplace-sdk
+      - run: npm test --prefix apps/marketplace-web
+      - run: npm run build --prefix apps/marketplace-web
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: rustup default 1.89.0
+      - name: Install pinned Agave CLI
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/agave.tar.bz2" \
+            https://github.com/anza-xyz/agave/releases/download/v4.1.2/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo '5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770  '"$RUNNER_TEMP/agave.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - run: cargo build-sbf --manifest-path programs/aerosettle/Cargo.toml
+      - run: cargo fetch --locked
+      - run: cargo test --workspace --offline
