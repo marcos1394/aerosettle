@@ -209,9 +209,16 @@ class ReadOnlyAdapterTests(unittest.TestCase):
 
     def _approval_action(self, approvals, context, action, suffix):
         now = int(time.time())
+        # Subsequent actions must reuse the immutable expiry chosen by OPEN.
+        # Recomputing now + 120 can cross a second boundary on slower CI runners.
+        existing = approvals.conn.execute(
+            "SELECT expires_at FROM spending_approvals WHERE approval_id=?",
+            (context["approval_id"],)).fetchone()
+        expires_at = (existing["expires_at"] if existing is not None else
+                      min(context["decision"]["expires_at"], now + 120))
         body = {**{key: context[key] for key in CONTEXT_FIELDS},
                 "action": action, "issued_at": now,
-                "expires_at": min(context["decision"]["expires_at"], now + 120),
+                "expires_at": expires_at,
                 "nonce": f"surplus-approval-nonce-{suffix}",
                 "idempotency_key": f"surplus-approval-idem-{suffix}",
                 "reason": "Owner declined request" if action in ("REVOKE", "REJECT") else ""}
@@ -304,6 +311,26 @@ class ReadOnlyAdapterTests(unittest.TestCase):
                 result = self._assessment(ledger, policies, active)
                 self.assertEqual(result["pending_commitments_base_units_str"], "0")
                 self.assertIsNone(result["verified_investible_surplus_base_units_str"])
+            finally:
+                ledger.close()
+
+    def test_review_expiry_stays_immutable_across_second_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger, policies, approvals, context, active = self._claim_fixture(
+                Path(directory) / "review-expiry.db")
+            try:
+                self._approval_action(approvals, context, "OPEN", "open-delayed")
+                stored = ledger._conn.execute(
+                    "SELECT expires_at FROM spending_approvals WHERE approval_id=?",
+                    (context["approval_id"],)).fetchone()["expires_at"]
+                time.sleep(1.05)
+                self._approval_action(approvals, context, "REJECT", "reject-delayed")
+                current = ledger._conn.execute(
+                    "SELECT expires_at FROM spending_approvals WHERE approval_id=?",
+                    (context["approval_id"],)).fetchone()["expires_at"]
+                self.assertEqual(current, stored)
+                self.assertEqual(self._assessment(ledger, policies, active)
+                                 ["pending_commitments_base_units_str"], "0")
             finally:
                 ledger.close()
 
