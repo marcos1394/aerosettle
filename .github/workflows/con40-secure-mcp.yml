@@ -1,0 +1,94 @@
+name: CON-40 Secure MCP
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con40-secure-mcp.yml
+      - requirements.txt
+      - tools/mcp/**
+      - tools/a2a/**
+      - tools/discovery/**
+      - tools/economic_ledger/**
+      - tools/organizations/**
+      - tools/operations/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: cargo +1.89.0 build --example marketplace_match_bridge
+      - name: MCP official client, schemas and adversarial authorization
+        run: python -m unittest discover -s tools/mcp
+      - name: Independent MCP SDK demonstration
+        run: python -m tools.mcp.demo_interop > con40-demo.json
+      - name: Assert fixture and financial isolation
+        run: |
+          python - <<'PY'
+          import json
+          report = json.load(open('con40-demo.json'))
+          assert report['MCP_PROTOCOL_VERIFIED'] is True
+          assert report['AUTHORIZATION_VERIFIED'] is True
+          assert report['OFFLINE_FIXTURE'] is True
+          assert report['LIVE_DEVNET_READ_ONLY'] is False
+          assert report['financial_tools_absent'] is True
+          assert report['cross_tenant_denied'] is True
+          assert report['pagination'] is True
+          assert report['tool_count'] == 7
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con40-offline-mcp-interop
+          path: con40-demo.json
+      - name: CON-34 through CON-39 regressions
+        run: |
+          python -m unittest discover -s tools/discovery
+          python -m unittest discover -s tools/organizations
+          python -m unittest discover -s tools/governance
+          python -m unittest discover -s tools/economic_ledger
+          python -m unittest discover -s tools/operations
+          python -m unittest discover -s tools/a2a
+          python -m unittest discover -s tools/integration/devnet
+          PYTHONPATH=tools/marketplace_api:tools/discovery:. python -m unittest discover -s tools/marketplace_api
+  javascript:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix packages/transaction-sdk --omit=optional
+      - run: npm ci --prefix packages/marketplace-sdk
+      - run: npm ci --prefix apps/marketplace-web
+      - name: Prepare ignored Localnet web fixtures
+        run: |
+          cp tools/integration/localnet/aerosettle-idl.json apps/marketplace-web/src/localnet-idl.json
+          cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
+      - run: npm test --prefix packages/transaction-sdk
+      - run: npm test --prefix packages/marketplace-sdk
+      - run: npm test --prefix apps/marketplace-web
+      - run: npm run build --prefix apps/marketplace-web
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: rustup default 1.89.0
+      - name: Install pinned Agave CLI
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/agave.tar.bz2" \
+            https://github.com/anza-xyz/agave/releases/download/v4.1.2/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo '5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770  '"$RUNNER_TEMP/agave.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - run: cargo build-sbf --manifest-path programs/aerosettle/Cargo.toml
+      - run: cargo fetch --locked
+      - run: cargo test --workspace --offline
