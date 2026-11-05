@@ -1,0 +1,34 @@
+{
+  "evidence_source": "OFFLINE_FIXTURE",
+  "network": "offline:con41",
+  "genesis_hash": "OFFLINE_CON41_GENESIS",
+  "program_id": "OFFLINE_CON41_PROGRAM",
+  "work_orders": [
+    {
+      "work_order_pda": "FixtureWorkOrderA",
+      "agent_account": "FixtureAgentA",
+      "agent_id": "fixture-agent-a",
+      "requester_identity": "fixture-owner-a",
+      "executor_identity": "fixture-signer-a",
+      "owner_pubkey": "fixture-owner-a",
+      "signing_authority": "fixture-signer-a",
+      "tenant_id": "tenant-a",
+      "organization_id": "org-a",
+      "work_order_status": "Open",
+      "escrow_funded": true
+    },
+    {
+      "work_order_pda": "FixtureWorkOrderB",
+      "agent_account": "FixtureAgentB",
+      "agent_id": "fixture-agent-b",
+      "requester_identity": "fixture-owner-b",
+      "executor_identity": "fixture-signer-b",
+      "owner_pubkey": "fixture-owner-b",
+      "signing_authority": "fixture-signer-b",
+      "tenant_id": "tenant-b",
+      "organization_id": "org-b",
+      "work_order_status": "Open",
+      "escrow_funded": true
+    }
+  ]
+}

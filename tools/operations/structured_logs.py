@@ -14,6 +14,8 @@ FIELDS = {"component", "operation", "correlation_id", "trace_id", "network",
           "checkpoint_id", "error_code", "status", "agent_id", "card_id",
           "card_version", "publisher_id", "discovery_source", "verification_status",
           "schema_version", "error_category"}
+FIELDS |= {"task_id", "requester_id", "executor_id", "event_type", "state_before",
+           "state_after", "authorization_result", "evidence_source"}
 
 
 def correlation_id(scope: str, signature: str | None = None) -> str:
