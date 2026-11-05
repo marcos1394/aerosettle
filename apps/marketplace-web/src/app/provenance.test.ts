@@ -337,6 +337,29 @@ test('Ed25519 Authentic Verification: Case 5 — Reused nonce is rejected by rep
   assert.match(replayResult.reason!, /Nonce already consumed/);
 });
 
+test('Ed25519 valid Base58 signature is accepted even when its random bytes spell fake', () => {
+  const privKey = new Uint8Array(32).fill(7); // deterministic test key, never production
+  const pubKey = encodeBase58(ed25519.getPublicKey(privKey));
+  const payload: AttestationPayload = {
+    domain: 'conatus:attestation:v1',
+    network: 'solana:localnet',
+    subject: 'Agent1111111111111111111111111111111111111111',
+    evidenceHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    nonce: 'nonce-collision-27017',
+    expiresAt: 2000000000,
+  };
+  const signature = encodeBase58(ed25519.sign(serializeCanonicalAttestation(payload), privKey));
+  assert.match(signature, /fake/i);
+  const verifier = createIsolatedAttestationVerifier({
+    trustedAuthorities: [pubKey],
+    clock: () => 1999999999,
+  });
+  assert.equal(verifier.validate({ verifierAuthority: pubKey,
+    attestationSignature: signature, payload }).isValid, true);
+  assert.equal(verifier.validate({ verifierAuthority: pubKey,
+    attestationSignature: 'sig_fake_placeholder', payload: { ...payload, nonce: 'nonce-placeholder' } }).isValid, false);
+});
+
 test('Ed25519 Authentic Verification: Case 6 — Expired attestation is rejected via injected mock clock and real clock', () => {
   const privKey = ed25519.utils.randomPrivateKey();
   const pubKey = encodeBase58(ed25519.getPublicKey(privKey));
