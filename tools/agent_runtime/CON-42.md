@@ -48,6 +48,8 @@ python -m tools.agent_runtime.demo
 
 `evidence/con42/demo-offline.json` contiene los booleanos exigidos, hash final de auditoría, procedencia, resultado CON-28 e indicador de que no cambiaron tablas financieras. La demo no usa Devnet ni envía transacciones. `.github/workflows/con42-agent-runtime.yml` ejecuta pruebas adversariales, demo, regresiones económicas, A2A, MCP, operaciones, descubrimiento, deployment, organizaciones, gobernanza, Marketplace, SDK/web y Rust; publica el JSON como artefacto.
 
+Validación inicial del commit `fe6e3e84cca1e53df58b303647b9be4794439a21`: [workflow CON-42, run 41963870905](https://github.com/marcos1394/aerosettle/actions/runs/41963870905), jobs Python, JavaScript y Rust `success`; [artefacto de demo offline](https://github.com/marcos1394/aerosettle/actions/runs/41963870905/artifacts/13385964917). Localmente pasaron 20 pruebas CON-42, 208 Economic Ledger, 27 A2A, 13 MCP, 19 Operations, 24 Discovery, 20 Deployment, 14 Organizations, 16 Governance, 3 Devnet read-only, 13 Funding, 5 Mission, 65 Marketplace API, 10 Transaction SDK, 36 Marketplace SDK, 43 web, build web y `cargo test --workspace --offline`. `git diff --check` quedó limpio.
+
 ## Límites pendientes
 
 No hay ejecución financiera autónoma, adapter Devnet productivo, cotización de mercado ni LLM proveedor configurado. La aprobación humana se **prepara y detiene** en CON-42; la firma y mutación real siguen exclusivamente en CON-29. No se afirma E2E financiero Devnet ni se concede a una Agent Card, token MCP o tarea A2A autoridad para fondos.
