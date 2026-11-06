@@ -496,21 +496,8 @@ export class CryptographicAttestationVerifier implements AttestationVerifier {
 
     const cleanSig = options.attestationSignature.trim();
 
-    // Reject placeholders
-    if (
-      cleanSig.toLowerCase().includes('placeholder') ||
-      cleanSig.toLowerCase().includes('mock') ||
-      cleanSig.toLowerCase().includes('dummy') ||
-      cleanSig.toLowerCase().includes('fake') ||
-      cleanSig.toLowerCase().includes('sig_')
-    ) {
-      return {
-        isValid: false,
-        status: 'PENDING_ATTESTATION',
-        reason: 'Placeholder or mock signature rejected',
-      };
-    }
-
+    // A real Base58 signature may coincidentally contain words such as "fake".
+    // Strict decoding and Ed25519 verification reject placeholders safely.
     // 3. Strict 64-byte decoding
     const sigBytes = decodeSignature(cleanSig);
     if (!sigBytes || sigBytes.length !== 64) {
