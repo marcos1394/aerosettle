@@ -1,0 +1,26 @@
+{
+  "DEVNET_FINANCIAL_EXECUTION": false,
+  "FUNDS_TRANSFERRED": false,
+  "NEGOTIATION_E2E_VERIFIED": true,
+  "OFFLINE_FIXTURE": true,
+  "ONCHAIN_WORKORDER_CREATED": false,
+  "POLICY_GATE_VERIFIED": true,
+  "SIGNATURES_VERIFIED": true,
+  "WORKORDER_PROPOSAL_CREATED": true,
+  "approval_status": "PENDING_HUMAN_APPROVAL",
+  "audit_attestation": "HASH_CHAIN_ONLY",
+  "audit_last_hash": "24b2c405f5c5b525570ab247ca7221ae523799516828e18445c1d1a93715a6c2",
+  "financial_tables_unchanged": true,
+  "idempotent_replay_verified": true,
+  "message_count": 4,
+  "message_hashes": [
+    "df3c7a0fa02216c69180d069de0adeee35986199dfc93acffda25b6367918709",
+    "0275702fa18e46db84a351c798d06212001719bba06d94992cf7017ba7d7c21b",
+    "c52d0b70dc7ed7cbba22fef7d0cc138d365df22fe663d3f5601368de3ca2bafc",
+    "fddabf3d4bbc63ad319cba256d85fac12bce2f189aab4f959e4ca451065ea03b"
+  ],
+  "provenance": "OFFLINE_FIXTURE",
+  "selected_quote_id": "message-00000003",
+  "sqlite_restart_verified": true,
+  "terms_hash": "eb93f3288a161aff3adb81e90387560f451aa21783941c79f298d2c6a1d43822"
+}
