@@ -80,8 +80,8 @@ def _handler(service):
 
 
 class LocalHTTP:
-    def __init__(self, service):
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(service))
+    def __init__(self, service, port: int = 0):
+        self.server = ThreadingHTTPServer(("127.0.0.1", port), _handler(service))
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.base_url = f"http://127.0.0.1:{self.server.server_port}"
 

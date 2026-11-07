@@ -318,6 +318,22 @@ class X402Tests(unittest.TestCase):
         self.assertEqual(report["ONCHAIN_TRANSACTIONS_SENT"], 0)
         self.assertFalse(report["DEVNET_SETTLEMENT_VERIFIED"])
 
+    def test_server_and_sqlite_restart_preserve_exact_retry(self):
+        first = self.client.pay()
+        port = self.resource_http.server.server_port
+        self.resource_http.close()
+        self.store.close()
+        self.store = SandboxStore(self.root / "pay.sqlite")
+        self.server.store = self.store
+        self.facilitator.store = self.store
+        self.client_store.close()
+        self.client_store = SandboxStore(self.root / "client.sqlite")
+        self.client.store = self.client_store
+        self.resource_http = LocalHTTP(self.server, port=port).start()
+        self.server.bind(self.resource_http.base_url)
+        self.assertEqual(first, self.client.retry())
+        self.assertEqual(self.store.conn.execute("SELECT COUNT(*) FROM sandbox_settlements").fetchone()[0], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
