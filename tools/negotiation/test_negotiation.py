@@ -393,6 +393,15 @@ class NegotiationTests(unittest.TestCase):
         replay = sign(replay, REQUESTER_KEY)
         self.assert_code("REPLAY_CONFLICT", lambda: self.service.submit(replay))
 
+    def test_exact_retry_after_expiry_is_historical_and_does_not_append(self):
+        root = self.begin()
+        self.now += 1801
+        result = self.service.submit(root)
+        self.assertFalse(result["inserted"])
+        self.assertTrue(result["historical_replay"])
+        self.assertFalse(result["is_currently_applicable"])
+        self.assertEqual(self.store.read(root["negotiation_id"])[0]["version"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

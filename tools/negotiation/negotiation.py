@@ -67,13 +67,13 @@ class NegotiationService:
     def submit(self, message: dict) -> dict:
         validate(message)
         now = self.clock()
-        requester = self.identity.check(message)
-        if message["expires_at"] <= now or message["delivery_deadline"] <= now:
-            raise NegotiationError("EXPIRED")
+        self.identity.check(message)
         def transition(session: dict | None, history: list[dict]):
             # Recheck inside the write transaction so identity revocation cannot be
             # converted into a stored commercial intent by a racing request.
             current_requester = self.identity.check(message)
+            if message["expires_at"] <= now or message["delivery_deadline"] <= now:
+                raise NegotiationError("EXPIRED")
             if message["type"] == "RFQ":
                 if session is not None:
                     raise NegotiationError("OUT_OF_ORDER")
@@ -194,10 +194,12 @@ class NegotiationService:
                 lambda history: [self.identity.check(old) for old in history])
             self._log(message, "ACCEPTED")
             return {**result, "inserted": inserted,
+                    "historical_replay": not inserted,
                     "negotiation_id": message["negotiation_id"],
                     "provenance": self.identity.context.provenance,
                     "signature_status": "SIGNED_MESSAGE",
-                    "is_financial_authority": False}
+                    "is_financial_authority": False,
+                    "is_currently_applicable": False}
         except NegotiationError as exc:
             self._log(message, exc.code)
             raise
