@@ -1,0 +1,110 @@
+name: CON-44 x402 V2 Sandbox
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/con44-x402-v2-sandbox.yml
+      - requirements.txt
+      - tools/x402/**
+      - tools/economic_ledger/**
+      - tools/agent_runtime/**
+      - tools/negotiation/**
+      - tools/a2a/**
+      - tools/mcp/**
+      - evidence/con44/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install -r requirements.txt
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: cargo +1.89.0 build --example marketplace_match_bridge
+      - name: x402 V2 sandbox and adversarial tests
+        run: python -m unittest discover -s tools/x402
+      - name: Local HTTP x402 V2 demo
+        run: python -m tools.x402.demo > con44-demo.json
+      - name: Assert isolated sandbox evidence
+        run: |
+          python - <<'PY'
+          import json
+          report = json.load(open('con44-demo.json'))
+          for key in ('X402_V2_PROTOCOL_VERIFIED', 'SANDBOX_SIMULATION',
+                      'POLICY_GATE_VERIFIED', 'RESOURCE_AUTHORIZATION_VERIFIED',
+                      'REPLAY_PROTECTION_VERIFIED', 'DOUBLE_CHARGE_PREVENTION_VERIFIED',
+                      'SQLITE_RESTART_VERIFIED', 'FINANCIAL_TABLES_UNCHANGED'):
+              assert report[key] is True, key
+          assert report['ONCHAIN_TRANSACTIONS_SENT'] == 0
+          assert report['DEVNET_SETTLEMENT_VERIFIED'] is False
+          assert report['MAINNET_USED'] is False
+          assert report['provenance'] == 'OFFLINE_FIXTURE'
+          assert report['receipt_evidence_source'] == 'SANDBOX_SIMULATION'
+          assert report['settlement_status'] == 'SIMULATED'
+          assert report['transaction_signature'] is None
+          assert report['scheme'] == 'conatus-sandbox-exact'
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: con44-offline-x402-v2-sandbox
+          path: con44-demo.json
+      - name: Python repository regressions
+        run: |
+          python -m unittest discover -s tools/economic_ledger
+          python -m unittest discover -s tools/agent_runtime
+          python -m unittest discover -s tools/negotiation
+          python -m unittest discover -s tools/a2a
+          python -m unittest discover -s tools/mcp
+          python -m unittest discover -s tools/operations
+          python -m unittest discover -s tools/discovery
+          python -m unittest discover -s tools/deployment
+          python -m unittest discover -s tools/funding
+          python -m unittest discover -s tools/mission
+          python -m unittest discover -s tools/organizations
+          python -m unittest discover -s tools/governance
+          python -m unittest discover -s tools/integration/devnet
+          PYTHONPATH=tools/marketplace_api:tools/discovery:. python -m unittest discover -s tools/marketplace_api
+      - run: git diff --check
+  javascript:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --prefix packages/transaction-sdk --omit=optional
+      - run: npm ci --prefix packages/marketplace-sdk
+      - run: npm ci --prefix apps/marketplace-web
+      - name: Prepare ignored Localnet web fixtures
+        run: |
+          cp tools/integration/localnet/aerosettle-idl.json apps/marketplace-web/src/localnet-idl.json
+          cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
+      - run: npm test --prefix packages/transaction-sdk
+      - run: npm test --prefix packages/marketplace-sdk
+      - run: npm test --prefix apps/marketplace-web
+      - run: npm run build --prefix apps/marketplace-web
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: rustup default 1.89.0
+      - name: Install pinned Agave CLI
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/agave.tar.bz2" \
+            https://github.com/anza-xyz/agave/releases/download/v4.1.2/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo '5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770  '"$RUNNER_TEMP/agave.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - run: cargo build-sbf --manifest-path programs/aerosettle/Cargo.toml
+      - run: cargo fetch --locked
+      - run: cargo test --workspace --offline
