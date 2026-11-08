@@ -72,7 +72,7 @@ def approval_provider(approvals: SpendingApprovalStore, decision_id: str) -> str
     return context["approval_id"]
 
 
-def run_demo() -> dict:
+def run_demo(*, include_artifacts: bool = False) -> dict:
     context = Context.fixture()
     registry = fixtures(context)
     with tempfile.TemporaryDirectory() as tmp:
@@ -148,6 +148,9 @@ def run_demo() -> dict:
                 "POLICY_GATE_VERIFIED", "RESOURCE_AUTHORIZATION_VERIFIED", "REPLAY_PROTECTION_VERIFIED",
                 "DOUBLE_CHARGE_PREVENTION_VERIFIED", "SQLITE_RESTART_VERIFIED",
                 "FINANCIAL_TABLES_UNCHANGED"))
+            if include_artifacts:
+                report["signed_receipt"] = first["receipt"]
+                report["facilitator_pubkey"] = facilitator.public_key
             return report
         finally:
             payment_store.close(); client_store.close(); ledger.close()
