@@ -37,7 +37,7 @@ python3.12 -m venv /tmp/con44-venv
 /tmp/con44-venv/bin/python -m tools.x402.demo
 ```
 
-El entorno debe permitir escuchar en `127.0.0.1` para la prueba HTTP. `evidence/con44/demo-offline.json` registra una ejecución completa: 402 V2, descubrimiento, política CON-27/28/29, autorización sandbox separada, verify, settle simulado, recurso, recibo, retry, reinicio SQLite y cero movimientos contables. El workflow `.github/workflows/con44-x402-v2-sandbox.yml` repite la demo y tests adversariales, sube el JSON como artefacto y ejecuta regresiones Python, JS y Rust. Ningún step envía transacciones Solana.
+El entorno debe permitir escuchar en `127.0.0.1` para la prueba HTTP. `evidence/con44/demo-offline.json` registra una ejecución completa: 402 V2, descubrimiento, política CON-27/28/29, autorización sandbox separada, verify, settle simulado, recurso, recibo, retry, reinicio SQLite y cero movimientos contables. La prueba adversarial reinicia además el servidor HTTP en el mismo puerto junto con SQLite y comprueba que el reintento exacto recupera el mismo recibo sin segundo settlement. El workflow `.github/workflows/con44-x402-v2-sandbox.yml` repite la demo y tests adversariales, sube el JSON como artefacto y ejecuta regresiones Python, JS y Rust. Ningún step envía transacciones Solana.
 
 ## Límites y puerta Devnet
 
