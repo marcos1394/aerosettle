@@ -1,0 +1,15 @@
+{
+  "repository": "marcos1394/aerosettle",
+  "network": "solana:devnet",
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "upgrade_authority_pubkey": "DdHrtAxE5SwcVQUgoKRzoWatZ5yw9UdtBQnRwBizPK2D",
+  "toolchain_versions": {
+    "anchor": "1.2.0",
+    "node": "24",
+    "python": "3.12",
+    "rust": "1.89.0",
+    "solana": "4.1.2"
+  },
+  "trusted_release_keys": {}
+}

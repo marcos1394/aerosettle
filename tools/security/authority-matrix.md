@@ -1,0 +1,19 @@
+# CON-46 — Matriz de autoridades
+
+La evidencia pública de CON-35 identifica el programa Devnet `CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy` en genesis `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`. El `deployment_id` aprobado fue `06c7dfa7528460969a5ca1e8bd001f9c9f1f1f0df3d69fe36649e413e0b14ae6`. CON-46 no cambia estas identidades ni lee claves privadas.
+
+| Autoridad | Propósito y acción permitida | Red y pubkey pública | Custodia observada | Rotación o revocación | Aprobación |
+| --- | --- | --- | --- | --- | --- |
+| Fee payer | Paga tarifas; no autoriza por sí sola upgrades ni administración | Devnet: `HRwPNBPzArvdCULMH1EFuUpxGw31CbRjyf1cGBz2zE2x` | Archivos locales ignorados por Git en flujo CON-35; respaldo externo no verificable aquí | Crear reemplazo, financiar con fondos de prueba y actualizar binding tras revisión | Humana para transacciones de despliegue |
+| Upgrade authority | Firma upgrades del ProgramData | Devnet: `DdHrtAxE5SwcVQUgoKRzoWatZ5yw9UdtBQnRwBizPK2D` | Archivo local fuera de Git según CON-35; custodia externa **NOT_ACCESSIBLE** | Procedimiento on-chain separado, con rollback plan y verificación RPC; no ejecutado | Independiente para binario exacto y cambio de autoridad |
+| Protocol administrator | Inicializa y administra ProtocolConfig según contrato | Devnet: `27cyzd58RswQRbSuR3cKh4xv2gWgZ7awb3tUtoT7hYLB` | Archivo local fuera de Git según CON-35 | Cambio administrativo sujeto a procedimiento y control de firma | Humana y separada del fee payer |
+| Test mint authority | Acuñación del activo de prueba | Devnet: `4om6LcFXaZ2Wtbn3P2ZvvyqssXFQs1xjNmE2Fnj7mRHa` | CON-35 test mint; custodia externa **NOT_ACCESSIBLE** | Revocar mint authority solo tras plan específico | Humana para acuñación |
+| Agent owner | Propiedad de AgentAccount; políticas y approvals | Por agente, leído y cotejado con cuenta RPC/registro, sin pubkey única | Variable; **NOT_ACCESSIBLE** fuera de fixtures | Procedimiento de transferencia separado; no implementado aquí | Firmante propietario actual |
+| Signing authority | Firmas A2A/MCP/x402, no equivale a upgrade authority | Por identidad o servicio; no pubkey global | **NOT_ACCESSIBLE** | Rotar por protocolo con invalidación de claves anteriores | Operador del servicio y dueño de identidad |
+| WorkOrder creator | Crea y financia una orden | Por WorkOrder; test fixtures Devnet en CON-36 | Wallet de prueba, no en Git | Nueva orden con nuevo creador; no reasignar histórico | Firma del creador |
+| WorkOrder verifier | Verifica cumplimiento bajo las reglas del contrato | Por WorkOrder/escenario | Wallet de prueba, no en Git | Revisión de rol en contrato; no cambio automático | Firma autorizada para la orden |
+| Settlement beneficiary | Recibe SPL según destino registrado | Cuenta token/PDA por orden, validada por el programa | No es clave de upgrade | No sustituir destino; crear nueva orden si corresponde | Validación on-chain del destino |
+
+**Separación comprobable:** los tres pubkeys de fee payer, upgrade authority y administrador son distintos en `tools/deployment/devnet.json`; `tools/deployment/devnet.py` exige los tres y coteja cada keypair con su binding antes de una operación. La política de release exige Program ID, genesis y autoridad aprobados de forma independiente. La existencia, seguridad y respaldo actual de claves privadas o controles de GitHub no puede inferirse de archivos públicos.
+
+**Rotación de emergencia:** congelar releases, verificar estado de ProgramData por dos fuentes RPC, identificar la clave comprometida, obtener aprobación humana específica, preparar un nuevo binding y manifiesto, ejecutar el cambio solo mediante un procedimiento separado y verificar firma finalizada, slot y nueva autoridad. Si se perdió la upgrade authority sin sustituto autorizado, no prometer rollback: escalar a recuperación de gobernanza o nuevo programa.
