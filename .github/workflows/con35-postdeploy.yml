@@ -13,7 +13,6 @@ on:
         type: string
 permissions:
   contents: read
-  actions: read
 jobs:
   verify:
     runs-on: ubuntu-24.04
@@ -60,6 +59,7 @@ jobs:
           python tools/deployment/devnet.py post-deploy-verification \
             --manifest target/deploy/con35-recheck/manifest.json \
             --signature "$DEPLOYMENT_SIGNATURE" \
+            --protocol-evidence evidence/con36/protocol-config-verified.json \
             --output "$RUNNER_TEMP/con35-verified.json"
           python - <<'PY'
           import json

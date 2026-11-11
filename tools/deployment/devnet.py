@@ -28,6 +28,7 @@ OFFICIAL_RPC = "https://api.devnet.solana.com"
 DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
 PROGRAM_ID = "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy"
 STATES = {"PREPARED", "SUBMITTED", "FINALIZED", "VERIFIED", "FAILED"}
+CON36_PROTOCOL_APPROVAL_ID = "5dbc0681980e3fcf78ad35f1548ccf6dd0751eb3a697b6dcc0bc0a6f137c21a6"
 
 
 class DeploymentError(RuntimeError):
@@ -383,7 +384,49 @@ def verify_signature(rpc: Rpc, signature: str, expected_slot: int | None = None,
     return slot
 
 
-def post_deploy(config: dict, rpc: Rpc, manifest: dict, signature: str) -> dict:
+def protocol_context_from_finalized_evidence(config: dict, rpc: Rpc, manifest: dict,
+                                             pda: str, evidence: dict) -> tuple[str, str]:
+    """Bind a later ProtocolConfig initialization to its finalized Devnet transaction."""
+    require(isinstance(evidence, dict) and evidence.get("verification_status") == "VERIFIED",
+            "Verified ProtocolConfig evidence required")
+    require(evidence.get("approval_id") == CON36_PROTOCOL_APPROVAL_ID and
+            evidence.get("network") == config["network"] and
+            evidence.get("genesis_hash") == config["genesis_hash"] and
+            evidence.get("protocol_config_pda") == pda and
+            evidence.get("protocol_deployment_id_hex") == manifest["deployment_id"],
+            "ProtocolConfig evidence identity mismatch")
+    network_id = evidence.get("network_id_hex")
+    deployment_id = evidence.get("protocol_deployment_id_hex")
+    require(isinstance(network_id, str) and bool(re.fullmatch(r"[0-9a-f]{64}", network_id)),
+            "Protocol network ID missing from evidence")
+    require(isinstance(deployment_id, str) and bool(re.fullmatch(r"[0-9a-f]{64}", deployment_id)),
+            "Protocol deployment ID missing from evidence")
+    init_signature = evidence.get("signature")
+    init_slot = evidence.get("slot")
+    require(type(init_slot) is int and init_slot > 0, "ProtocolConfig evidence slot invalid")
+    verify_signature(rpc, init_signature, expected_slot=init_slot)
+    tx = rpc.call("getTransaction", [init_signature, {"encoding": "json", "commitment": "finalized",
+                                                  "maxSupportedTransactionVersion": 0}])
+    transaction = tx.get("transaction") if isinstance(tx, dict) else None
+    message = transaction.get("message") if isinstance(transaction, dict) else None
+    require(isinstance(message, dict) and isinstance(message.get("accountKeys"), list) and
+            isinstance(message.get("instructions"), list), "Malformed ProtocolConfig transaction")
+    keys = [key.get("pubkey") if isinstance(key, dict) else key for key in message["accountKeys"]]
+    require(config["program_id"] in keys and pda in keys,
+            "ProtocolConfig initialization transaction does not reference program and PDA")
+    require(any(type(ix.get("programIdIndex")) is int and
+                0 <= ix["programIdIndex"] < len(keys) and
+                keys[ix["programIdIndex"]] == config["program_id"] and
+                isinstance(ix.get("accounts"), list) and
+                any(type(index) is int and 0 <= index < len(keys) and keys[index] == pda
+                    for index in ix["accounts"])
+                for ix in message.get("instructions", []) if isinstance(ix, dict)),
+            "ProtocolConfig initialization instruction missing")
+    return network_id, deployment_id
+
+
+def post_deploy(config: dict, rpc: Rpc, manifest: dict, signature: str,
+                protocol_evidence: dict | None = None) -> dict:
     verify_artifacts(config, manifest)
     require(manifest.get("reproducibility_status") == "PASS", "Uncompared build cannot become VERIFIED")
     require(manifest.get("deployment_transaction") in (None, signature), "Deployment signature differs from submitted manifest")
@@ -400,9 +443,15 @@ def post_deploy(config: dict, rpc: Rpc, manifest: dict, signature: str) -> dict:
         discriminator = hashlib.sha256(b"account:ProtocolConfig").digest()[:8]
         require(len(raw) == 155 and raw[:8] == discriminator and raw[8] == 1, "ProtocolConfig layout or version mismatch")
         require(b58encode(raw[9:41]) == config.get("protocol_admin_pubkey"), "Protocol admin mismatch")
-        require(config.get("protocol_network_id_hex") and raw[41:73].hex() == config["protocol_network_id_hex"], "Protocol network ID mismatch")
+        if config.get("protocol_network_id_hex") and config.get("protocol_deployment_id_hex"):
+            expected_network_id = config["protocol_network_id_hex"]
+            expected_deployment_id = config["protocol_deployment_id_hex"]
+        else:
+            expected_network_id, expected_deployment_id = protocol_context_from_finalized_evidence(
+                config, rpc, manifest, pda, protocol_evidence)
+        require(raw[41:73].hex() == expected_network_id, "Protocol network ID mismatch")
         require(b58encode(raw[73:105]) == config["program_id"], "Protocol program ID mismatch")
-        require(config.get("protocol_deployment_id_hex") and raw[105:137].hex() == config["protocol_deployment_id_hex"], "Protocol deployment ID mismatch")
+        require(raw[105:137].hex() == expected_deployment_id, "Protocol deployment ID mismatch")
         require(raw[137] == bump, "ProtocolConfig bump mismatch")
     return seal({**manifest, "deployment_transaction": signature, "deployment_slot": slot,
             "program_data_address": observed["program_data_address"], "verification_status": "VERIFIED",
@@ -467,6 +516,8 @@ def main() -> None:
     parser.add_argument("--wallets", type=Path, help="Private, untracked role-to-keypair/binding map")
     parser.add_argument("--program-keypair", type=Path)
     parser.add_argument("--signature")
+    parser.add_argument("--protocol-evidence", type=Path,
+                        help="Finalized CON-36 ProtocolConfig evidence for a historic CON-35 manifest")
     parser.add_argument("--approval", help="Must equal deployment_id and match CON35_APPROVED_DEPLOYMENT_ID")
     parser.add_argument("--submit", action="store_true")
     parser.add_argument("--airdrop-pubkey")
@@ -497,7 +548,8 @@ def main() -> None:
             result = inspect_program(config, rpc)
         elif args.command == "post-deploy-verification":
             require(manifest is not None and args.signature and args.output, "--manifest, --signature and --output required")
-            result = seal({**post_deploy(config, rpc, manifest, args.signature),
+            result = seal({**post_deploy(config, rpc, manifest, args.signature,
+                                         load_json(args.protocol_evidence) if args.protocol_evidence else None),
                            "previous_manifest_sha256": sha256(args.manifest)})
             write_immutable(args.output, result)
         elif args.command == "finalize":

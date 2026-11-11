@@ -43,4 +43,8 @@ CI Linux `ubuntu-24.04` x86_64: Rust/Cargo 1.89.0, Agave CLI/SBF 4.1.2 (tarball 
 4. Introducir lock Python con hashes y una auditoría Rust independiente en una etapa posterior; no tratar el inventario actual como cierre de esa cobertura.
 5. Corroborar por RPC las identidades públicas antes de cualquier despliegue futuro y preservar evidencia finalized. No se envía transacción desde CI.
 
-La evidencia final de tests, hashes y CI se añadirá al PR tras ejecutar los jobs. No se cierra Jira ni se hace merge en CON-46 automáticamente.
+No se cierra Jira ni se hace merge en CON-46 automáticamente.
+
+## Verificación CI y compatibilidad histórica
+
+El run [CON-46 #42556913577](https://github.com/marcos1394/aerosettle/actions/runs/42556913577) del commit `f646446` terminó `success` en sus cinco jobs: security inventory, regresiones Python y JavaScript, reproducibilidad SBF/IDL y Localnet E2E real. El job CON-35 post-deploy separado falló porque su manifest histórico contiene IDs de ProtocolConfig `null`, mientras CON-36 ya inicializó la cuenta en Devnet. La corrección conserva ese manifest y exige el registro CON-36 con aprobación exacta, firma finalized, slot, genesis, deployment ID, PDA, programa e instrucción, además de comparar la cuenta real por JSON-RPC. La lectura de solo lectura fue comprobada contra Devnet con `VERIFIED`, `PRESENT` y slot de despliegue `516258865`; no se envió transacción. El siguiente run del PR debe confirmar también el job CON-35 corregido.
