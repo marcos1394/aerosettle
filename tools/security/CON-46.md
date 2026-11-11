@@ -6,7 +6,7 @@ Base: merge CON-45 `9b0fe8e39ca0fe8f5afc67fee08d8c6600919791`. Alcance: control 
 
 | Superficie | Antes | Cambio CON-46 / evidencia | Estado |
 | --- | --- | --- | --- |
-| Workflows | 14 workflows, `contents: read`; acciones por etiqueta mutable; CON-34 Localnet condicionado a su rama | Acciones fijadas a SHA oficiales verificados; gate CON-46 sin filtro de paths y con suite Localnet propia; escáner estático de permisos, secretos y comandos de despliegue | VERIFIED en archivos; CI pendiente |
+| Workflows | 14 workflows, `contents: read`; acciones por etiqueta mutable; CON-34 Localnet condicionado a su rama | Acciones fijadas a SHA oficiales verificados; gate CON-46 sin filtro de paths y con suite Localnet propia; escáner estático de permisos, secretos y comandos de despliegue | VERIFIED en CI #42556913577 |
 | Credenciales | `.gitignore` excluye `.aerosettle-local/`, wallets, PEM, `.env`; CON-35 coteja keypair y binding | Gitleaks v8.30.1 escanea historial completo con salida redactada. Baseline de 40 hallazgos `generic-api-key` en fixtures públicos y anotaciones de tipos; nuevos hallazgos fallan. No se agregan llaves | VERIFIED para escaneo local; custodia externa NOT_ACCESSIBLE |
 | Dependencias | Cargo.lock; cuatro npm lockfiles; tres requirements Python sin lock transitivo con hashes; toolchains Anchor/Solana fijadas en Anchor.toml | Dependabot semanal, SBOM CycloneDX, auditorías npm y `pip-audit` en vivo y excepciones fechadas. Vite 6.3.6→6.4.5 elimina sus advisories en lockfile de rama | PARTIAL: Python transitivo sin hashes y excepciones abiertas |
 | Artefactos | CON-35 ya compara dos builds SBF/IDL equivalentes y verifica manifest Devnet | Se ejecuta en CI CON-46, se almacena manifest y hash; verificador Ed25519 independiente para bundle futuro | PENDING_APPROVAL para firma real |
@@ -29,7 +29,7 @@ CI Linux `ubuntu-24.04` x86_64: Rust/Cargo 1.89.0, Agave CLI/SBF 4.1.2 (tarball 
 
 | Criterio | Evidencia | Estado |
 | --- | --- | --- |
-| CI integral y permisos mínimos | `.github/workflows/con46-release-security.yml`; `workflow_policy.py`; tests Python, JS, Rust, SBF y Localnet | PENDING CI |
+| CI integral y permisos mínimos | `.github/workflows/con46-release-security.yml`; `workflow_policy.py`; tests Python, JS, Rust, SBF y Localnet | VERIFIED en CI #42556913577; rerun del commit final pendiente |
 | Dependencias, secretos, SBOM | Dependabot consultado, auditoría npm, Gitleaks redactado, CycloneDX y excepciones | PARTIAL por hallazgos y lock Python |
 | Separación de autoridades | [Matriz](authority-matrix.md), bindings CON-35, pruebas de rechazo | VERIFIED para software; custodia NOT_ACCESSIBLE |
 | Release firmado y autorización | `release.py` + tests de firma, sustitución, aprobación, Mainnet y toolchain | VERIFIED como control; firma real PENDING_APPROVAL |
@@ -47,4 +47,6 @@ No se cierra Jira ni se hace merge en CON-46 automáticamente.
 
 ## Verificación CI y compatibilidad histórica
 
-El run [CON-46 #42556913577](https://github.com/marcos1394/aerosettle/actions/runs/42556913577) del commit `f646446` terminó `success` en sus cinco jobs: security inventory, regresiones Python y JavaScript, reproducibilidad SBF/IDL y Localnet E2E real. El job CON-35 post-deploy separado falló porque su manifest histórico contiene IDs de ProtocolConfig `null`, mientras CON-36 ya inicializó la cuenta en Devnet. La corrección conserva ese manifest y exige el registro CON-36 con aprobación exacta, firma finalized, slot, genesis, deployment ID, PDA, programa e instrucción, además de comparar la cuenta real por JSON-RPC. La lectura de solo lectura fue comprobada contra Devnet con `VERIFIED`, `PRESENT` y slot de despliegue `516258865`; no se envió transacción. El siguiente run del PR debe confirmar también el job CON-35 corregido.
+El run [CON-46 #42556913577](https://github.com/marcos1394/aerosettle/actions/runs/42556913577) del commit `f646446` terminó `success` en sus cinco jobs: security inventory, regresiones Python y JavaScript, reproducibilidad SBF/IDL y Localnet E2E real. El job CON-35 post-deploy separado falló porque su manifest histórico contiene IDs de ProtocolConfig `null`, mientras CON-36 ya inicializó la cuenta en Devnet. La corrección conserva ese manifest y exige el registro CON-36 con aprobación exacta, firma finalized, slot, genesis, deployment ID, PDA, programa e instrucción, además de comparar la cuenta real por JSON-RPC. La lectura de solo lectura fue comprobada contra Devnet con `VERIFIED`, `PRESENT` y slot de despliegue `516258865`; no se envió transacción. El [run CON-35 #42931566252](https://github.com/marcos1394/aerosettle/actions/runs/42931566252) terminó `success` con esa corrección.
+
+En el rerun CON-46 de `9fb6d58`, una prueba MCP reveló que cambiar el último carácter base64 de un cursor puede conservar exactamente los bytes originales por bits de relleno no usados. La validación ahora exige la codificación base64 canónica, y las pruebas alteran un byte efectivo y comprueban explícitamente la variante no canónica. Las 14 pruebas MCP y las 7 pruebas de seguridad pasan localmente; el rerun CI del commit correctivo es el gate restante.

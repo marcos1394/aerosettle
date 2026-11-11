@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from contextlib import asynccontextmanager
 import copy
 import json
@@ -19,7 +20,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from tools.mcp.backend import FixtureBackend
 from tools.mcp.demo_interop import FIXTURE, ISSUER, URL, client, issue_test_token, run_demo
-from tools.mcp.security import AuthBoundary, Denied, TokenVerifier
+from tools.mcp.security import AuthBoundary, CURRENT, Denied, TokenVerifier
 from tools.mcp.server import MCPReadService, TOOLS
 from tools.operations.store import OperationalStore
 
@@ -65,6 +66,31 @@ class TokenTests(unittest.TestCase):
                 self.assertEqual(store.latest("mcp_tool_invocations", "mcp", 0)[0]["value"], 1)
             finally:
                 store.close()
+
+    def test_cursor_rejects_noncanonical_base64(self):
+        service = MCPReadService(FixtureBackend(FIXTURE), cursor_key=b"test-cursor-key")
+        principal = self.verifier.verify(issue_test_token(self.key))
+        context = CURRENT.set(principal)
+        try:
+            rows = [{"id": "one"}, {"id": "two"}]
+            for query in ("", "x", "xx"):
+                cursor = service._page("conatus_search_workorders", "workorders", rows,
+                                       limit=1, cursor=None, query=query,
+                                       source="OFFLINE_FIXTURE").next_cursor
+                if len(cursor) % 4 in (2, 3):
+                    break
+            else:
+                self.fail("Could not construct a padded cursor")
+            alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+            altered = cursor[:-1] + alphabet[alphabet.index(cursor[-1]) ^ 1]
+            self.assertEqual(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)),
+                             base64.urlsafe_b64decode(altered + "=" * (-len(altered) % 4)))
+            with self.assertRaisesRegex(Denied, "INVALID_CURSOR"):
+                service._page("conatus_search_workorders", "workorders", rows,
+                              limit=1, cursor=altered, query=query,
+                              source="OFFLINE_FIXTURE")
+        finally:
+            CURRENT.reset(context)
 
 
 class ProtocolTests(unittest.IsolatedAsyncioTestCase):
@@ -139,8 +165,11 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             changed = await session.call_tool("conatus_search_workorders",
                                               {"limit": 1, "status": "Open", "cursor": cursor})
             self.assertIn("INVALID_CURSOR", str(changed.content))
+            middle = len(cursor) // 2
+            corrupted_cursor = (cursor[:middle] + ("A" if cursor[middle] != "A" else "B")
+                                + cursor[middle + 1:])
             tampered = await session.call_tool("conatus_search_workorders",
-                                               {"limit": 1, "cursor": cursor[:-1] + "A"})
+                                               {"limit": 1, "cursor": corrupted_cursor})
             self.assertTrue(tampered.is_error)
         async with self.open(issue_test_token(self.key, client="other-client")) as session:
             reused = await session.call_tool("conatus_search_workorders",
