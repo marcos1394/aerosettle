@@ -232,6 +232,8 @@ class MCPReadService:
                 if len(cursor) > 2048 or not re.fullmatch(r"[A-Za-z0-9_-]+", cursor):
                     raise ValueError()
                 raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+                if base64.urlsafe_b64encode(raw).decode().rstrip("=") != cursor:
+                    raise ValueError()
                 data, mac = raw[:-32], raw[-32:]
                 if not hmac.compare_digest(hmac.new(self.cursor_key, data, hashlib.sha256).digest(), mac):
                     raise ValueError()
@@ -241,7 +243,8 @@ class MCPReadService:
                 offset = payload["offset"]
                 if type(offset) is not int or offset < 0:
                     raise ValueError()
-            except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+            except (ValueError, KeyError, TypeError, UnicodeDecodeError,
+                    base64.binascii.Error):
                 raise Denied("INVALID_CURSOR") from None
         page = rows[offset:offset + limit]
         next_cursor = (self._cursor({**binding, "offset": offset + limit})

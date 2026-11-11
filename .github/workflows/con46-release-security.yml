@@ -1,0 +1,177 @@
+name: CON-46 release security gate
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  security-inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest discover -s tools/security -v
+      - run: python -m tools.security.workflow_policy
+      - name: Generate CycloneDX SBOM from resolved Python and lockfiles
+        run: python -m tools.security.sbom --output "$RUNNER_TEMP/con46-sbom.json"
+      - name: Audit direct and transitive Python requirements
+        run: |
+          python -m pip install pip-audit==2.10.1
+          pip-audit -r requirements.txt --format json --output "$RUNNER_TEMP/con46-python-audit.json"
+      - name: Audit all npm lockfiles against dated exceptions
+        run: |
+          mkdir -p "$RUNNER_TEMP/npm-audit"
+          for scope in apps/marketplace-web packages/marketplace-sdk packages/transaction-sdk tools/bootstrap; do
+            name="${scope##*/}"
+            result=0
+            npm audit --prefix "$scope" --json > "$RUNNER_TEMP/npm-audit/$name.json" || result=$?
+            if (( result > 1 )); then exit "$result"; fi
+          done
+          python -m tools.security.dependency_audit --report-dir "$RUNNER_TEMP/npm-audit"
+      - name: Install checksum-pinned Gitleaks
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  '"$RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+      - name: Scan full Git history for unbaselined secrets
+        run: |
+          "$RUNNER_TEMP/gitleaks" git . --no-banner --redact --log-level error \
+            --baseline-path tools/security/gitleaks-baseline.json \
+            --report-format json --report-path "$RUNNER_TEMP/con46-new-leaks.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: con46-sbom
+          path: ${{ runner.temp }}/con46-sbom.json
+          retention-days: 90
+  python-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: cargo +1.89.0 build --example marketplace_match_bridge
+      - name: Run all Python suites
+        run: |
+          for suite in economic_ledger x402 agent_runtime negotiation a2a mcp operations integration/devnet deployment funding mission organizations governance discovery paper_trading; do
+            python -m unittest discover -s "tools/$suite"
+          done
+          PYTHONPATH=tools/marketplace_api:tools/discovery:. python -m unittest discover -s tools/marketplace_api
+  javascript-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: npm ci --prefix packages/transaction-sdk --omit=optional
+      - run: npm ci --prefix packages/marketplace-sdk
+      - run: npm ci --prefix apps/marketplace-web
+      - name: Prepare ignored Localnet web fixtures
+        run: |
+          cp tools/integration/localnet/aerosettle-idl.json apps/marketplace-web/src/localnet-idl.json
+          cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
+      - run: npm test --prefix packages/transaction-sdk
+      - run: npm test --prefix packages/marketplace-sdk
+      - run: npm test --prefix apps/marketplace-web
+      - run: npm run build --prefix apps/marketplace-web
+  rust-and-reproducibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      RUSTUP_TOOLCHAIN: '1.89.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: rustup default 1.89.0
+      - name: Install checksum-pinned Agave CLI
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/agave.tar.bz2" \
+            https://github.com/anza-xyz/agave/releases/download/v4.1.2/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo '5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770  '"$RUNNER_TEMP/agave.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - name: Compare two clean SBF and IDL builds
+        env:
+          CON35_OUTPUT_DIR: target/deploy/con46
+        run: bash tools/deployment/compare_clean_builds.sh
+      - name: Verify generated IDL and artifact manifest
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          built = json.loads(Path('target/deploy/con46/aerosettle-idl.json').read_text())
+          approved = json.loads(Path('tools/integration/localnet/aerosettle-idl.json').read_text())
+          assert built == approved, 'Generated IDL differs from approved ABI'
+          PY
+          python tools/deployment/devnet.py prepare-artifacts \
+            --binary target/deploy/con46/aerosettle.so \
+            --idl target/deploy/con46/aerosettle-idl.json \
+            --output target/deploy/con46/manifest.json
+          python tools/deployment/devnet.py verify-artifacts --manifest target/deploy/con46/manifest.json
+      - run: cargo fetch --locked
+      - run: cargo test --workspace --offline
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: con46-reproducible-sbf-evidence
+          path: |
+            target/deploy/con46/reproducibility.json
+            target/deploy/con46/manifest.json
+            target/deploy/con46/aerosettle-idl.json
+          retention-days: 90
+  localnet-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      RUSTUP_TOOLCHAIN: '1.89.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: rustup toolchain install 1.89.0 --profile minimal
+      - run: rustup default 1.89.0
+      - run: python -m pip install -r requirements.txt
+      - run: npm ci --prefix tools/bootstrap --omit=optional
+      - name: Install checksum-pinned Agave CLI
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/agave.tar.bz2" \
+            https://github.com/anza-xyz/agave/releases/download/v4.1.2/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo '5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770  '"$RUNNER_TEMP/agave.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/solana-release/bin" >> "$GITHUB_PATH"
+      - run: cargo build-sbf --manifest-path programs/aerosettle/Cargo.toml
+      - name: Verify real validator and persistence with test wallets
+        env:
+          CON34_PUBLIC_REPORT_DIR: ${{ runner.temp }}/con46-localnet
+        run: bash tools/integration/localnet/run_localnet_e2e.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: con46-localnet-evidence
+          path: ${{ runner.temp }}/con46-localnet/*.json
+          retention-days: 90
