@@ -13,7 +13,7 @@
   "dependencies": {
     "@aerosettle/marketplace-sdk": "file:../../packages/marketplace-sdk",
     "@aerosettle/transaction-sdk": "file:../../packages/transaction-sdk",
-    "@noble/curves": "1.9.7",
+    "@noble/curves": "2.4.0",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.29",
     "@solana/wallet-adapter-react": "0.15.40",
