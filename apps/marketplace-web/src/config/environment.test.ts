@@ -131,3 +131,26 @@ test('context changes discard stale verifications and abort outstanding requests
   await old;
   assert.deepEqual(applied, ['new-network']);
 });
+
+test('network switch during live verification cannot promote the previous network', async () => {
+  const session = new VerificationSession<string>();
+  const applied: string[] = [];
+  const devnet = fixture('DEVNET');
+  const localnet = fixture('LOCALNET');
+  let releaseOld!: () => void;
+  const oldRpc: Rpc = async (method, params, signal) => {
+    if (method === 'getGenesisHash')
+      await new Promise<void>((resolve) => { releaseOld = resolve; });
+    return devnet.rpc(method, params, signal);
+  };
+  const previous = session.run('DEVNET', async (signal) =>
+    (await verifyEnvironment(devnet.manifest, devnet.idl, oldRpc, undefined, signal)).status,
+  (status) => applied.push(status));
+  const current = session.run('LOCALNET', async (signal) =>
+    (await verifyEnvironment(localnet.manifest, localnet.idl, localnet.rpc, localnet.api, signal)).status,
+  (status) => applied.push(status));
+  await current;
+  releaseOld();
+  await previous;
+  assert.deepEqual(applied, ['VERIFIED']);
+});
