@@ -82,10 +82,26 @@ def main() -> None:
                 "ledger_status": movement.status.value, "provenance": receipt.evidence_source,
                 "operator_payout": receipt.operator_payout, "creator_refund": receipt.creator_refund,
             })
-        # Two genuine RPC reads race for one existing financial effect.
+        # Race two independent SQLite connections for one existing financial
+        # effect. A sqlite3.Connection shared across threads does not provide
+        # the isolation this test is meant to exercise.
+        def concurrent_retry():
+            independent_reconciler = SplSettlementReconciler(
+                rpc_client=SolanaRpcClient(next(iter(rpc_urls))),
+                expected_genesis_hash=report["genesis_hash"],
+            )
+            independent = EconomicLedger(
+                db_path=db_path, reconciliation_verifier=independent_reconciler
+            )
+            try:
+                return independent_reconciler.reconcile_settlement(
+                    independent, tx_signature=cases[0]["transaction_signature"]
+                )
+            finally:
+                independent.close()
+
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(reconciler.reconcile_settlement, ledger,
-                                   tx_signature=cases[0]["transaction_signature"]) for _ in range(2)]
+            futures = [pool.submit(concurrent_retry) for _ in range(2)]
             if any(f.result()[0].movement_id != recorded[0]["movement_id"] for f in futures):
                 raise ValueError("Concurrent retry duplicated movement")
     finally:
