@@ -6,7 +6,7 @@ import { CAPABILITIES, requireCapability } from './capabilities.ts';
 import { DEVNET_MANIFEST, LOCALNET_MANIFEST, selectEnvironment } from './environments.ts';
 import { verifyManifest } from './manifest.ts';
 import { VerificationSession } from './session.ts';
-import { createRpc, verifyEnvironment, type Rpc } from './verify.ts';
+import { assertEndpointBinding, createRpc, verifyEnvironment, type Rpc } from './verify.ts';
 
 const devnetIdl = readFileSync(new URL('../../public/idl/devnet-idl.json', import.meta.url), 'utf8');
 const localnetIdl = readFileSync(new URL('../../public/idl/localnet-idl.json', import.meta.url), 'utf8');
@@ -58,6 +58,11 @@ test('manifest alteration, IDL alteration and environment injection fail closed'
 
 test('Localnet is verified only when RPC and API agree', async () => {
   const { manifest, rpc, idl, api } = fixture('LOCALNET');
+  assert.doesNotThrow(() => assertEndpointBinding(manifest, manifest.rpc_endpoint, manifest.api_endpoint));
+  assert.throws(() => assertEndpointBinding(manifest, DEVNET_MANIFEST.rpc_endpoint, manifest.api_endpoint),
+    /API_RPC_ENDPOINT_MISMATCH/);
+  assert.throws(() => assertEndpointBinding(manifest, manifest.rpc_endpoint, 'https://foreign.example'),
+    /API_RPC_ENDPOINT_MISMATCH/);
   assert.equal((await verifyEnvironment(manifest, idl, rpc, api)).status, 'VERIFIED');
   assert.equal((await verifyEnvironment(manifest, idl, rpc, async () => ({ ...await api(), genesis: DEVNET_MANIFEST.genesis_hash }))).status,
     'NETWORK_MISMATCH');

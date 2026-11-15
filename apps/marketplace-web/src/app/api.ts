@@ -1,7 +1,7 @@
 import { MarketplaceClient, type ApiMeta } from '@aerosettle/marketplace-sdk';
 import { PublicKey, type Connection } from '@solana/web3.js';
 import { LOCALNET_MANIFEST } from '../config/environments.ts';
-import { verifyEnvironment, type Rpc } from '../config/verify.ts';
+import { assertEndpointBinding, verifyEnvironment, type Rpc } from '../config/verify.ts';
 export const api = new MarketplaceClient({
   baseUrl: window.location.origin,
   timeoutMs: 15000,
@@ -14,6 +14,7 @@ export async function verifyNetwork(
   connection: Connection,
   signal?: AbortSignal
 ) {
+  assertEndpointBinding(LOCALNET_MANIFEST, connection.rpcEndpoint, window.location.origin);
   const idlResponse = await fetch('/idl/localnet-idl.json', { cache: 'no-store', signal });
   if (!idlResponse.ok) throw new Error('MANIFEST_INVALID');
   const rpc: Rpc = async (method, params) => {

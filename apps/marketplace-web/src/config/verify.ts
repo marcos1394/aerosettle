@@ -26,6 +26,12 @@ export type Verification = { status: VerificationStatus; reason: string; genesis
 export type Rpc = (method: string, params: unknown[], signal?: AbortSignal) => Promise<unknown>;
 export type ApiHealth = () => Promise<{ status: string; genesis: string; service: string; program_id: string }>;
 
+export function assertEndpointBinding(manifest: EnvironmentManifest,
+  rpcEndpoint: string, apiEndpoint: string): void {
+  if (rpcEndpoint !== manifest.rpc_endpoint || apiEndpoint !== manifest.api_endpoint)
+    throw new Error('API_RPC_ENDPOINT_MISMATCH');
+}
+
 function decode(account: Account): Uint8Array {
   if (!Array.isArray(account.data) || account.data[1] !== 'base64' || typeof account.data[0] !== 'string')
     throw new Error('INCOMPLETE_RPC');
