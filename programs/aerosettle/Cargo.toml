@@ -35,7 +35,7 @@ solana-keypair = "3.0.1"
 solana-account = "3"
 solana-program-option = "3"
 solana-program-pack = "3"
-solana-clock = "3"
+solana-clock = "4"
 
 
 [lints.rust]
