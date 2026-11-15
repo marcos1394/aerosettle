@@ -287,6 +287,46 @@ class DevnetTests(unittest.TestCase):
             with self.assertRaisesRegex(devnet.DeploymentError, "lacks a loader"):
                 devnet.post_deploy(config, rpc, manifest, SIGNATURE)
 
+    def test_later_protocol_config_requires_finalized_bound_evidence(self):
+        config = copy.deepcopy(CONFIG)
+        pda, _ = devnet.derive_protocol_config_pda(config["program_id"])
+        manifest = {"deployment_id": "ab" * 32}
+        evidence = {
+            "verification_status": "VERIFIED", "approval_id": devnet.CON36_PROTOCOL_APPROVAL_ID,
+            "network": config["network"], "genesis_hash": config["genesis_hash"],
+            "protocol_config_pda": pda, "protocol_deployment_id_hex": manifest["deployment_id"],
+            "network_id_hex": "cd" * 32, "signature": SIGNATURE, "slot": 99,
+        }
+        transaction = {"slot": 99, "meta": {"err": None}, "transaction": {
+            "signatures": [SIGNATURE], "message": {
+                "accountKeys": [config["program_id"], pda],
+                "instructions": [{"programIdIndex": 0, "accounts": [1], "data": "1"}],
+            },
+        }}
+        rpc = FakeRpc({
+            "getSignatureStatuses": {"value": [{"confirmationStatus": "finalized", "err": None, "slot": 99}]},
+            "getTransaction": transaction,
+        })
+        self.assertEqual(devnet.protocol_context_from_finalized_evidence(config, rpc, manifest, pda, evidence),
+                         ("cd" * 32, "ab" * 32))
+        for field, wrong in (("approval_id", "wrong"), ("genesis_hash", "wrong"),
+                             ("network", "solana:mainnet-beta"), ("protocol_config_pda", "wrong"),
+                             ("protocol_deployment_id_hex", "ef" * 32)):
+            with self.subTest(field=field):
+                altered = {**evidence, field: wrong}
+                with self.assertRaisesRegex(devnet.DeploymentError, "identity mismatch"):
+                    devnet.protocol_context_from_finalized_evidence(config, rpc, manifest, pda, altered)
+        rpc.responses["getSignatureStatuses"]["value"][0]["confirmationStatus"] = "confirmed"
+        with self.assertRaisesRegex(devnet.DeploymentError, "not finalized"):
+            devnet.protocol_context_from_finalized_evidence(config, rpc, manifest, pda, evidence)
+        rpc.responses["getSignatureStatuses"]["value"][0]["confirmationStatus"] = "finalized"
+        transaction["transaction"]["message"]["instructions"] = []
+        with self.assertRaisesRegex(devnet.DeploymentError, "instruction missing"):
+            devnet.protocol_context_from_finalized_evidence(config, rpc, manifest, pda, evidence)
+        transaction["transaction"]["message"]["instructions"] = "malformed"
+        with self.assertRaisesRegex(devnet.DeploymentError, "Malformed ProtocolConfig transaction"):
+            devnet.protocol_context_from_finalized_evidence(config, rpc, manifest, pda, evidence)
+
     def test_idl_compilation_matches_existing_abi(self):
         synthetic = '\n'.join([
             '--- IDL begin address ---', json.dumps(json.dumps(devnet.PROGRAM_ID)), '--- IDL end address ---',

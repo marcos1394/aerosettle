@@ -1,0 +1,72 @@
+[
+  {
+    "advisory_id": "GHSA-3gc7-fjrx-p6mg",
+    "package": "bigint-buffer",
+    "affected_version": "1.1.5",
+    "patched_version": null,
+    "severity": "high",
+    "exploitability": "Requires invocation of toBigIntLE with oversized data; this bootstrap package is an operator-run Localnet tool, not a hosted endpoint.",
+    "exposure": "tools/bootstrap only; release CI executes it against generated Localnet fixtures. Untrusted inputs remain a residual risk.",
+    "mitigation": "No Mainnet deployment path; controlled Localnet fixtures; fail on any new high advisory. Replace dependency when a compatible patched SPL SDK is available.",
+    "owner": "Conatus release maintainer",
+    "review_date": "2026-11-30",
+    "resolution_status": "TEMPORARY_EXCEPTION",
+    "scopes": ["tools/bootstrap/package-lock.json"]
+  },
+  {
+    "advisory_id": "GHSA-528h-pc64-c93x",
+    "package": "stream-json",
+    "affected_version": "1.9.1",
+    "patched_version": "3.6.0",
+    "severity": "moderate",
+    "exploitability": "Nested JSON can cause excessive work when affected filters are used.",
+    "exposure": "Indirect through jayson in Solana RPC clients; RPC responses are network input.",
+    "mitigation": "Pin approved RPC endpoints and bound RPC responses; upgrade web3.js chain when compatible patched dependency is available.",
+    "owner": "Conatus release maintainer",
+    "review_date": "2026-11-30",
+    "resolution_status": "TEMPORARY_EXCEPTION",
+    "scopes": ["apps/marketplace-web/package-lock.json", "packages/transaction-sdk/package-lock.json", "tools/bootstrap/package-lock.json"]
+  },
+  {
+    "advisory_id": "GHSA-hqr4-qq8f-hg3x",
+    "package": "stream-json",
+    "affected_version": "1.9.1",
+    "patched_version": "3.6.0",
+    "severity": "moderate",
+    "exploitability": "Long comments in JSONC can cause excessive parser work if the affected parser is used.",
+    "exposure": "Indirect through jayson in Solana RPC clients; use of JSONC path has not been demonstrated.",
+    "mitigation": "Constrain RPC sources and monitor dependency updates; do not treat lack of demonstrated reachability as a fix.",
+    "owner": "Conatus release maintainer",
+    "review_date": "2026-11-30",
+    "resolution_status": "TEMPORARY_EXCEPTION",
+    "scopes": ["apps/marketplace-web/package-lock.json", "packages/transaction-sdk/package-lock.json", "tools/bootstrap/package-lock.json"]
+  },
+  {
+    "advisory_id": "GHSA-mjw6-4jj6-33hc",
+    "package": "stream-json",
+    "affected_version": "1.9.1",
+    "patched_version": "3.6.0",
+    "severity": "moderate",
+    "exploitability": "Prototype pollution requires the affected Assembler path and crafted keys.",
+    "exposure": "Indirect through jayson in Solana RPC clients; exact call path requires review.",
+    "mitigation": "Use approved RPC endpoints and update the transitive chain when compatible; retain negative input tests in RPC clients.",
+    "owner": "Conatus release maintainer",
+    "review_date": "2026-11-30",
+    "resolution_status": "TEMPORARY_EXCEPTION",
+    "scopes": ["apps/marketplace-web/package-lock.json", "packages/transaction-sdk/package-lock.json", "tools/bootstrap/package-lock.json"]
+  },
+  {
+    "advisory_id": "GHSA-w5hq-g745-h8pq",
+    "package": "uuid",
+    "affected_version": "8.3.2",
+    "patched_version": "11.1.1",
+    "severity": "moderate",
+    "exploitability": "Requires affected v3/v5/v6 API with caller-supplied buffer.",
+    "exposure": "Indirect through Solana RPC dependency; the affected API reachability is unconfirmed.",
+    "mitigation": "Keep RPC inputs bounded and upgrade the transitive chain after compatibility testing.",
+    "owner": "Conatus release maintainer",
+    "review_date": "2026-11-30",
+    "resolution_status": "TEMPORARY_EXCEPTION",
+    "scopes": ["apps/marketplace-web/package-lock.json", "packages/transaction-sdk/package-lock.json", "tools/bootstrap/package-lock.json"]
+  }
+]
