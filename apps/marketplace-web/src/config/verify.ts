@@ -111,7 +111,10 @@ export function createRpc(endpoint: string, fetcher: typeof fetch = fetch): Rpc 
   let counter = 0;
   return async (method, params, signal) => {
     const id = ++counter;
-    const response = await fetcher(endpoint, { method: 'POST', cache: 'no-store', signal,
+    const boundedSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(12_000)])
+      : AbortSignal.timeout(12_000);
+    const response = await fetcher(endpoint, { method: 'POST', cache: 'no-store', signal: boundedSignal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) });
     if (!response.ok) throw new Error('RPC_UNAVAILABLE');
