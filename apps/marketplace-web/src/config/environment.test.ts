@@ -157,14 +157,20 @@ test('network switch during live verification cannot promote the previous networ
   const devnet = fixture('DEVNET');
   const localnet = fixture('LOCALNET');
   let releaseOld!: () => void;
+  let markOldStarted!: () => void;
+  const oldStarted = new Promise<void>((resolve) => { markOldStarted = resolve; });
   const oldRpc: Rpc = async (method, params, signal) => {
-    if (method === 'getGenesisHash')
-      await new Promise<void>((resolve) => { releaseOld = resolve; });
+    if (method === 'getGenesisHash') {
+      const held = new Promise<void>((resolve) => { releaseOld = resolve; });
+      markOldStarted();
+      await held;
+    }
     return devnet.rpc(method, params, signal);
   };
   const previous = session.run('DEVNET', async (signal) =>
     (await verifyEnvironment(devnet.manifest, devnet.idl, oldRpc, undefined, signal)).status,
   (status) => applied.push(status));
+  await oldStarted;
   const current = session.run('LOCALNET', async (signal) =>
     (await verifyEnvironment(localnet.manifest, localnet.idl, localnet.rpc, localnet.api, signal)).status,
   (status) => applied.push(status));

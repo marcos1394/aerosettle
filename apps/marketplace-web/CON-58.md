@@ -12,6 +12,8 @@ The repository has no hosting configuration or authorized account for Cloudflare
 
 The `_headers` file is prepared for Cloudflare Pages. Its CSP allows only the approved Devnet RPC as a network destination; it denies framing and form submission, applies noindex, and keeps HTML, IDL and evidence uncached while immutable hashed assets may be cached. These are **artifact assertions** until a host serves them. If another provider is selected, translate the header rules and verify the actual HTTP response before publication.
 
+For this static build, the expected starting hosting cost can be $0/month on a qualifying free plan, subject to provider quotas and eligibility; a purchased custom domain and excess usage can add cost. [Cloudflare Pages free limits](https://developers.cloudflare.com/pages/platform/limits/) include deployment and file-count quotas; [Firebase Hosting](https://firebase.google.com/docs/hosting/usage-quotas-pricing) has usage-based quotas, and [Vercel Hobby](https://vercel.com/pricing) is restricted to personal, non-commercial use. A staging project owner must select the plan and approve any recurring spend before provisioning. No cost has been incurred for this PR's hosting because no site was deployed.
+
 The Vite Devnet build disables the general `public/` copy and emits only the approved Devnet IDL and the image referenced by page metadata. This prevents `localnet-idl.json` from appearing in a Devnet artifact. The release checker rejects any Localnet or secret file, source map, symlink or forbidden financial module and hashes every file. `release.json` binds the exact commit, identity, IDL, JS bundle, timestamp and file digest. Any changed byte requires a new release ID and approval.
 
 ## CI, approval and deployment procedure
