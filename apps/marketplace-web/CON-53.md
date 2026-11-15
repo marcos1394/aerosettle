@@ -61,6 +61,8 @@ Observación RPC real y de solo lectura: [evidence/con53/devnet-rpc-read-only.js
 
 Las pruebas cubren manifest e IDL alterados, red desconocida/Mainnet, genesis equivocado, programa no ejecutable, owner y mint erróneos, decimales y autoridad incorrectos, API de otro clúster, RPC caído o incompleto, intentos de firma en Devnet y respuestas fuera de orden. El aislamiento del build impide reutilizar estado Localnet en Devnet.
 
+El escaneo Gitleaks de historial marca los dos `token_mint` públicos de `environments.ts` como `generic-api-key`. Son direcciones SPL de identificación pública, no secretos ni credenciales. Sus dos fingerprints específicos se registraron en `tools/security/gitleaks-baseline.json`; el escaneo de cualquier hallazgo adicional sigue fallando.
+
 ## Dependencias pendientes
 
 - CON-54: conexión real de wallets.
