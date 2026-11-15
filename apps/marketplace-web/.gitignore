@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-localnet/
+dist-devnet/
 src/localnet-idl.json
 .env.local
 src/localnet-evidence.json

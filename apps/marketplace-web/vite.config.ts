@@ -1,8 +1,21 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
-  plugins: [react()],
+export default defineConfig(({ mode }) => {
+  if (!['development', 'production', 'localnet', 'devnet'].includes(mode))
+    throw new Error('MAINNET_DISABLED');
+  return {
+  // Separate entry graph: the Devnet build never imports wallet or transaction modules.
+  plugins: mode === 'devnet' ? [react(), {
+    name: 'conatus-devnet-entry',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html: string) {
+        if (!html.includes('/src/main.ts')) throw new Error('ENTRY_NOT_FOUND');
+        return html.replace('/src/main.ts', '/src/devnet-bootstrap.tsx');
+      },
+    },
+  }] : [react()],
   define: {
     global: 'globalThis',
   },
@@ -44,4 +57,5 @@ export default defineConfig({
       },
     },
   },
+  };
 });
