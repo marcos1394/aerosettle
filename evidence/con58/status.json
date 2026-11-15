@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "status": "PENDING_APPROVAL",
+  "provenance": "LOCAL_OFFLINE_BUILD_AND_LIVE_DEVNET_RPC_READ_ONLY",
+  "CON58_BUILD_VERIFIED": true,
+  "DEVNET_IDENTITY_VERIFIED": true,
+  "rpc_observed_at": "2026-11-15T23:09:55.319Z",
+  "rpc_result": "DEGRADED_READ_ONLY / API_NOT_CONFIGURED",
+  "rpc_genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "artifact_digest": "9b4cd37e653056cfd93929d86403345e0167ce5f678e39d98183096070746ce2",
+  "STAGING_DEPLOYED": false,
+  "PUBLIC_URL_VERIFIED": false,
+  "HTTPS_VERIFIED": false,
+  "SECURITY_HEADERS_VERIFIED": false,
+  "ROLLBACK_TESTED": false,
+  "WALLET_ENABLED": false,
+  "FINANCIAL_ACTIONS_ENABLED": false,
+  "MAINNET_ENABLED": false,
+  "TRANSACTIONS_SENT": 0,
+  "missing": [
+    "authorized_staging_host_account_and_project",
+    "approved_staging_domain",
+    "minimal_hosting_credential_and_protected_environment",
+    "approval_of_exact_release_id_and_target",
+    "public_browser_smoke_and_rollback"
+  ]
+}

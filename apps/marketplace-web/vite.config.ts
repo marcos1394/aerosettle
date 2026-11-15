@@ -1,13 +1,25 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 
 export default defineConfig(({ mode }) => {
   if (!['development', 'production', 'localnet', 'devnet'].includes(mode))
     throw new Error('MAINNET_DISABLED');
   return {
+  // Vite otherwise copies public/idl/localnet-idl.json into the Devnet artifact.
+  publicDir: mode === 'devnet' ? false : 'public',
   // Separate entry graph: the Devnet build never imports wallet or transaction modules.
   plugins: mode === 'devnet' ? [react(), {
     name: 'conatus-devnet-entry',
+    generateBundle() {
+      for (const fileName of ['idl/devnet-idl.json', 'images/conatus-physical-ai.jpg']) {
+        this.emitFile({
+          type: 'asset',
+          fileName,
+          source: readFileSync(new URL(`./public/${fileName}`, import.meta.url)),
+        });
+      }
+    },
     transformIndexHtml: {
       order: 'pre',
       handler(html: string) {

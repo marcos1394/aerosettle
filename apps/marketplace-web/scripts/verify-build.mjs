@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { DEVNET_MANIFEST, LOCALNET_MANIFEST } from '../src/config/environments.ts';
 import { verifyManifest } from '../src/config/manifest.ts';
 
@@ -18,6 +18,10 @@ const assets = readdirSync(new URL('assets/', output))
 const bundle = assets.join('\n');
 assert.ok(assets.length > 0 && html.includes('/assets/'), 'Missing build artifact');
 if (target === 'devnet') {
+  assert.ok(existsSync(new URL('idl/devnet-idl.json', output)), 'Approved Devnet IDL missing');
+  assert.ok(!existsSync(new URL('idl/localnet-idl.json', output)), 'Localnet IDL leaked into Devnet artifact');
+  assert.equal(readFileSync(new URL('idl/devnet-idl.json', output), 'utf8'), idl,
+    'Devnet IDL artifact differs from approved source');
   assert.ok(bundle.includes('devnet-app') && bundle.includes(manifest.token_mint), 'Wrong entry or mint');
   for (const forbidden of ['signTransaction', 'sendTransaction', 'LocalnetDevWalletAdapter',
     'localnet-idl.json', 'dev-signer', 'funding-api', 'PhantomWalletAdapter'])

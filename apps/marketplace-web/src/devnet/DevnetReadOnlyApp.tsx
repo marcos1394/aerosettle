@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEVNET_MANIFEST } from '../config/environments.ts';
 import { createRpc, verifyEnvironment, type Verification } from '../config/verify.ts';
 import { VerificationSession } from '../config/session.ts';
+import { stagingReadiness } from './readiness.ts';
 
 const RPC = createRpc(DEVNET_MANIFEST.rpc_endpoint);
 const initial: Verification = { status: 'VERIFYING', reason: 'CHECKING_RPC',
@@ -30,6 +31,7 @@ export function DevnetReadOnlyApp() {
   }, [revision]);
 
   const identified = verification.provenance === 'LIVE_DEVNET_READ_ONLY';
+  const readiness = stagingReadiness(verification);
   return <div className="devnet-app">
     <header className="devnet-header">
       <div className="devnet-brand">CONATUS <span> / SOLANA DEVNET</span></div>
@@ -56,6 +58,9 @@ export function DevnetReadOnlyApp() {
           <div><small>Asset</small><strong>Devnet test token · 6 decimals</strong></div>
           <div><small>Financial actions</small><strong>Disabled</strong></div>
         </div>
+        <p>Read-only preview readiness: {readiness.READY_FOR_READ_ONLY_PREVIEW
+          ? 'READY_FOR_READ_ONLY_PREVIEW' : 'WAITING_FOR_RPC_VERIFICATION'}.
+          Transactions: disabled.</p>
         <details><summary>Verification details</summary>
           <dl>
             <dt>Genesis</dt><dd>{verification.genesis ?? 'Unverified'}</dd>
