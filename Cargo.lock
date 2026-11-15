@@ -21,7 +21,7 @@ dependencies = [
  "litesvm",
  "sha2 0.10.9",
  "solana-account",
- "solana-clock 3.2.1",
+ "solana-clock 4.0.0",
  "solana-keypair",
  "solana-message",
  "solana-program-option",
