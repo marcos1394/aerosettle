@@ -39,6 +39,7 @@ jobs:
           cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
       - name: VALIDATE locked dependencies, frontend and SDK regressions
         run: |
+          python -m pip install -r requirements.txt
           npm ci --prefix packages/transaction-sdk --omit=optional
           npm ci --prefix packages/marketplace-sdk
           npm ci --prefix apps/marketplace-web
@@ -48,7 +49,6 @@ jobs:
           npm run typecheck --prefix apps/marketplace-web
       - name: VALIDATE release security controls
         run: |
-          python -m pip install -r requirements.txt
           python -m unittest discover -s tools/security
           python -m tools.security.workflow_policy
           git diff --check
