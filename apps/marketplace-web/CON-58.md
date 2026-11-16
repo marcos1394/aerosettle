@@ -40,6 +40,8 @@ HTTPS returned 200. The response included HSTS, `nosniff`, `no-referrer`, `DENY`
 
 The first two deployments exposed a real CSP defect: `connect-src` omitted `'self'`, blocking the same-origin IDL fetch. The UI correctly failed closed with `IDL_UNAVAILABLE`. Commit `a23057f8a46f946c1fe7c1420a4e9e5e7e3ebbed` added `'self'` while retaining only the approved Devnet RPC as an external connection, and extended the CSP regression test. The corrected release was separately approved and deployed, then passed the live browser check.
 
+The CON-46 gitleaks inventory flagged the public SPL test mint in the evidence JSON as a generic API key. Its historical finding was added to the baseline by exact commit/file/line fingerprint, with a redacted value. The current evidence names the value `spl_test_mint_pubkey` to prevent a recurring false positive; no scanner rule or scope was disabled.
+
 ## Rollback evidence
 
 Two initial compatible production deployments were published: `8927927d-5ab5-4b65-a36a-2059b5210fc3` for release `4bdc413e…` and `827e2583-d121-4608-9e80-f99a3d7ec678` for release `4ffbae97…`. Their app files and artifact digest were identical; the latter changed only `release.json`. The primary URL was observed serving `4ffbae97…`. The approved Pages rollback API then returned HTTP 200 for target `8927927d-5ab5-4b65-a36a-2059b5210fc3`, and the primary URL was observed serving `4bdc413e…` again. These initial versions are retained as evidence only: their CSP blocks the IDL, so they are **not** future recovery targets for a healthy preview.
