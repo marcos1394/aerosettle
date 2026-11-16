@@ -4,6 +4,7 @@ on:
     branches: [master]
     paths:
       - apps/marketplace-web/**
+      - evidence/con58/**
       - packages/transaction-sdk/**
       - packages/marketplace-sdk/**
       - tools/security/**
@@ -80,8 +81,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'DEPLOY'
     runs-on: ubuntu-24.04
     steps:
-      - name: DEPLOY blocked until authorized hosting and protected environment exist
+      - name: DEPLOY remains a terminal-only human-approved operation
         run: |
-          echo 'PENDING_APPROVAL: no verified staging project, domain, minimal credential or protected environment is configured.'
-          echo 'A green PR never publishes staging. See apps/marketplace-web/CON-58.md.'
+          echo 'Cloudflare Pages staging is deployed by an authorized operator with the guarded terminal procedure.'
+          echo 'This workflow has read-only permissions and never receives Cloudflare credentials or publishes from a PR.'
           exit 1
