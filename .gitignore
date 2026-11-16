@@ -39,6 +39,7 @@ test-ledger
 **/dist/
 **/build/
 **/coverage/
+/.wrangler/
 
 # Python
 **/__pycache__/

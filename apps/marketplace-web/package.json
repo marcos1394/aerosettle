@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/app/*.test.ts src/config/*.test.ts",
+    "test": "node --experimental-strip-types --test src/app/*.test.ts src/config/*.test.ts staging/*.test.mjs",
     "build": "npm run typecheck && vite build",
     "build:localnet": "npm run typecheck && vite build --mode localnet --outDir dist-localnet",
     "build:devnet": "npm run typecheck && vite build --mode devnet --outDir dist-devnet",

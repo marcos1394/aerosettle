@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-16T06:59:48.000Z",
+  "provider": "Cloudflare Pages Direct Upload",
+  "plan": "Free, confirmed by the authorized account owner; billing API returned 403 to the scoped Wrangler OAuth session",
+  "account_id": "54cb929430c4a02b90d6ea3ce356d0d9",
+  "account_name": "Founders@quhealthy.org's Account",
+  "project": "conatus-devnet-staging",
+  "production_branch": "staging",
+  "url": "https://conatus-devnet-staging.pages.dev/",
+  "deployments": [
+    {
+      "id": "8927927d-5ab5-4b65-a36a-2059b5210fc3",
+      "release_id": "4bdc413efc239d82b1d66f99f7e544456a79b447a9113b1d976c15cce525c9e5",
+      "commit_sha": "c5d4b140760ce0a70472ff1947d89e2ddec19796",
+      "artifact_digest": "9b4cd37e653056cfd93929d86403345e0167ce5f678e39d98183096070746ce2",
+      "url": "https://8927927d.conatus-devnet-staging.pages.dev/"
+    },
+    {
+      "id": "827e2583-d121-4608-9e80-f99a3d7ec678",
+      "release_id": "4ffbae9779602a64094b8afa046b4397c2aba9f6485a78b35a04eacad67c5de1",
+      "commit_sha": "c5d4b140760ce0a70472ff1947d89e2ddec19796",
+      "artifact_digest": "9b4cd37e653056cfd93929d86403345e0167ce5f678e39d98183096070746ce2",
+      "url": "https://827e2583.conatus-devnet-staging.pages.dev/",
+      "note": "Only release.json differs from the first deployment."
+    },
+    {
+      "id": "e0b5976d-7927-4823-b972-ff66f5a9d451",
+      "release_id": "26567e73323def9e3dd370ddcd24d97d26968e3c45a6b6dc432e31208802a517",
+      "commit_sha": "a23057f8a46f946c1fe7c1420a4e9e5e7e3ebbed",
+      "artifact_digest": "e78c5b3676bd8b4bc4b54039644605b24671111698fea32f8754e60661d2aaf4",
+      "url": "https://e0b5976d.conatus-devnet-staging.pages.dev/",
+      "status": "CURRENT"
+    },
+    {
+      "id": "7823a285-1fff-4744-bcc3-1cef5dbf0997",
+      "release_id": "0860b5d86ea11b3d7af7dd4a86eb1a71573abb98e3d1cd31cf82090926f77d7f",
+      "commit_sha": "a23057f8a46f946c1fe7c1420a4e9e5e7e3ebbed",
+      "artifact_digest": "e78c5b3676bd8b4bc4b54039644605b24671111698fea32f8754e60661d2aaf4",
+      "url": "https://7823a285.conatus-devnet-staging.pages.dev/",
+      "note": "Healthy rollback-test variant; only release.json differs from the current corrected deployment."
+    }
+  ],
+  "rollback_test": {
+    "from_release_id": "4ffbae9779602a64094b8afa046b4397c2aba9f6485a78b35a04eacad67c5de1",
+    "to_release_id": "4bdc413efc239d82b1d66f99f7e544456a79b447a9113b1d976c15cce525c9e5",
+    "target_deployment_id": "8927927d-5ab5-4b65-a36a-2059b5210fc3",
+    "provider_response": "HTTP 200, success=true",
+    "after_rollback_url_release_id": "4bdc413efc239d82b1d66f99f7e544456a79b447a9113b1d976c15cce525c9e5",
+    "status": "VERIFIED"
+  },
+  "healthy_rollback_test": {
+    "from_release_id": "0860b5d86ea11b3d7af7dd4a86eb1a71573abb98e3d1cd31cf82090926f77d7f",
+    "to_release_id": "26567e73323def9e3dd370ddcd24d97d26968e3c45a6b6dc432e31208802a517",
+    "target_deployment_id": "e0b5976d-7927-4823-b972-ff66f5a9d451",
+    "provider_response": "HTTP 200, success=true",
+    "after_rollback_url_release_id": "26567e73323def9e3dd370ddcd24d97d26968e3c45a6b6dc432e31208802a517",
+    "after_rollback_browser_status": "DEGRADED READ ONLY / LIVE_DEVNET_READ_ONLY / READY_FOR_READ_ONLY_PREVIEW",
+    "status": "VERIFIED"
+  },
+  "live_checks": {
+    "https_status": 200,
+    "hsts": "max-age=31536000",
+    "csp_connect_src": "'self' https://api.devnet.solana.com",
+    "x_content_type_options": "nosniff",
+    "referrer_policy": "no-referrer",
+    "x_frame_options": "DENY",
+    "x_robots_tag": "noindex, nofollow, noarchive",
+    "permissions_policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "html_idl_evidence_and_asset_hashes_match_release": true,
+    "cache_control_html_idl_evidence_release": "no-store",
+    "cache_control_hashed_assets": "public, max-age=31536000, immutable",
+    "browser_status": "DEGRADED READ ONLY",
+    "browser_provenance": "LIVE_DEVNET_READ_ONLY",
+    "browser_read_only_readiness": "READY_FOR_READ_ONLY_PREVIEW",
+    "browser_api": "API_NOT_CONFIGURED",
+    "browser_financial_actions": "Disabled",
+    "browser_console_errors": 0,
+    "mobile_viewport": "390x844, document scrollWidth 390, no horizontal overflow",
+    "rpc_genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+    "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+    "spl_test_mint_pubkey": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+    "manifest_sha256": "db8d0bf22b0e9102d9464d9f35c6732a8e0e9e444fe459ead4a75a1fc8469592",
+    "idl_sha256": "a6e436aa1c6468b4f518b742e40a2664e38dcdf7bc1419e53e1624444888e15d"
+  },
+  "incident": "The original CSP blocked same-origin IDL fetch. The UI failed closed with IDL_UNAVAILABLE. Commit a23057f8 allows only self plus approved Devnet RPC in connect-src; the corrected release passed live browser verification.",
+  "solana_transactions_sent": 0,
+  "paid_services_enabled": false,
+  "credentials_in_repository": false
+}

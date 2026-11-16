@@ -880,5 +880,26 @@
   "Message": "CON-53 isolate Localnet and read-only Devnet frontend builds",
   "Tags": [],
   "Fingerprint": "40e3ce973d8eebb30add4e009ca15368741c1f18:apps/marketplace-web/src/config/environments.ts:generic-api-key:22"
+ },
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 82,
+  "EndLine": 82,
+  "StartColumn": 7,
+  "EndColumn": 65,
+  "Match": "token_mint\": \"REDACTED\"",
+  "Secret": "REDACTED",
+  "File": "evidence/con58/cloudflare-pages.json",
+  "SymlinkFile": "",
+  "Commit": "50312e12e675fb7c4cf7de36ad0ea74461a2ea99",
+  "Link": "https://github.com/marcos1394/aerosettle/blob/50312e12e675fb7c4cf7de36ad0ea74461a2ea99/evidence/con58/cloudflare-pages.json#L82",
+  "Entropy": 4.879664,
+  "Author": "marcos sandoval",
+  "Email": "ingsandoval1394@gmail.com",
+  "Date": "2026-11-16T07:00:02Z",
+  "Message": "docs(con58): record Pages publication and healthy rollback evidence",
+  "Tags": [],
+  "Fingerprint": "50312e12e675fb7c4cf7de36ad0ea74461a2ea99:evidence/con58/cloudflare-pages.json:generic-api-key:82"
  }
 ]

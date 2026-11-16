@@ -7,6 +7,7 @@ import { DEVNET_MANIFEST, LOCALNET_MANIFEST, selectEnvironment } from './environ
 import { verifyManifest } from './manifest.ts';
 import { VerificationSession } from './session.ts';
 import { assertEndpointBinding, createRpc, verifyEnvironment, type Rpc } from './verify.ts';
+import { stagingReadiness } from '../devnet/readiness.ts';
 
 const devnetIdl = readFileSync(new URL('../../public/idl/devnet-idl.json', import.meta.url), 'utf8');
 const localnetIdl = readFileSync(new URL('../../public/idl/localnet-idl.json', import.meta.url), 'utf8');
@@ -74,6 +75,24 @@ test('Devnet RPC identity yields read-only degraded state while API is absent', 
   assert.equal(result.status, 'DEGRADED_READ_ONLY');
   assert.equal(result.provenance, 'LIVE_DEVNET_READ_ONLY');
   assert.equal(result.reason, 'API_NOT_CONFIGURED');
+  assert.deepEqual(stagingReadiness(result), {
+    WEB_AVAILABLE: true, RPC_VERIFIED: true, API_NOT_CONFIGURED: true,
+    DEGRADED_READ_ONLY: true, READY_FOR_READ_ONLY_PREVIEW: true,
+    READY_FOR_TRANSACTIONS: false,
+  });
+});
+
+test('RPC rate limit, TLS failure and unreachable endpoint fail staging readiness', async () => {
+  const { manifest, idl } = fixture('DEVNET');
+  for (const error of ['HTTP_429', 'TLS_CERTIFICATE_INVALID', 'ENETUNREACH']) {
+    const result = await verifyEnvironment(manifest, idl, async () => { throw Error(error); });
+    assert.equal(result.status, 'UNAVAILABLE');
+    const readiness = stagingReadiness(result);
+    assert.equal(readiness.WEB_AVAILABLE, true);
+    assert.equal(readiness.RPC_VERIFIED, false);
+    assert.equal(readiness.READY_FOR_READ_ONLY_PREVIEW, false);
+    assert.equal(readiness.READY_FOR_TRANSACTIONS, false);
+  }
 });
 
 test('genesis, program, mint, owner, decimals and authority mismatch never verify', async () => {
@@ -138,14 +157,20 @@ test('network switch during live verification cannot promote the previous networ
   const devnet = fixture('DEVNET');
   const localnet = fixture('LOCALNET');
   let releaseOld!: () => void;
+  let markOldStarted!: () => void;
+  const oldStarted = new Promise<void>((resolve) => { markOldStarted = resolve; });
   const oldRpc: Rpc = async (method, params, signal) => {
-    if (method === 'getGenesisHash')
-      await new Promise<void>((resolve) => { releaseOld = resolve; });
+    if (method === 'getGenesisHash') {
+      const held = new Promise<void>((resolve) => { releaseOld = resolve; });
+      markOldStarted();
+      await held;
+    }
     return devnet.rpc(method, params, signal);
   };
   const previous = session.run('DEVNET', async (signal) =>
     (await verifyEnvironment(devnet.manifest, devnet.idl, oldRpc, undefined, signal)).status,
   (status) => applied.push(status));
+  await oldStarted;
   const current = session.run('LOCALNET', async (signal) =>
     (await verifyEnvironment(localnet.manifest, localnet.idl, localnet.rpc, localnet.api, signal)).status,
   (status) => applied.push(status));
