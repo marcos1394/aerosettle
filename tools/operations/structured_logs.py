@@ -16,6 +16,8 @@ FIELDS = {"component", "operation", "correlation_id", "trace_id", "network",
           "schema_version", "error_category"}
 FIELDS |= {"task_id", "requester_id", "executor_id", "event_type", "state_before",
            "state_after", "authorization_result", "evidence_source"}
+FIELDS |= {"rpc_provider", "rpc_method", "resource_type", "cache_hit", "circuit_state",
+           "rate_limit_state"}
 
 
 def correlation_id(scope: str, signature: str | None = None) -> str:

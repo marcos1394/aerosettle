@@ -1,0 +1,28 @@
+{
+  "cache_hits": 39,
+  "concurrency": 8,
+  "elapsed_ms": 22.5,
+  "errors": 0,
+  "mean_latency_ms": 0.56,
+  "metrics": {
+    "circuit": {
+      "offline-fixture": "CLOSED"
+    },
+    "counters": {
+      "cache_hit": 39,
+      "scan_ok": 1
+    },
+    "provider_mode": "SINGLE_PROVIDER_MODE",
+    "scan_latency_ms": {
+      "p50": 9.75,
+      "p95": 9.75,
+      "p99": 9.75
+    }
+  },
+  "mode": "OFFLINE_FIXTURE",
+  "observed_at": "2026-11-16T22:09:47.679999+00:00",
+  "peak_traced_bytes": 1217720,
+  "requests": 40,
+  "rpc_calls": 89,
+  "scan_count": 1
+}
