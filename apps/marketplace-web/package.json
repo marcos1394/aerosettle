@@ -17,7 +17,7 @@
     "@aerosettle/transaction-sdk": "file:../../packages/transaction-sdk",
     "@noble/curves": "1.9.7",
     "@solana/wallet-adapter-base": "^0.9.27",
-    "@solana/wallet-adapter-phantom": "^0.9.29",
+    "@solana/wallet-adapter-phantom": "^0.9.30",
     "@solana/wallet-adapter-react": "0.15.40",
     "@solana/wallet-adapter-react-ui": "0.9.39",
     "@solana/web3.js": "1.99.0",
