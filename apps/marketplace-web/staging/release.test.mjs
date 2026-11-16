@@ -34,7 +34,10 @@ function fixture() {
 test('approved CSP, cache and security headers are narrow', () => {
   assert.equal(verifyHeaders(headers), true);
   assert.throws(() => verifyHeaders(headers.replace(
-    'connect-src https://api.devnet.solana.com', 'connect-src *')), /CSP_TOO_PERMISSIVE/);
+    "connect-src 'self' https://api.devnet.solana.com", 'connect-src *')), /CSP_TOO_PERMISSIVE/);
+  assert.throws(() => verifyHeaders(headers.replace(
+    "connect-src 'self' https://api.devnet.solana.com",
+    'connect-src https://api.devnet.solana.com')), /CSP_TOO_PERMISSIVE/);
   assert.throws(() => verifyHeaders(headers.replace('X-Content-Type-Options: nosniff', '')),
     /SECURITY_HEADER_MISSING/);
   assert.throws(() => verifyHeaders(headers.replace('Cache-Control: no-store',

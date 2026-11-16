@@ -57,7 +57,7 @@ export function verifyHeaders(text) {
     assert.ok(common.has(name), `SECURITY_HEADER_MISSING:${name}`);
   const csp = common.get('content-security-policy');
   assert.ok(csp.includes("default-src 'none'") && csp.includes("script-src 'self'") &&
-    csp.includes("frame-ancestors 'none'") && csp.includes("connect-src https://api.devnet.solana.com") &&
+    csp.includes("frame-ancestors 'none'") && csp.includes("connect-src 'self' https://api.devnet.solana.com") &&
     !/\*|unsafe-inline|unsafe-eval|http:\/\//.test(csp), 'CSP_TOO_PERMISSIVE');
   assert.equal(common.get('x-content-type-options'), 'nosniff');
   assert.equal(common.get('referrer-policy'), 'no-referrer');
