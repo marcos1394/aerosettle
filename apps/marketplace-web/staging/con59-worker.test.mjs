@@ -45,6 +45,8 @@ test('Pages API serves only bounded verified snapshot data and opaque pagination
   const { handle } = await worker();
   const ready = await handle(request('/api/ready'), now);
   assert.equal(ready.status, 200);
+  assert.equal(ready.headers.get('strict-transport-security'), 'max-age=31536000');
+  assert.match(ready.headers.get('content-security-policy'), /default-src 'none'/);
   assert.equal((await ready.json()).source, 'RELEASE_BOUND_RPC_SNAPSHOT');
   const first = await handle(request('/api/v1/agents?limit=1'), now);
   const body = await first.json();

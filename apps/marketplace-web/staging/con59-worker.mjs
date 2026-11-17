@@ -20,7 +20,11 @@ let verified;
 
 function response(status, body, origin) {
   const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff', 'Vary': 'Origin' };
+    'X-Content-Type-Options': 'nosniff', 'Vary': 'Origin',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+    'Strict-Transport-Security': 'max-age=31536000',
+    'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' };
   if (origin === ORIGIN) headers['Access-Control-Allow-Origin'] = ORIGIN;
   return new Response(JSON.stringify(body), { status, headers });
 }
