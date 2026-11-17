@@ -69,17 +69,25 @@ test('Localnet is verified only when RPC and API agree', async () => {
     'NETWORK_MISMATCH');
 });
 
-test('Devnet RPC identity yields read-only degraded state while API is absent', async () => {
+test('Devnet RPC identity remains read-only degraded when API is unavailable', async () => {
   const { manifest, rpc, idl } = fixture('DEVNET');
   const result = await verifyEnvironment(manifest, idl, rpc);
   assert.equal(result.status, 'DEGRADED_READ_ONLY');
   assert.equal(result.provenance, 'LIVE_DEVNET_READ_ONLY');
-  assert.equal(result.reason, 'API_NOT_CONFIGURED');
+  assert.equal(result.reason, 'API_UNAVAILABLE');
   assert.deepEqual(stagingReadiness(result), {
-    WEB_AVAILABLE: true, RPC_VERIFIED: true, API_NOT_CONFIGURED: true,
+    WEB_AVAILABLE: true, RPC_VERIFIED: true, API_VERIFIED: false,
+    INDEX_FRESH: false, INDEX_STALE: false, API_UNAVAILABLE: true,
     DEGRADED_READ_ONLY: true, READY_FOR_READ_ONLY_PREVIEW: true,
     READY_FOR_TRANSACTIONS: false,
   });
+  const ready = await verifyEnvironment(manifest, idl, rpc, async () => ({
+    status: 'ok', genesis: manifest.genesis_hash, program_id: manifest.program_id, service: 'con59' }));
+  assert.equal(ready.status, 'VERIFIED');
+  assert.equal(stagingReadiness(ready, true).INDEX_FRESH, true);
+  const stale = await verifyEnvironment(manifest, idl, rpc, async () => ({
+    status: 'stale', genesis: manifest.genesis_hash, program_id: manifest.program_id, service: 'con59' }));
+  assert.equal(stagingReadiness(stale).INDEX_STALE, true);
 });
 
 test('RPC rate limit, TLS failure and unreachable endpoint fail staging readiness', async () => {

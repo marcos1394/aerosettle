@@ -1,4 +1,4 @@
-name: CON-58 Devnet staging validate and prepare
+name: CON-58/59 Devnet staging validate
 on:
   pull_request:
     branches: [master]
@@ -12,10 +12,10 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: VALIDATE and PREPARE are offline; DEPLOY remains gated until hosting approval
+        description: VALIDATE is offline; live snapshot and DEPLOY remain guarded terminal operations
         type: choice
         required: true
-        options: [VALIDATE, PREPARE, DEPLOY]
+        options: [VALIDATE, DEPLOY]
 permissions:
   contents: read
 jobs:
@@ -59,18 +59,10 @@ jobs:
           node --experimental-strip-types apps/marketplace-web/scripts/verify-build.mjs localnet
           npm run build:devnet --prefix apps/marketplace-web
           node --experimental-strip-types apps/marketplace-web/scripts/verify-build.mjs devnet
-      - name: PREPARE immutable staging release manifest and file digest
+      - name: Validate release packaging contracts without synthesizing a live snapshot
         run: |
-          commit="$(git rev-parse HEAD)"
-          stamp="$(git show -s --format=%cI HEAD)"
-          stamp="$(date -u -d "$stamp" '+%Y-%m-%dT%H:%M:%S.000Z')"
-          node --experimental-strip-types apps/marketplace-web/scripts/con58-release.mjs \
-            prepare apps/marketplace-web/dist-devnet "$commit" "$stamp" \
-            > "$RUNNER_TEMP/con58-release.json"
-          release_id="$(node -p "JSON.parse(require('fs').readFileSync('apps/marketplace-web/dist-devnet/release.json')).release_id")"
-          node --experimental-strip-types apps/marketplace-web/scripts/con58-release.mjs \
-            verify apps/marketplace-web/dist-devnet "$release_id" "$commit"
-          cp apps/marketplace-web/dist-devnet/release.json "$RUNNER_TEMP/con58-release-manifest.json"
+          echo 'CON-59 live snapshots require a fresh verified Devnet scan and exact release approval.'
+          echo 'Offline worker, release and adversarial packaging tests ran in npm test.'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: con58-devnet-staging-${{ github.run_id }}

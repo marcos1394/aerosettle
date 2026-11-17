@@ -1,15 +1,16 @@
 # CON-59 — Devnet RPC gateway and read-only index
 
-## Status (2026-11-16)
+## Status (2026-11-17)
 
 | Gate | State | Evidence |
 | --- | --- | --- |
 | GATEWAY_IMPLEMENTED | Yes | `gateway.py`; GET-only, fixed routes, method/parameter allowlist, response limits, CORS |
 | INDEXER_IMPLEMENTED | Yes | Reuses `tools/discovery/agent_discovery.py` and approved CON-35 IDL; seven agents and seven WorkOrders in live probe |
 | LIVE_RPC_VERIFIED | Yes, at the recorded slots | `evidence/con59/live-read.json`; official public Devnet RPC, finalized reads |
-| STAGING_API_DEPLOYED | No | No host for this Python process has been approved; no Cloudflare Function or paid service enabled |
-| BROWSER_API_VERIFIED | No | Staging correctly remains `API_NOT_CONFIGURED` |
-| READY_FOR_CON55 | API contract ready; publication gate open | Catalog must wait for an independently deployed and verified API |
+| PAGES_FREE_BFF_PREPARED | Yes | Pages advanced-mode Function, only `/api/*` invocation routes, release-bound 24-hour snapshot; local Wrangler preview verified |
+| STAGING_API_DEPLOYED | No | New release and exact destination require separate human approval |
+| BROWSER_API_VERIFIED | No | Public browser QA waits for deployment |
+| READY_FOR_CON55 | No | Public API and rollback gates remain open |
 
 This is a **read-only advisory index**. It cannot authorize settlement, spending, WorkOrder transitions, or any financial action. The seven observed accounts are Devnet test data, never a Mainnet or production balance. No Solana transaction was sent.
 
@@ -33,9 +34,17 @@ The service reuses CON-38 structured logs. It emits method-independent HTTP resu
 
 ## Hosting and cost boundary
 
-Cloudflare's [Workers Free limits](https://developers.cloudflare.com/workers/platform/limits/) currently list 100,000 requests/day, 10 ms CPU per invocation, 128 MB memory, 50 external subrequests and six simultaneous outgoing connections. [Pages Functions count against the Workers quota](https://developers.cloudflare.com/pages/functions/pricing/). A complete Anchor account scan and Python Borsh decode cannot be assumed to fit 10 ms CPU, and the current gateway is a Python process rather than a Pages Function. CON-59 therefore does not publish it to the existing Pages Free project or add KV, D1, R2, a paid plan, a temporary-credit service, or credentials. A future approved host may run the loopback process behind an authenticated reverse proxy and external rate limit, or a separately reviewed lightweight BFF can consume an offline verified index. Neither is claimed deployed here.
+Cloudflare's [Workers Free limits](https://developers.cloudflare.com/workers/platform/limits/) list 100,000 requests/day, 10 ms CPU per invocation, 128 MB memory, 50 external subrequests and six simultaneous outgoing connections. [Pages Functions count against that quota](https://developers.cloudflare.com/pages/functions/pricing/). The account owner previously confirmed that account `54cb929430c4a02b90d6ea3ce356d0d9` uses Free; the billing API was not available to independently recheck the plan. No card, paid service, KV, D1, R2 or external database is used. The Python scan stays operator-side and is **never executed per HTTP request**. Cloudflare [supports `_worker.js` in Direct Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/) and `_routes.json` restricts Function invocations to `/api/*`; static asset requests do not consume Function requests.
 
-The CON-53/58 web manifest remains pinned to `api_endpoint=API_NOT_CONFIGURED`. The site continues direct, read-only RPC identity diagnostics and shows web/RPC/API states separately. No catalog or economic panel is enabled based on this unhosted API. Before any staging integration, approve a concrete HTTPS API destination, update the trusted manifest/release workflow, deploy, verify browser CORS and independent identity, then record the deployment evidence. No automatic deployment runs from a PR.
+`snapshot.py` runs one complete finalized RPC identity/Anchor scan against the approved official Devnet endpoint, then exports public agent and WorkOrder account records with genesis, program, IDL and binary hashes, deployment ID, test mint, token owner/authority/decimals, slot range, provider, generated/expiry times, counts and non-atomic provenance. The release packager embeds those bytes in `_worker.js` and pins SHA-256 in both Worker code and release manifest. This hash detects alteration and binds release bytes; **it is not a signature by an independent oracle**. The trusted Cloudflare project and verified CON-46/58 release process are the publication trust boundary. The Worker checks identity and digest, then responds from the immutable snapshot. It does not claim `LIVE_RPC`; API responses say `RELEASE_BOUND_RPC_SNAPSHOT`. At 24 hours, every data and readiness route returns HTTP 503 with `INSUFFICIENT_DATA`; only `/api/health` remains live. Refresh requires a new verified snapshot, new release ID and explicit destination approval. There is no automatic refresh or hidden RPC fallback.
+
+The Pages API exposes GET only: `/api/health`, `/api/ready`, `/api/v1/network`, `/api/v1/program`, `/api/v1/agents`, `/api/v1/agents/:pubkey`, `/api/v1/workorders`, `/api/v1/workorders/:pubkey`. List pages are bounded at 50, stable by account pubkey, with snapshot-bound cursors and optional status filters. There is no generic RPC proxy, transaction route, wallet, signing, payment, Mainnet or financial authority. The browser independently verifies approved live RPC genesis/program/mint, then binds the API readiness and both list responses to one pinned snapshot digest, genesis, program, IDL, binary and mint. The UI exposes `WEB_AVAILABLE`, `RPC_VERIFIED`, `API_VERIFIED`, `INDEX_FRESH`, `INDEX_STALE`, `API_UNAVAILABLE` and `DEGRADED_READ_ONLY`; `READY_FOR_TRANSACTIONS=false` always. A snapshot error never falls back to a Localnet fixture.
+
+The Free Pages project uses `*.pages.dev`, which is not a zone controlled by this account for a custom WAF per-client rate rule. The Worker has bounded work and the Free daily quota, but **no durable global per-client rate limiter**. Python's loopback per-client limiter is not represented as an edge control. The API never performs upstream RPC reads, so public requests cannot drain the RPC provider. Per-client abuse protection and alert routing remain operational limitations; no high-availability provider failover is claimed for the published snapshot. Snapshot expiry is an intentional degraded mode.
+
+### Release and deployment gate
+
+Build the Devnet frontend, run `verify-build.mjs devnet`, export a fresh snapshot with `python3 -m tools.integration.devnet.snapshot <temporary-snapshot.json>`, then run `node --experimental-strip-types apps/marketplace-web/scripts/con59-package.mjs <dist-devnet> <temporary-snapshot.json>`. Remove the temporary JSON from the upload directory. `con58-release.mjs prepare` and `verify` bind the source commit, manifest, IDL, bundle, snapshot hash, expiry and every file to one release ID. `con58-pages-deploy.mjs preflight` checks the existing account/project/subdomain with Wrangler credentials without deploying. The `deploy` operation additionally requires `CON58_APPROVED_DESTINATION=<account>/<project>/<exact-release-id>`. Only an explicit human approval for that ID and destination permits publication. Verify real HTTPS/API/browser after upload and retain the previous healthy deployment for rollback. No Cloudflare or Solana write has occurred for the new CON-59 release at this status date.
 
 ## Reproduce and evidence
 
@@ -54,5 +63,5 @@ The CI workflow `.github/workflows/con59-devnet-rpc-indexer.yml` performs offlin
 
 - Official public RPC may rate-limit `getProgramAccounts`, omit old transactions or return a response above the 2 MB cap. The gateway reports unavailability rather than incomplete results as complete history.
 - Multiple finalized calls are not an atomic cross-account view. No transaction history API or financial total is inferred from the index.
-- Secondary RPC, external hosting, browser integration and durable indexing remain unconfigured. Persistent storage requires a separate plan/cost and security review.
+- Secondary RPC and durable indexing remain unconfigured. The Pages Function and browser integration are implemented but public QA waits for approved deployment. A snapshot is only a 24-hour release artifact, not continuously refreshed storage.
 - Read-only public account fields are exposed. Tenant-private data is outside this API; it must never be added without authentication and authorization design.

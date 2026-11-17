@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, lstatSync, readFileSync, readdirSync, writeFi
 import { join, relative, resolve, sep } from 'node:path';
 import { DEVNET_MANIFEST } from '../src/config/environments.ts';
 import { verifyManifest } from '../src/config/manifest.ts';
+import { inspectWorker } from '../scripts/con59-package.mjs';
 
 const expectedHeaders = new URL('./_headers', import.meta.url);
 const forbiddenBundle = ['signTransaction', 'sendTransaction', 'LocalnetDevWalletAdapter',
@@ -96,7 +97,12 @@ async function inspectBuild(folder) {
   const headers = readFileSync(join(root, '_headers'), 'utf8');
   verifyHeaders(headers);
   assert.equal(headers, readFileSync(expectedHeaders, 'utf8'), 'HEADERS_NOT_APPROVED');
-  return { root, files: collectFiles(root), bundle_sha256: evidence.bundle_sha256 };
+  const worker = readFileSync(join(root, '_worker.js'), 'utf8');
+  const snapshot = inspectWorker(worker);
+  assert.ok(Date.now() < Date.parse(snapshot.expires_at), 'SNAPSHOT_EXPIRED');
+  assert.deepEqual(JSON.parse(readFileSync(join(root, '_routes.json'), 'utf8')),
+    { version: 1, include: ['/api/*'], exclude: [] }, 'FUNCTION_ROUTES_INVALID');
+  return { root, files: collectFiles(root), bundle_sha256: evidence.bundle_sha256, snapshot };
 }
 
 export async function prepareRelease(folder, commitSha, buildTimestamp) {
@@ -117,6 +123,8 @@ export async function prepareRelease(folder, commitSha, buildTimestamp) {
     manifest_sha256: DEVNET_MANIFEST.manifest_sha256,
     idl_sha256: DEVNET_MANIFEST.idl_sha256,
     bundle_sha256: build.bundle_sha256,
+    snapshot_sha256: build.snapshot.snapshot_sha256,
+    snapshot_expires_at: build.snapshot.expires_at,
     build_timestamp: buildTimestamp,
     artifact_digest: sha256(canonical(build.files)),
     files: build.files,
@@ -149,6 +157,8 @@ export async function verifyRelease(folder, expectedId, expectedCommit) {
   assert.deepEqual(build.files, release.files, 'ARTIFACT_FILES_CHANGED');
   assert.equal(sha256(canonical(build.files)), release.artifact_digest, 'ARTIFACT_DIGEST_MISMATCH');
   assert.equal(build.bundle_sha256, release.bundle_sha256, 'BUNDLE_HASH_MISMATCH');
+  assert.equal(build.snapshot.snapshot_sha256, release.snapshot_sha256, 'SNAPSHOT_HASH_MISMATCH');
+  assert.equal(build.snapshot.expires_at, release.snapshot_expires_at, 'SNAPSHOT_EXPIRY_MISMATCH');
   return release;
 }
 

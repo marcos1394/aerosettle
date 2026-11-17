@@ -49,7 +49,8 @@ export function parseManifest(value: unknown): EnvironmentManifest {
   if (row.environment === 'DEVNET') {
     if (row.provenance !== 'CON35_CON36_VERIFIED' ||
         row.rpc_endpoint !== 'https://api.devnet.solana.com' ||
-        row.api_endpoint !== 'API_NOT_CONFIGURED') throw new Error('MANIFEST_INVALID');
+        row.api_endpoint !== 'https://conatus-devnet-staging.pages.dev/api')
+      throw new Error('MANIFEST_INVALID');
   } else if (row.provenance !== 'LOCALNET_FIXTURE' ||
              row.rpc_endpoint !== 'http://127.0.0.1:8899' ||
              row.api_endpoint !== 'http://127.0.0.1:5173') {
