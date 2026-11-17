@@ -44,6 +44,8 @@ The Free Pages project uses `*.pages.dev`, which is not a zone controlled by thi
 
 ### Release and deployment gate
 
+The 2026-11-17 CI security inventory found `GHSA-fc5q-39xc-vjpf` in `picomatch` 2.3.2 and 4.0.7, used by web build tooling. npm still published 4.0.7 as latest at review time. `tools/security/dependency-exceptions.json` records a scoped high-severity exception expiring 2026-11-30. The Devnet browser bundle contains no `picomatch` and the API accepts no glob input. This exception is a tracked residual risk, not a fix or a general waiver.
+
 Build the Devnet frontend, run `verify-build.mjs devnet`, export a fresh snapshot with `python3 -m tools.integration.devnet.snapshot <temporary-snapshot.json>`, then run `node --experimental-strip-types apps/marketplace-web/scripts/con59-package.mjs <dist-devnet> <temporary-snapshot.json>`. Remove the temporary JSON from the upload directory. `con58-release.mjs prepare` and `verify` bind the source commit, manifest, IDL, bundle, snapshot hash, expiry and every file to one release ID. `con58-pages-deploy.mjs preflight` checks the existing account/project/subdomain with Wrangler credentials without deploying. The `deploy` operation additionally requires `CON58_APPROVED_DESTINATION=<account>/<project>/<exact-release-id>`. Only an explicit human approval for that ID and destination permits publication. Verify real HTTPS/API/browser after upload and retain the previous healthy deployment for rollback. No Cloudflare or Solana write has occurred for the new CON-59 release at this status date.
 
 ## Reproduce and evidence
