@@ -1,0 +1,36 @@
+{
+  "observed_on_utc": "2026-11-18",
+  "account_id": "54cb929430c4a02b90d6ea3ce356d0d9",
+  "project": "conatus-devnet-staging",
+  "project_domains": ["conatus-devnet-staging.pages.dev"],
+  "pages_dev_zone_owned_by_account": false,
+  "account_zones_visible": 1,
+  "billing_plan_owner_confirmed": "Free",
+  "billing_api_independently_verified": false,
+  "free_workers_account_daily_requests": 100000,
+  "pages_function_invocations_share_workers_quota": true,
+  "free_waf_rate_rule_for_owned_zone": true,
+  "zone_waf_rule_applicable_to_current_pages_dev_host": false,
+  "durable_global_per_client_rate_limit_configured": false,
+  "public_probe_requests_without_429": 23,
+  "public_probe_interpretation": "A low-volume functional probe is not a load or rate-limit proof; no abuse traffic was generated.",
+  "worker_per_request_upstream_rpc_calls": 0,
+  "worker_invocation_routes": ["/api/*"],
+  "risk": "A client can exhaust the account-wide Free Function quota and deny read-only API availability; public 1027 can be detected after exhaustion, but anonymous per-client requests cannot be durably throttled on this pages.dev host with current approved infrastructure.",
+  "mitigations": [
+    "GET-only public data with bounded response and pagination",
+    "No wallet, signing, payment, private data, or upstream RPC invocation in the Pages Function",
+    "Cloudflare Browser Integrity Check on Pages and hard Workers Free daily quota",
+    "Public scheduled health and quota-exhaustion detection after workflow reaches the default branch",
+    "Manual rollback or disablement by the authorized staging operator"
+  ],
+  "proposed_acceptance": "Explicitly accept denial-of-service exposure for a public read-only Devnet preview only; do not extend this acceptance to financial operations, private data, or Mainnet.",
+  "acceptance_status": "PENDING_REVIEW",
+  "sources": [
+    "https://developers.cloudflare.com/waf/",
+    "https://developers.cloudflare.com/pages/configuration/custom-domains/",
+    "https://developers.cloudflare.com/pages/functions/pricing/",
+    "https://developers.cloudflare.com/workers/platform/limits/",
+    "https://developers.cloudflare.com/pages/platform/known-issues/"
+  ]
+}
