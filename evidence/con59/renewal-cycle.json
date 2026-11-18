@@ -34,7 +34,7 @@
     "renewed_after_restore": 23,
     "renewed_before_rollback": 23
   },
-  "rate_limit_risk_acceptance": "PENDING_REVIEW",
+  "rate_limit_risk_acceptance": "ACCEPTED_BY_OWNER_FOR_READ_ONLY_DEVNET_PREVIEW",
   "release_id": "55b5da732a8aa9c0d797afb4ffe2a724cc53d6bf0183f595446a63750b740fe3",
   "renewed_deployment_id": "54ff95f1-f576-4634-95cb-08186e0cfdca",
   "rollback_deployment_id": "c5e46bdd-1ecd-488d-a1db-4ddc09261d8f",

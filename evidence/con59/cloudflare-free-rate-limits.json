@@ -2,7 +2,9 @@
   "observed_on_utc": "2026-11-18",
   "account_id": "54cb929430c4a02b90d6ea3ce356d0d9",
   "project": "conatus-devnet-staging",
-  "project_domains": ["conatus-devnet-staging.pages.dev"],
+  "project_domains": [
+    "conatus-devnet-staging.pages.dev"
+  ],
   "pages_dev_zone_owned_by_account": false,
   "account_zones_visible": 1,
   "billing_plan_owner_confirmed": "Free",
@@ -15,7 +17,9 @@
   "public_probe_requests_without_429": 23,
   "public_probe_interpretation": "A low-volume functional probe is not a load or rate-limit proof; no abuse traffic was generated.",
   "worker_per_request_upstream_rpc_calls": 0,
-  "worker_invocation_routes": ["/api/*"],
+  "worker_invocation_routes": [
+    "/api/*"
+  ],
   "risk": "A client can exhaust the account-wide Free Function quota and deny read-only API availability; public 1027 can be detected after exhaustion, but anonymous per-client requests cannot be durably throttled on this pages.dev host with current approved infrastructure.",
   "mitigations": [
     "GET-only public data with bounded response and pagination",
@@ -25,12 +29,15 @@
     "Manual rollback or disablement by the authorized staging operator"
   ],
   "proposed_acceptance": "Explicitly accept denial-of-service exposure for a public read-only Devnet preview only; do not extend this acceptance to financial operations, private data, or Mainnet.",
-  "acceptance_status": "PENDING_REVIEW",
+  "acceptance_status": "ACCEPTED_BY_OWNER_FOR_READ_ONLY_DEVNET_PREVIEW",
   "sources": [
     "https://developers.cloudflare.com/waf/",
     "https://developers.cloudflare.com/pages/configuration/custom-domains/",
     "https://developers.cloudflare.com/pages/functions/pricing/",
     "https://developers.cloudflare.com/workers/platform/limits/",
     "https://developers.cloudflare.com/pages/platform/known-issues/"
-  ]
+  ],
+  "accepted_on_utc": "2026-11-18",
+  "acceptance_scope": "Public read-only Devnet preview at conatus-devnet-staging.pages.dev only; availability risk from shared Free Functions quota. No Mainnet, wallet, signing, financial actions, paid service, or broader security exception.",
+  "merger_review_pending": true
 }
