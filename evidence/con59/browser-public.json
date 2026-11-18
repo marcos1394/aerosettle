@@ -1,0 +1,18 @@
+{
+  "url": "https://conatus-devnet-staging.pages.dev/",
+  "browser": "Codex in-app Chromium",
+  "observed_on_utc": "2026-11-18",
+  "after_rollback": true,
+  "environment_status": "VERIFIED",
+  "api_status": "API_VERIFIED",
+  "index_status": "INDEX_FRESH",
+  "readiness": "READY_FOR_READ_ONLY_PREVIEW",
+  "agent_count_visible": 7,
+  "work_order_count_visible": 7,
+  "mobile_viewport_checked_px": 390,
+  "mobile_layout_readable": true,
+  "financial_actions": "Disabled",
+  "wallet_connection_present": false,
+  "transactions_sent": 0,
+  "note": "Browser observation of the public HTTPS frontend; API details and errors are recorded by probe_pages.py. Snapshot freshness is time bounded."
+}

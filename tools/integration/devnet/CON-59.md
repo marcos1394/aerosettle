@@ -1,6 +1,6 @@
 # CON-59 — Devnet RPC gateway and read-only index
 
-## Status (2026-11-17)
+## Status (2026-11-18)
 
 | Gate | State | Evidence |
 | --- | --- | --- |
@@ -8,9 +8,9 @@
 | INDEXER_IMPLEMENTED | Yes | Reuses `tools/discovery/agent_discovery.py` and approved CON-35 IDL; seven agents and seven WorkOrders in live probe |
 | LIVE_RPC_VERIFIED | Yes, at the recorded slots | `evidence/con59/live-read.json`; official public Devnet RPC, finalized reads |
 | PAGES_FREE_BFF_PREPARED | Yes | Pages advanced-mode Function, only `/api/*` invocation routes, release-bound 24-hour snapshot; local Wrangler preview verified |
-| STAGING_API_DEPLOYED | No | New release and exact destination require separate human approval |
-| BROWSER_API_VERIFIED | No | Public browser QA waits for deployment |
-| READY_FOR_CON55 | No | Public API and rollback gates remain open |
+| STAGING_API_DEPLOYED | Yes | Release `03fca9b53c941486091b3da3c7c29ffc4543952bf434a97e773c5bad407221c8`, deployment `c5e46bdd-1ecd-488d-a1db-4ddc09261d8f` at `https://conatus-devnet-staging.pages.dev/` |
+| BROWSER_API_VERIFIED | Yes | Real browser showed `VERIFIED`, `API_VERIFIED`, `INDEX_FRESH`, 7 agents and 7 WorkOrders before and after rollback; 390 px mobile view remained readable |
+| READY_FOR_CON55 | Yes, for read-only account display | Public API and rollback passed; the snapshot expires at 2026-11-19 00:00:58 UTC and must be refreshed by another approved release |
 
 This is a **read-only advisory index**. It cannot authorize settlement, spending, WorkOrder transitions, or any financial action. The seven observed accounts are Devnet test data, never a Mainnet or production balance. No Solana transaction was sent.
 
@@ -46,7 +46,11 @@ The Free Pages project uses `*.pages.dev`, which is not a zone controlled by thi
 
 The 2026-11-17 CI security inventory found `GHSA-fc5q-39xc-vjpf` in `picomatch` 2.3.2 and 4.0.7, used by web build tooling. npm still published 4.0.7 as latest at review time. `tools/security/dependency-exceptions.json` records a scoped high-severity exception expiring 2026-11-30. The Devnet browser bundle contains no `picomatch` and the API accepts no glob input. This exception is a tracked residual risk, not a fix or a general waiver.
 
-Build the Devnet frontend, run `verify-build.mjs devnet`, export a fresh snapshot with `python3 -m tools.integration.devnet.snapshot <temporary-snapshot.json>`, then run `node --experimental-strip-types apps/marketplace-web/scripts/con59-package.mjs <dist-devnet> <temporary-snapshot.json>`. Remove the temporary JSON from the upload directory. `con58-release.mjs prepare` and `verify` bind the source commit, manifest, IDL, bundle, snapshot hash, expiry and every file to one release ID. `con58-pages-deploy.mjs preflight` checks the existing account/project/subdomain with Wrangler credentials without deploying. The `deploy` operation additionally requires `CON58_APPROVED_DESTINATION=<account>/<project>/<exact-release-id>`. Only an explicit human approval for that ID and destination permits publication. Verify real HTTPS/API/browser after upload and retain the previous healthy deployment for rollback. No Cloudflare or Solana write has occurred for the new CON-59 release at this status date.
+Build the Devnet frontend, run `verify-build.mjs devnet`, export a fresh snapshot with `python3 -m tools.integration.devnet.snapshot <temporary-snapshot.json>`, then run `node --experimental-strip-types apps/marketplace-web/scripts/con59-package.mjs <dist-devnet> <temporary-snapshot.json>`. Remove the temporary JSON from the upload directory. `con58-release.mjs prepare` and `verify` bind the source commit, manifest, IDL, bundle, snapshot hash, expiry and every file to one release ID. `con58-pages-deploy.mjs preflight` checks the existing account/project/subdomain with Wrangler credentials without deploying. The `deploy` operation additionally requires `CON58_APPROVED_DESTINATION=<account>/<project>/<exact-release-id>`. Only an explicit human approval for that ID and destination permits publication.
+
+The owner approved release `03fca9b53c941486091b3da3c7c29ffc4543952bf434a97e773c5bad407221c8` for account `54cb929430c4a02b90d6ea3ce356d0d9`, project `conatus-devnet-staging` and its free `pages.dev` URL. `preflight` passed and Wrangler Direct Upload created deployment `c5e46bdd-1ecd-488d-a1db-4ddc09261d8f`. Source commit is `26dc3d0e0b77a8d418052516aa9382f2cb391e49`; artifact digest is `7d12ec4e8b8c5a06d2d528f55cddc3f87b47b6ab4dcec8e77e32ece144a15e2c`; manifest and IDL hashes are `059c968875c41036186dc79e203a60de60724e0496e7ac1ea3af61c24d902203` and `a6e436aa1c6468b4f518b742e40a2664e38dcdf7bc1419e53e1624444888e15d`. The snapshot SHA-256 is `3b40fb4eed791a1e3741e50b334a283444805e745e899416353b734dfef146c3`, from finalized slots 523442589–523442592, with observed slot 523442594, seven agents and seven WorkOrders. No Solana transaction was sent.
+
+The owner separately approved a compatible rollback variant, release `06794a61bc9a60673a165dbd4211120d526b017ac2b5edb8aaa7fd17b7195e7e`, deployment `988e3923-5739-4661-b681-20aa6559f511`, with identical functional files and artifact digest; only `release.json` differs. Both releases passed the public probe. The [Cloudflare Pages rollback API](https://developers.cloudflare.com/api/resources/pages/subresources/projects/subresources/deployments/methods/rollback/) then restored `c5e46bdd-1ecd-488d-a1db-4ddc09261d8f`. A fresh Cloudflare project query confirmed it as `production_deployment`, and the canonical URL and browser passed again. This is an actual rollback between two healthy CON-59 versions, not a rollback to the older CON-58 frontend without API. Cloudflare credentials remained in the local Wrangler session and were never written to evidence.
 
 ## Reproduce and evidence
 
@@ -55,9 +59,12 @@ python3 -m pip install -r requirements.txt
 python3 -m unittest tools.integration.devnet.test_gateway
 python3 -m tools.integration.devnet.probe --offline-load
 python3 -m tools.integration.devnet.probe --live  # explicit, bounded, read-only Devnet RPC
+python3 -m tools.integration.devnet.probe_pages 03fca9b53c941486091b3da3c7c29ffc4543952bf434a97e773c5bad407221c8
 ```
 
 The offline load in `evidence/con59/offline-load.json` used 40 requests, eight threads and a deterministic fixture: zero errors, one scan and 39 cache hits. Timing and memory measurements are machine-specific and do not predict cloud performance. The live proof in `evidence/con59/live-read.json` records seven agents, seven WorkOrders, finalized context slots, approved binary/IDL hashes and a SHA-256 of the response; it contains no wallet secret or account payload. A later run can differ as Devnet advances. Both evidence files are generated by `probe.py` with no Solana write method.
+
+`probe_pages.py` performs 23 HTTPS requests against the public Pages URL: release and snapshot binding, health/readiness, network/program identity, paginated agents and WorkOrders, individual accounts, an empty filter, security headers, CORS, invalid parameters, unknown route and rejected POST. `evidence/con59/pages-public-verification.json` records the first release; `evidence/con59/pages-rollback-verification.json` records the restored release. Both report 7/7 accounts, successful controls and no financial authority. The same probe passed for the intermediate variant; its result is summarized in `evidence/con59/rollback.json`. The browser checked the published frontend and its mobile layout, then confirmed `VERIFIED`, `API_VERIFIED` and `INDEX_FRESH` again after rollback. Snapshot expiry and altered digest/identity fail-closed paths are covered by `apps/marketplace-web/staging/con59-worker.test.mjs` and browser state tests; the public snapshot is not deliberately corrupted.
 
 The CI workflow `.github/workflows/con59-devnet-rpc-indexer.yml` performs offline unit/adversarial tests, load probe, CON-38/46 and Economic Ledger regressions, SDK/web tests and Devnet build validation. CI does not query live RPC or deploy. Security tests cover genesis/program/mint/authority/IDL changes, inconsistent slots, cache poisoning, primary/secondary outage, circuit/rate limits, SSRF, RPC method injection, oversize responses, invalid cursors, CORS and non-GET rejection.
 
@@ -65,5 +72,5 @@ The CI workflow `.github/workflows/con59-devnet-rpc-indexer.yml` performs offlin
 
 - Official public RPC may rate-limit `getProgramAccounts`, omit old transactions or return a response above the 2 MB cap. The gateway reports unavailability rather than incomplete results as complete history.
 - Multiple finalized calls are not an atomic cross-account view. No transaction history API or financial total is inferred from the index.
-- Secondary RPC and durable indexing remain unconfigured. The Pages Function and browser integration are implemented but public QA waits for approved deployment. A snapshot is only a 24-hour release artifact, not continuously refreshed storage.
+- Secondary RPC and durable indexing remain unconfigured. The Pages Function and browser integration are deployed and verified, but a snapshot is only a 24-hour release artifact, not continuously refreshed storage. After expiry, readiness and data routes return 503/`INSUFFICIENT_DATA` until a new approved release is published.
 - Read-only public account fields are exposed. Tenant-private data is outside this API; it must never be added without authentication and authorization design.

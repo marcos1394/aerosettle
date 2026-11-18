@@ -208,8 +208,9 @@ class TaskLifecycleTests(unittest.IsolatedAsyncioTestCase):
                              ["work_order_status"], "Open")
 
     def test_cross_identity_owner_signer_network_and_idempotency(self):
-        task = self._create()
-        duplicate = self._create()
+        stamp = int(time.time())
+        task = self._create(now=stamp)
+        duplicate = self._create(now=stamp)
         self.assertEqual(duplicate.id, task.id)
         self.assert_denied("WORK_ORDER_ALREADY_LINKED", lambda: self._create("other-key"))
         self.assert_denied("RESOURCE_NOT_FOUND", lambda: self.ledger.get(
