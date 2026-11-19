@@ -53,7 +53,7 @@ jobs:
           assert report['transaction_signature'] is None
           assert report['scheme'] == 'conatus-sandbox-exact'
           PY
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con44-offline-x402-v2-sandbox
           path: con44-demo.json

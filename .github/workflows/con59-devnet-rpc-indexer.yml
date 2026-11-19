@@ -52,7 +52,7 @@ jobs:
           npm test --prefix apps/marketplace-web
           npm run build:devnet --prefix apps/marketplace-web
           node --experimental-strip-types apps/marketplace-web/scripts/verify-build.mjs devnet
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con59-offline-load-${{ github.run_id }}
           path: ${{ runner.temp }}/con59-offline-load.json

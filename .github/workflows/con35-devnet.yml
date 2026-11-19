@@ -84,7 +84,7 @@ jobs:
             --idl target/deploy/con35/aerosettle-idl.json \
             --output target/deploy/con35/manifest.json
           python tools/deployment/devnet.py verify-artifacts --manifest target/deploy/con35/manifest.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con35-prepared-devnet-artifacts
           path: target/deploy/con35/*

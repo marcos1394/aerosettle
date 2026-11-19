@@ -52,7 +52,7 @@ jobs:
           "$RUNNER_TEMP/gitleaks" git . --no-banner --redact --log-level error \
             --baseline-path tools/security/gitleaks-baseline.json \
             --report-format json --report-path "$RUNNER_TEMP/con46-new-leaks.json"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con46-sbom
           path: ${{ runner.temp }}/con46-sbom.json
@@ -133,7 +133,7 @@ jobs:
           python tools/deployment/devnet.py verify-artifacts --manifest target/deploy/con46/manifest.json
       - run: cargo fetch --locked
       - run: cargo test --workspace --offline
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con46-reproducible-sbf-evidence
           path: |
@@ -170,7 +170,7 @@ jobs:
         env:
           CON34_PUBLIC_REPORT_DIR: ${{ runner.temp }}/con46-localnet
         run: bash tools/integration/localnet/run_localnet_e2e.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con46-localnet-evidence
           path: ${{ runner.temp }}/con46-localnet/*.json

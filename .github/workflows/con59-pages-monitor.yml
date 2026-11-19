@@ -50,7 +50,7 @@ jobs:
                   'CLOUDFLARE_QUOTA_EXHAUSTED'} <= {x['code'] for x in data['alerts']}
           assert text.count('::error title=CON-59 ') >= 4
           PY
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con59-monitor-contract-${{ github.run_id }}
           path: |
@@ -79,7 +79,7 @@ jobs:
               --output "$RUNNER_TEMP/con59-pages-monitor.json"
           fi
       - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con59-pages-monitor-${{ github.run_id }}
           path: ${{ runner.temp }}/con59-pages-monitor.json

@@ -47,7 +47,7 @@ jobs:
               'immediate_replay_idempotent', 'concurrent_replay_idempotent',
               'sqlite_restart_idempotent', 'historical_rpc_reread_idempotent'))
           PY
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con37-read-only-devnet-ingestion
           path: ${{ runner.temp }}/con37-ingestion.json
