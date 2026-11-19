@@ -100,10 +100,17 @@ export async function verifyEnvironment(manifest: EnvironmentManifest, idlText: 
     }
     const provenance = manifest.environment === 'DEVNET' ? 'LIVE_DEVNET_READ_ONLY' : 'LOCALNET';
     if (!api || manifest.api_endpoint === 'API_NOT_CONFIGURED')
-      return { status: 'DEGRADED_READ_ONLY', reason: 'API_NOT_CONFIGURED', genesis: String(genesis),
+      return { status: 'DEGRADED_READ_ONLY', reason: manifest.api_endpoint === 'API_NOT_CONFIGURED'
+        ? 'API_NOT_CONFIGURED' : 'API_UNAVAILABLE', genesis: String(genesis),
         observedAt, provenance };
-    const health = await api();
+    let health;
+    try { health = await api(); }
+    catch { return { status: 'DEGRADED_READ_ONLY', reason: 'API_UNAVAILABLE',
+      genesis: String(genesis), observedAt, provenance }; }
     if (signal?.aborted) return unavailable('REQUEST_ABORTED');
+    if (health.status === 'stale' || health.status === 'unready')
+      return { status: 'DEGRADED_READ_ONLY', reason: 'INDEX_STALE',
+        genesis: String(genesis), observedAt, provenance };
     if (health.status !== 'ok' || health.genesis !== genesis || health.program_id !== manifest.program_id)
       return { ...unavailable('API_RPC_MISMATCH'), status: 'NETWORK_MISMATCH' };
     return { status: 'VERIFIED', reason: 'RPC_AND_API_VERIFIED', genesis: String(genesis),

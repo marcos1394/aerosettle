@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { DEVNET_MANIFEST } from '../src/config/environments.ts';
 import { prepareRelease, validateDeployContext, validateRollbackTarget, verifyHeaders,
   verifyRelease } from './release.mjs';
+import { packageSnapshot } from '../scripts/con59-package.mjs';
 
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const commit = 'a'.repeat(40);
@@ -28,6 +29,23 @@ function fixture() {
     STAGING_PUBLIC_DEPLOYED: false, manifest_sha256: DEVNET_MANIFEST.manifest_sha256,
     idl_sha256: DEVNET_MANIFEST.idl_sha256, bundle_sha256: sha(bundle),
   }));
+  const generated = new Date();
+  const snapshotPath = join(root, 'snapshot-fixture.json');
+  writeFileSync(snapshotPath, JSON.stringify({ schema_version: 1, metadata: {
+    network: DEVNET_MANIFEST.network, genesis_hash: DEVNET_MANIFEST.genesis_hash,
+    program_id: DEVNET_MANIFEST.program_id, idl_sha256: DEVNET_MANIFEST.idl_sha256,
+    binary_sha256: '6cf3412c55c38e91b2ba0039aea24d58782c5db0d18759ffdab1c88788cdc3a2',
+    deployment_id: '06c7dfa7528460969a5ca1e8bd001f9c9f1f1f0df3d69fe36649e413e0b14ae6',
+    mint: DEVNET_MANIFEST.token_mint, source_rpc: DEVNET_MANIFEST.rpc_endpoint,
+    token_program: DEVNET_MANIFEST.token_program,
+    mint_authority: '4om6LcFXaZ2Wtbn3P2ZvvyqssXFQs1xjNmE2Fnj7mRHa', mint_decimals: 6,
+    commitment: 'finalized', provenance: 'RELEASE_BOUND_RPC_SNAPSHOT',
+    atomic_snapshot: false, slot_min: 1, slot_max: 1, observed_slot: 1,
+    generated_at: generated.toISOString(), expires_at: new Date(generated.getTime() + 86_400_000).toISOString(),
+    agent_count: 0, work_order_count: 0,
+  }, agents: [], work_orders: [] }));
+  packageSnapshot(root, snapshotPath);
+  rmSync(snapshotPath);
   return root;
 }
 
@@ -95,6 +113,17 @@ test('release verification rejects modified security headers', async () => {
       'X-Frame-Options: SAMEORIGIN'));
     await assert.rejects(verifyRelease(root, release.release_id, commit), /SAMEORIGIN|HEADERS_NOT_APPROVED/);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('release verification rejects modified snapshot Worker and invocation routes', async () => {
+  for (const path of ['_worker.js', '_routes.json']) {
+    const root = fixture();
+    try {
+      const release = await prepareRelease(root, commit, stamp);
+      writeFileSync(join(root, path), readFileSync(join(root, path), 'utf8') + '\n');
+      await assert.rejects(verifyRelease(root, release.release_id, commit));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });
 
 test('deploy gate requires exact release approval, host identity and credentials', () => {

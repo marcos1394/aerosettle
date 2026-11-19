@@ -1,0 +1,13 @@
+{
+  "alert_codes": [
+    "CLOUDFLARE_QUOTA_EXHAUSTED",
+    "SNAPSHOT_EXPIRED",
+    "API_503",
+    "RPC_DEGRADED"
+  ],
+  "credentials_recorded": false,
+  "external_calls": 0,
+  "notification_mechanism": "GitHub Actions ::error annotation and nonzero exit; scheduled failure notification requires actor notification settings and default-branch workflow",
+  "provenance": "SYNTHETIC_TEST",
+  "status": "ALERT"
+}

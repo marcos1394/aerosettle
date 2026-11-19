@@ -1,0 +1,25 @@
+{
+  "alerts": [],
+  "credentials_recorded": false,
+  "health_http_status": 200,
+  "observed_at": "2026-11-18T06:41:11.706830+00:00",
+  "provenance": "PUBLIC_READ_ONLY_PROBE",
+  "quota": {
+    "day_utc": "2026-11-18",
+    "free_daily_limit": 100000,
+    "requests_today": 1096,
+    "scope": "ACCOUNT_WIDE",
+    "status": "OBSERVED"
+  },
+  "ready_http_status": 200,
+  "release_http_status": 200,
+  "rpc": {
+    "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+    "latency_ms": 542.8,
+    "provider_mode": "SINGLE_PROVIDER_MODE",
+    "slot": 523542985,
+    "status": "VERIFIED"
+  },
+  "snapshot_expires_at": "2026-11-19T00:00:58.686687Z",
+  "status": "HEALTHY"
+}

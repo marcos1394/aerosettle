@@ -1,0 +1,48 @@
+{
+  "account_id": "54cb929430c4a02b90d6ea3ce356d0d9",
+  "approval": "USER_APPROVED_EXACT_RELEASE_AND_DESTINATION",
+  "artifact_digest": "080c1c12388c69790cccddc185c0310271867cf005ce2d314ee1ad204b14a5ce",
+  "browser": {
+    "agent_accounts": 7,
+    "api": "API_VERIFIED",
+    "financial_actions": "DISABLED",
+    "index": "INDEX_FRESH",
+    "observed_after_publication": true,
+    "status": "VERIFIED",
+    "workorders": 7
+  },
+  "cloudflare_production_deployment_id_after_restore": "54ff95f1-f576-4634-95cb-08186e0cfdca",
+  "financial_actions_enabled": false,
+  "github_actions": {
+    "healthy_conclusion": "success",
+    "healthy_run": "https://github.com/marcos1394/aerosettle/actions/runs/44253722965",
+    "synthetic_incident_conclusion": "failure_expected",
+    "synthetic_incident_run": "https://github.com/marcos1394/aerosettle/actions/runs/44253750121"
+  },
+  "idl_sha256": "a6e436aa1c6468b4f518b742e40a2664e38dcdf7bc1419e53e1624444888e15d",
+  "manifest_sha256": "059c968875c41036186dc79e203a60de60724e0496e7ac1ea3af61c24d902203",
+  "monitor": {
+    "alert_codes": [
+      "SNAPSHOT_EXPIRING"
+    ],
+    "observed_at": "2026-11-18T23:05:24.026043+00:00",
+    "status": "ALERT"
+  },
+  "project": "conatus-devnet-staging",
+  "public_checks": {
+    "older_during_rollback": 23,
+    "renewed_after_restore": 23,
+    "renewed_before_rollback": 23
+  },
+  "rate_limit_risk_acceptance": "ACCEPTED_BY_OWNER_FOR_READ_ONLY_DEVNET_PREVIEW",
+  "release_id": "55b5da732a8aa9c0d797afb4ffe2a724cc53d6bf0183f595446a63750b740fe3",
+  "renewed_deployment_id": "54ff95f1-f576-4634-95cb-08186e0cfdca",
+  "rollback_deployment_id": "c5e46bdd-1ecd-488d-a1db-4ddc09261d8f",
+  "scheduled_monitor_active": false,
+  "snapshot_expires_at": "2026-11-19T06:45:03.287715Z",
+  "snapshot_sha256": "a64e4c157191fb23738c3fcad4602e55700d5f789553bb351b9364fc0ff1082c",
+  "solana_transactions_sent": 0,
+  "source_commit": "85d280ad1c992852143c18f0cd358457355e0cfd",
+  "status": "RENEWAL_AND_ROLLBACK_VERIFIED",
+  "url": "https://conatus-devnet-staging.pages.dev/"
+}

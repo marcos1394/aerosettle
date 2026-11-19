@@ -14,6 +14,8 @@ try {
   assert.equal(expectedUrl, `https://${project}.pages.dev/`, 'PAGES_DOMAIN_MISMATCH');
   assert.equal(resolve(folder), folder, 'ARTIFACT_PATH_NOT_ABSOLUTE');
   const release = await verifyRelease(folder, releaseId, commit);
+  if (release.snapshot_expires_at)
+    assert.ok(Date.now() < Date.parse(release.snapshot_expires_at), 'SNAPSHOT_EXPIRED');
 
   // Wrangler keeps its OAuth credential in the OS keychain. Capture it in memory only.
   const credential = JSON.parse(execFileSync(wrangler, ['auth', 'token', '--json'],

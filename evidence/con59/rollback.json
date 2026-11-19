@@ -1,0 +1,35 @@
+{
+  "account_id": "54cb929430c4a02b90d6ea3ce356d0d9",
+  "artifact_digest": "7d12ec4e8b8c5a06d2d528f55cddc3f87b47b6ab4dcec8e77e32ece144a15e2c",
+  "browser_after_rollback": "VERIFIED/API_VERIFIED/INDEX_FRESH; 7 agents; 7 WorkOrders; read-only",
+  "cloudflare_api_project_confirmation": true,
+  "first_counts": {
+    "agents": 7,
+    "workorders": 7
+  },
+  "first_verified_at": "2026-11-18T04:45:42.822018+00:00",
+  "original_deployment_id": "c5e46bdd-1ecd-488d-a1db-4ddc09261d8f",
+  "original_release_id": "03fca9b53c941486091b3da3c7c29ffc4543952bf434a97e773c5bad407221c8",
+  "project": "conatus-devnet-staging",
+  "public_checks_per_phase": 23,
+  "restored_counts": {
+    "agents": 7,
+    "workorders": 7
+  },
+  "restored_production_deployment_id": "c5e46bdd-1ecd-488d-a1db-4ddc09261d8f",
+  "restored_public_checks": 23,
+  "restored_verified_at": "2026-11-18T04:47:57.580967+00:00",
+  "snapshot_expires_at": "2026-11-19T00:00:58.686687Z",
+  "snapshot_sha256": "3b40fb4eed791a1e3741e50b334a283444805e745e899416353b734dfef146c3",
+  "solana_transactions_sent": 0,
+  "status": "ROLLBACK_VERIFIED",
+  "url": "https://conatus-devnet-staging.pages.dev/",
+  "variant_counts": {
+    "agents": 7,
+    "workorders": 7
+  },
+  "variant_deployment_id": "988e3923-5739-4661-b681-20aa6559f511",
+  "variant_public_checks": 23,
+  "variant_release_id": "06794a61bc9a60673a165dbd4211120d526b017ac2b5edb8aaa7fd17b7195e7e",
+  "variant_verified_at": "2026-11-18T04:47:20.816664+00:00"
+}

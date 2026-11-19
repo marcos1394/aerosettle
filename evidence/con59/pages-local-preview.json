@@ -1,0 +1,25 @@
+{
+  "observed_on": "2026-11-17",
+  "mode": "WRANGLER_PAGES_DEV_LOCAL_ONLY",
+  "cloudflare_account_id": "54cb929430c4a02b90d6ea3ce356d0d9",
+  "cloudflare_project": "conatus-devnet-staging",
+  "cloudflare_plan": "FREE_USER_ATTESTED",
+  "public_deployment_performed": false,
+  "snapshot_sha256": "ac45d728a1d8a78f6da6eb074d48357b0c30ea839d2c8d3624ed1df6acda0659",
+  "snapshot_expiry": "2026-11-18T23:47:40.990683Z",
+  "finalized_slot_min": 523439253,
+  "finalized_slot_max": 523439257,
+  "agents": 7,
+  "workorders": 7,
+  "routes": {
+    "/": 200,
+    "/api/health": 200,
+    "/api/ready": 200,
+    "/api/v1/network": 200,
+    "/api/v1/program": 200,
+    "/api/v1/agents?limit=2": 200,
+    "/api/v1/workorders?limit=2": 200
+  },
+  "solana_transactions_sent": 0,
+  "cloudflare_deployments_created": 0
+}

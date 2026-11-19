@@ -901,5 +901,26 @@
   "Message": "docs(con58): record Pages publication and healthy rollback evidence",
   "Tags": [],
   "Fingerprint": "50312e12e675fb7c4cf7de36ad0ea74461a2ea99:evidence/con58/cloudflare-pages.json:generic-api-key:82"
+ },
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 104,
+  "EndLine": 104,
+  "StartColumn": 9,
+  "EndColumn": 67,
+  "Match": "token_mint\": \"REDACTED\"",
+  "Secret": "REDACTED",
+  "File": "evidence/con59/operations-renewal-live.json",
+  "SymlinkFile": "",
+  "Commit": "996e8f5100d89f0abdcda70b3a609fab2017b83c",
+  "Link": "https://github.com/marcos1394/aerosettle/blob/996e8f5100d89f0abdcda70b3a609fab2017b83c/evidence/con59/operations-renewal-live.json#L104",
+  "Entropy": 4.879664,
+  "Author": "marcos sandoval",
+  "Email": "ingsandoval1394@gmail.com",
+  "Date": "2026-11-18T23:09:12Z",
+  "Message": "docs(con59): record approved renewal and rollback proof",
+  "Tags": [],
+  "Fingerprint": "996e8f5100d89f0abdcda70b3a609fab2017b83c:evidence/con59/operations-renewal-live.json:generic-api-key:104"
  }
 ]

@@ -446,6 +446,10 @@ def discover(rpc: Rpc, idl: Idl, commitment: str = "confirmed") -> dict[str, Any
                     "required_capabilities": require_uint(body, "required_capabilities", 2**64 - 1),
                     "execution_deadline": body["execution_deadline"],
                     "is_open": status == "Open", "status": status,
+                    **({"token_mint": require_key(body, "token_mint")}
+                       if "token_mint" in body else {}),
+                    **({"token_program": require_key(body, "token_program")}
+                       if "token_program" in body else {}),
                 })
 
     slots["clock"], clock_info = query_account(rpc, CLOCK_SYSVAR, commitment, min_slot)
