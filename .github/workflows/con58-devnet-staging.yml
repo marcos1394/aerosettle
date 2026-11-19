@@ -63,7 +63,7 @@ jobs:
         run: |
           echo 'CON-59 live snapshots require a fresh verified Devnet scan and exact release approval.'
           echo 'Offline worker, release and adversarial packaging tests ran in npm test.'
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: con58-devnet-staging-${{ github.run_id }}
           path: apps/marketplace-web/dist-devnet/
