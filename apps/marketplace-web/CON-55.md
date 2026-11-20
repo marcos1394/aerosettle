@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation is prepared on `feat/con-55-premium-devnet-agent-catalog` from the merged CON-59 baseline. The Devnet build is read-only and uses the existing Conatus visual system. This branch does **not** publish to Cloudflare Pages. A new CON-55 release ID and exact destination require separate human approval. The currently public CON-59 snapshot has expired; its API correctly returns 503. Until a new approved release is published, the public site cannot demonstrate a current catalog.
+Implementation is published on `feat/con-55-premium-devnet-agent-catalog` from the merged CON-59 baseline. The Devnet build is read-only and uses the existing Conatus visual system. The user approved release `e0b023220c7285f0f51a9e8d83cee9a43a9c3249c6cad04b044187a78b8fb159` for the exact existing Cloudflare Free staging account, project and URL. Deployment `aa8e9928-65ee-40e9-991d-09d80e232a98` is the canonical active deployment at [conatus-devnet-staging.pages.dev](https://conatus-devnet-staging.pages.dev/). The renewed finalized snapshot contains seven agents and seven WorkOrders and expires 2026-11-21 01:14:32 UTC. Renewal after that time again requires a new release and exact approval.
 
 ## Frontend audit and reuse
 
@@ -44,16 +44,15 @@ The landing and shell remain usable when the index is missing. No stale accounts
 - `npm test --prefix packages/marketplace-sdk`: 36 passed; `npm test --prefix packages/transaction-sdk`: 10 passed. Python Devnet integration: 32 passed; security: 7 passed. Workflow policy passed.
 - `npm run build:localnet --prefix apps/marketplace-web`: passed, preserving the separate Localnet experience.
 - `npm run build:devnet --prefix apps/marketplace-web` and `verify-build.mjs devnet`: passed; no wallet/transaction imports, Localnet RPC or Atlas agent fixtures in emitted JavaScript.
-- Browser preview: landing and AppShell were inspected at desktop and 390 px mobile width. English and Spanish navigation, mobile drawer, readable unavailable-state card and persistent landing passed. The local preview could not show a current catalog: the public API snapshot expired, and the canonical Pages API intentionally rejects a localhost origin. Browser captures were inspected in the development session; no screenshot file is committed.
-- `evidence/con55/browser-e2e.json` records the preview observations and explicitly leaves current-catalog and detail E2E pending an authorized release. It does not claim screenshot artifacts.
+- Browser preview first demonstrated that the landing and AppShell remained usable while the old CON-59 snapshot returned HTTP 503. After the approved deployment, the public browser rendered `INDEX VERIFIED`, a 7/7 dashboard, all seven agents and WorkOrders, page 2 of each listing, matching account details, `/status` with `RPC_VERIFIED`, `API_VERIFIED` and `INDEX_FRESH`, and disabled financial actions. Mission status filtering and list mode passed. Spanish navigation and mobile drawer passed. At 390 px mobile and 768 px tablet widths, document scroll width equaled viewport width. Screenshots were captured and visually inspected in the browser session; no standalone screenshot file was exported.
+- `evidence/con55/browser-e2e.json` records the live browser observations, `evidence/con55/public-probe.json` records 23 public HTTPS/API/security checks, and `evidence/con55/deployment-evidence.json` records the exact approved release, hashes and Cloudflare deployment ID. The release source commit is `22c1d848262f327837ebb3572876307f23b0e65c`; its artifact digest is `ffbee8031b7850d8de19a5d19ca40b222661a45f1cf802dcebc796185977b206` and snapshot SHA-256 is `1c167101e4e80ab5f64d3f2e36820b67bdb7d60bc981a423c69426cea360edd1`.
 - `evidence/con55/historical-schema-proof.json` validates the previous CON-59 finalized snapshot's **historical schema** (7 AgentAccounts and 7 WorkOrders). This file is test evidence only and must never be presented as current.
 - `.github/workflows/con55-premium-devnet-marketplace.yml` runs web/SDK, Python integration/security, typecheck, Devnet build, security bundle gate and `git diff --check` with read-only permissions and no PR deployment path.
 
 ## Remaining gates
 
-1. Prepare a fresh finalized Devnet snapshot and release from a clean final commit; record exact hashes and release ID.
-2. Obtain human approval for the exact release and Cloudflare account/project/URL before upload. No deployment is authorized by this document.
-3. After publication, verify a **current** 7/7 catalog (or the real current counts), agent and WorkOrder details, filters, responsive screenshots, CSP/headers and recovery from stale to fresh in a browser. Capture reviewable screenshot artifacts.
-4. Review the PR and CI. Do not merge or close Jira automatically.
+1. Review the PR and its CI after the post-deployment evidence commit. Do not merge or close Jira automatically.
+2. Renew the snapshot before its 24-hour expiry using the same human approval gate. The site will correctly return HTTP 503 after expiry until a renewed release is authorized and published.
+3. Standalone screenshot files were not exported from the browser session. The tested browser states and viewport measurements are recorded in `evidence/con55/browser-e2e.json`; if image files are a mandatory review artifact, capture them separately before merge.
 
 The preview remains Cloudflare Pages Free, `pages.dev`, read-only, Devnet-only and non-financial. The CON-59 Free-tier quota risk acceptance applies only to this staging preview and does not grant authority for transactions or a new deployment.

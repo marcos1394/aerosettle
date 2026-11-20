@@ -1,0 +1,23 @@
+{
+  "account_id": "54cb929430c4a02b90d6ea3ce356d0d9",
+  "artifact_digest": "ffbee8031b7850d8de19a5d19ca40b222661a45f1cf802dcebc796185977b206",
+  "browser_e2e": "PASSED",
+  "cloudflare_canonical_deployment_confirmed": true,
+  "deployment_id": "aa8e9928-65ee-40e9-991d-09d80e232a98",
+  "deployment_submitted": true,
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "idl_sha256": "a6e436aa1c6468b4f518b742e40a2664e38dcdf7bc1419e53e1624444888e15d",
+  "manifest_sha256": "059c968875c41036186dc79e203a60de60724e0496e7ac1ea3af61c24d902203",
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "project": "conatus-devnet-staging",
+  "public_probe_checks_passed": 23,
+  "release_id": "e0b023220c7285f0f51a9e8d83cee9a43a9c3249c6cad04b044187a78b8fb159",
+  "snapshot_expires_at": "2026-11-21T01:14:32.353048Z",
+  "snapshot_file_sha256": "1c167101e4e80ab5f64d3f2e36820b67bdb7d60bc981a423c69426cea360edd1",
+  "snapshot_sha256": "1c167101e4e80ab5f64d3f2e36820b67bdb7d60bc981a423c69426cea360edd1",
+  "solana_transactions_sent": 0,
+  "source_commit": "22c1d848262f327837ebb3572876307f23b0e65c",
+  "status": "DEPLOYED_AND_PUBLICLY_VERIFIED",
+  "test_mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "url": "https://conatus-devnet-staging.pages.dev/"
+}

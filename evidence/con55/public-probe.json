@@ -1,0 +1,186 @@
+{
+  "artifact_digest": "ffbee8031b7850d8de19a5d19ca40b222661a45f1cf802dcebc796185977b206",
+  "base_url": "https://conatus-devnet-staging.pages.dev/",
+  "checks": [
+    {
+      "body_sha256": "b60dc760b05aa6066cc2974b0e9aa5f13cfdab61a9cf9b0041afe64ac68fa550",
+      "latency_ms": 466.7,
+      "method": "GET",
+      "path": "/release.json",
+      "status": 200
+    },
+    {
+      "body_sha256": "b7d8a87617234bd86cd9619d1cb833875ea8a21c4dad6e562d75eb60efc8eb0e",
+      "latency_ms": 170.8,
+      "method": "GET",
+      "path": "/api/health",
+      "status": 200
+    },
+    {
+      "body_sha256": "80f7e7acf03b209fe78214e00d7071f02d43e999bbdd181543b73c89cb459024",
+      "latency_ms": 315.5,
+      "method": "GET",
+      "path": "/api/ready",
+      "status": 200
+    },
+    {
+      "body_sha256": "70fd2e25466d89d86d3cc97e73a74a5d6f5ed4173a84f3f1d24821b50e59075a",
+      "latency_ms": 121.6,
+      "method": "GET",
+      "path": "/api/v1/network",
+      "status": 200
+    },
+    {
+      "body_sha256": "a955b2fff5c8ccfece66b4d7ebad4298cf42daa8206a85f1af2703fcfd1eb6b1",
+      "latency_ms": 132.7,
+      "method": "GET",
+      "path": "/api/v1/program",
+      "status": 200
+    },
+    {
+      "body_sha256": "e7c73cefe5981ac78fcc8484da1c1aec6a608a2bc60b164aa09028a6b6fb3b32",
+      "latency_ms": 268.6,
+      "method": "GET",
+      "path": "/api/v1/agents?limit=2",
+      "status": 200
+    },
+    {
+      "body_sha256": "40a6ec64d6750b03272b7ff86641cb3f7d106ab13aaabddf368cedbebfa07ce3",
+      "latency_ms": 115.0,
+      "method": "GET",
+      "path": "/api/v1/agents?limit=2&cursor=eyJoYXNoIjoiMWMxNjcxMDFlNGU4MGFiNWY2NGQzZjJlMzY4MjBiNjdiZGI3ZDYwYmM5ODFhNDIzYzY5NDI2Y2VhMzYwZWRkMSIsImtpbmQiOiJhZ2VudHMiLCJzdGF0dXMiOm51bGwsIm9mZnNldCI6Mn0",
+      "status": 200
+    },
+    {
+      "body_sha256": "2651d0d1d5fdfd77ee6f9ad7fe4b43810de47fbd2f6919c81ec6e3b9e6bad9db",
+      "latency_ms": 120.8,
+      "method": "GET",
+      "path": "/api/v1/agents?limit=2&cursor=eyJoYXNoIjoiMWMxNjcxMDFlNGU4MGFiNWY2NGQzZjJlMzY4MjBiNjdiZGI3ZDYwYmM5ODFhNDIzYzY5NDI2Y2VhMzYwZWRkMSIsImtpbmQiOiJhZ2VudHMiLCJzdGF0dXMiOm51bGwsIm9mZnNldCI6NH0",
+      "status": 200
+    },
+    {
+      "body_sha256": "e213847ed5a4b1bfe7396a31660eb3b1231adb89f6c6f7c7e0b52561b70ac1f7",
+      "latency_ms": 299.2,
+      "method": "GET",
+      "path": "/api/v1/agents?limit=2&cursor=eyJoYXNoIjoiMWMxNjcxMDFlNGU4MGFiNWY2NGQzZjJlMzY4MjBiNjdiZGI3ZDYwYmM5ODFhNDIzYzY5NDI2Y2VhMzYwZWRkMSIsImtpbmQiOiJhZ2VudHMiLCJzdGF0dXMiOm51bGwsIm9mZnNldCI6Nn0",
+      "status": 200
+    },
+    {
+      "body_sha256": "7e68572209b7ddd4aac3cda42272024bab93e2ae40c91d8c140f7d65f2fd4d23",
+      "latency_ms": 139.8,
+      "method": "GET",
+      "path": "/api/v1/agents/8QTtkq6b4WBmre9cjLf5376fdm6GdjoLpZXpW1C78aB9",
+      "status": 200
+    },
+    {
+      "body_sha256": "c8d76e15aea28f239f7b6688aac262345e5b38cc902f1dfd631f040bb7457703",
+      "latency_ms": 118.5,
+      "method": "GET",
+      "path": "/api/v1/workorders?limit=2",
+      "status": 200
+    },
+    {
+      "body_sha256": "dad00d227048fbdb4001bf9e02d79d8e3951d7f6b09b2fd77003e7a9ac2bc884",
+      "latency_ms": 269.2,
+      "method": "GET",
+      "path": "/api/v1/workorders?limit=2&cursor=eyJoYXNoIjoiMWMxNjcxMDFlNGU4MGFiNWY2NGQzZjJlMzY4MjBiNjdiZGI3ZDYwYmM5ODFhNDIzYzY5NDI2Y2VhMzYwZWRkMSIsImtpbmQiOiJ3b3Jrb3JkZXJzIiwic3RhdHVzIjpudWxsLCJvZmZzZXQiOjJ9",
+      "status": 200
+    },
+    {
+      "body_sha256": "64ed179cc21df91ae3480854961e6212ffb8876da1160e549db97dca421fa987",
+      "latency_ms": 199.0,
+      "method": "GET",
+      "path": "/api/v1/workorders?limit=2&cursor=eyJoYXNoIjoiMWMxNjcxMDFlNGU4MGFiNWY2NGQzZjJlMzY4MjBiNjdiZGI3ZDYwYmM5ODFhNDIzYzY5NDI2Y2VhMzYwZWRkMSIsImtpbmQiOiJ3b3Jrb3JkZXJzIiwic3RhdHVzIjpudWxsLCJvZmZzZXQiOjR9",
+      "status": 200
+    },
+    {
+      "body_sha256": "2b278cca890be74b110f7419d0c29eae2204c56f970a4211674548d4b0edfbd1",
+      "latency_ms": 274.9,
+      "method": "GET",
+      "path": "/api/v1/workorders?limit=2&cursor=eyJoYXNoIjoiMWMxNjcxMDFlNGU4MGFiNWY2NGQzZjJlMzY4MjBiNjdiZGI3ZDYwYmM5ODFhNDIzYzY5NDI2Y2VhMzYwZWRkMSIsImtpbmQiOiJ3b3Jrb3JkZXJzIiwic3RhdHVzIjpudWxsLCJvZmZzZXQiOjZ9",
+      "status": 200
+    },
+    {
+      "body_sha256": "954335ff62b97332d3c4e444f2e4d173bb3007d15cc2cfa8c43631551de39f65",
+      "latency_ms": 309.7,
+      "method": "GET",
+      "path": "/api/v1/workorders/2M2gMx8n5jDJ7ivKnLRxGVJepBAUst74vDuYZid4xRPr",
+      "status": 200
+    },
+    {
+      "body_sha256": "22e71e31b6f2d7492a29f3a575743e08bc7e5c9dcf76c1391b21efe5b4d6ee9c",
+      "latency_ms": 148.0,
+      "method": "GET",
+      "path": "/api/v1/agents?status=Revoked",
+      "status": 200
+    },
+    {
+      "body_sha256": "97c8d17169daceb3723759fe9d4d136c199ded11990ce936ac07f2651e985f54",
+      "latency_ms": 251.7,
+      "method": "GET",
+      "path": "/api/v1/agents?limit=51",
+      "status": 400
+    },
+    {
+      "body_sha256": "f1f65b064907849d398f8428e30e52375a0e517dc651cfa1e40c9fad3626c164",
+      "latency_ms": 133.9,
+      "method": "GET",
+      "path": "/api/v1/agents?limit=1&limit=2",
+      "status": 400
+    },
+    {
+      "body_sha256": "dadd5f7e06c2587004cda1424e4c281f36070e9894de3950e2cebc2a8d95b114",
+      "latency_ms": 265.8,
+      "method": "GET",
+      "path": "/api/v1/agents/not-a-key",
+      "status": 400
+    },
+    {
+      "body_sha256": "a69650cdfa62c3db3373d20ae4fe37205e6abab95d20db7316cac0ee780932ef",
+      "latency_ms": 129.0,
+      "method": "GET",
+      "path": "/api/v1/unknown",
+      "status": 404
+    },
+    {
+      "body_sha256": "77f8c3eb42e9eaf41c5c4989f1b0c7555a46eed63c628113c0b1d9d4bfd67c72",
+      "latency_ms": 114.7,
+      "method": "POST",
+      "path": "/api/v1/agents",
+      "status": 405
+    },
+    {
+      "body_sha256": "9766a4dc39b9aeacd967049f662910e5c8cc0888fb8f24b498222b4a5f6946d0",
+      "latency_ms": 267.9,
+      "method": "GET",
+      "path": "/api/v1/agents",
+      "status": 403
+    },
+    {
+      "body_sha256": "a903c9f95ef37afeb59d88d116a3dcc4274ca4a6669c667e9ca0b49cc776eaa6",
+      "latency_ms": 137.9,
+      "method": "GET",
+      "path": "/api/v1/agents?limit=1",
+      "status": 200
+    }
+  ],
+  "cors_verified": true,
+  "counts": {
+    "agents": 7,
+    "workorders": 7
+  },
+  "genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "https_verified": true,
+  "mint": "HpfaV9oRuTN1b3ktDKvJoWqUWFZ1o9VFmhejxxqQ1vyh",
+  "negative_requests_verified": true,
+  "network": "solana:devnet",
+  "observed_at": "2026-11-20T01:16:00.467870+00:00",
+  "onchain_transactions_sent": 0,
+  "pagination_verified": true,
+  "program_id": "CeA1P1NSuPLUH31KsT4j3pZeBsknQZ3NSC6GUAqcsCLy",
+  "release_id": "e0b023220c7285f0f51a9e8d83cee9a43a9c3249c6cad04b044187a78b8fb159",
+  "security_headers_verified": true,
+  "snapshot_expires_at": "2026-11-21T01:14:32.353048Z",
+  "snapshot_sha256": "1c167101e4e80ab5f64d3f2e36820b67bdb7d60bc981a423c69426cea360edd1",
+  "source_commit": "22c1d848262f327837ebb3572876307f23b0e65c"
+}

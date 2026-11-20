@@ -1,18 +1,27 @@
 {
-  "status": "PARTIAL_PENDING_AUTHORIZED_RELEASE",
-  "environment": "local Devnet build preview, 127.0.0.1:4173",
+  "status": "LIVE_BROWSER_E2E_VERIFIED",
+  "environment": "public Cloudflare Pages canonical HTTPS URL",
   "browser_observations": [
-    "Premium landing and original Conatus hero art rendered on desktop",
-    "Read-only AppShell, sidebar, dashboard and agent route rendered",
-    "Spanish and English navigation switched successfully",
-    "390 px mobile viewport rendered without horizontal overflow; drawer opened and closed",
-    "Expired-index unavailable state remained readable with navigation intact"
+    "Premium landing loaded with original Conatus hero art and INDEX VERIFIED",
+    "Dashboard rendered 7 verified agents, 7 verified WorkOrders and snapshot slot 524183333",
+    "Agent catalog rendered six cards on page 1 and one card on page 2",
+    "Agent detail matched its listed PDA and showed owner, signing authority, status, protocol, capabilities and snapshot slot",
+    "Mission catalog rendered seven settled WorkOrders; status filter and list mode worked",
+    "WorkOrder detail matched its listed PDA and showed creator, protocol, test mint, status and capability bits without an invented amount",
+    "/status showed VERIFIED, RPC_VERIFIED, API_VERIFIED and INDEX_FRESH with approved genesis, program and snapshot hash",
+    "At 390 px mobile width, catalog scrollWidth equaled innerWidth (390); navigation drawer opened; Spanish labels appeared",
+    "At 768 px tablet width, catalog scrollWidth equaled innerWidth (768)"
   ],
   "public_api_observation": "Current CON-59 public index returned HTTP 503 after snapshot expiration",
-  "positive_current_catalog_e2e": "PENDING_EXACT_RELEASE_AND_DESTINATION_APPROVAL",
-  "agent_and_workorder_detail_e2e": "PENDING_EXACT_RELEASE_AND_DESTINATION_APPROVAL",
-  "responsive_screenshot_artifacts": "PENDING_PUBLIC_RELEASE",
+  "positive_current_catalog_e2e": "PASSED",
+  "agent_and_workorder_detail_e2e": "PASSED",
+  "responsive_screenshot_artifacts": "Captured and visually inspected in the browser session; no standalone image file exported",
   "financial_operations_exercised": false,
   "solana_transactions_sent": 0,
-  "cloudflare_deployment_submitted": false
+  "cloudflare_deployment_submitted": true,
+  "observed_at": "2026-11-20T01:18:26.225916+00:00",
+  "url": "https://conatus-devnet-staging.pages.dev/",
+  "deployment_id": "aa8e9928-65ee-40e9-991d-09d80e232a98",
+  "release_id": "e0b023220c7285f0f51a9e8d83cee9a43a9c3249c6cad04b044187a78b8fb159",
+  "snapshot_sha256": "1c167101e4e80ab5f64d3f2e36820b67bdb7d60bc981a423c69426cea360edd1"
 }
