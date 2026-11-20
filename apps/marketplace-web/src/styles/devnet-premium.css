@@ -1,0 +1,111 @@
+/* CON-55 keeps the original Conatus design tokens, landing motion and marketplace cards. */
+.devnet-premium { min-height: 100dvh; }
+.devnet-premium .c-nav { background: #090c0bea; }
+.devnet-premium .c-nav .public-actions { display: flex; align-items: center; gap: 16px; }
+.devnet-premium .c-hero-art > img { object-fit: cover; object-position: center; }
+.devnet-premium .c-hero-art:after { pointer-events: none; }
+.devnet-landing-section { padding: 78px 4.5vw; display: grid; gap: 22px; }
+.devnet-landing-links { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+.devnet-landing-links > a { color: var(--text); min-height: 250px; justify-content: space-between; }
+.devnet-landing-links svg { color: var(--accent); }
+.devnet-landing-links h3 { font-size: clamp(22px,2vw,32px); margin: 0; }
+.devnet-landing-links p { max-width: 30ch; }
+.devnet-landing-note { margin: 30px 4.5vw 100px; padding: clamp(28px,5vw,72px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: radial-gradient(circle at 80% 10%,#3f563037,transparent 35%),var(--surface); }
+.devnet-landing-note h2 { font-size: clamp(32px,4vw,60px); max-width: 16ch; }
+.devnet-landing-note p:not(.eyebrow) { max-width: 62ch; }
+.devnet-landing-footer { border-top: 1px solid var(--border); padding: 40px 4.5vw; display: flex; justify-content: space-between; gap: 16px; align-items: center; color: var(--muted); }
+.devnet-workspace-page, .devnet-status-page { max-width: 1500px; margin: 0 auto; }
+.devnet-app .workspace-main { width: 100%; }
+.devnet-app .sidebar { padding-top: 28px; }
+.devnet-app .sidebar .brand { margin-bottom: 48px; }
+.devnet-app .sidebar-footer { color: var(--text); }
+.devnet-app .topbar .devnet-indicator { width: 8px; height: 8px; box-shadow: none; margin-right: 8px; }
+.devnet-app .topbar .network-status { display: inline-flex; align-items: center; }
+.devnet-app .workspace-footer, .devnet-app .workspace-footer-links { gap: 12px; flex-wrap: wrap; }
+.devnet-app .nav-drawer { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.devnet-inline-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.devnet-provenance-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border: 1px solid #dbff7340; border-radius: var(--radius); background: #dbff7309; color: var(--text); font-size: 12px; }
+.devnet-provenance-line svg { color: var(--accent); width: 16px; }
+.devnet-provenance-line a { margin-left: auto; color: var(--accent); }
+.devnet-unavailable { display: flex; gap: 18px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); padding: clamp(24px,4vw,42px); margin: 18px 0 26px; }
+.devnet-unavailable > svg { color: var(--warning); width: 28px; height: 28px; }
+.devnet-unavailable h2 { font-size: 22px; margin-bottom: 8px; }
+.devnet-unavailable p { max-width: 65ch; }
+.devnet-overview-hero { display: flex; justify-content: space-between; align-items: center; gap: 30px; overflow: hidden; }
+.devnet-overview-hero h2 { font-size: clamp(26px,3vw,48px); line-height: 1.08; max-width: 15ch; }
+.devnet-overview-hero p:not(.eyebrow) { max-width: 60ch; }
+.devnet-overview-orbit { width: min(30vw,260px); aspect-ratio: 1; border-radius: 50%; border: 1px solid #dbff7380; box-shadow: inset 0 0 0 25px #dbff7309,0 0 90px #dbff731d; display: grid; place-items: center; flex: none; transform: rotate(-18deg); }
+.devnet-overview-orbit span { grid-area: 1/1; font: 700 17px var(--mono); letter-spacing: .18em; color: var(--accent); }
+.devnet-overview-orbit span:last-child { transform: translateY(36px); color: var(--muted); font-size: 11px; }
+.devnet-metric-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; margin: 24px 0; }
+.devnet-metric-grid .panel { padding: 22px; }
+.devnet-metric-grid p { font-size: 12px; margin-bottom: 10px; }
+.devnet-metric-grid strong { display: block; font-size: clamp(24px,2.5vw,38px); line-height: 1.1; overflow-wrap: anywhere; }
+.devnet-metric-grid small { font: 10px var(--mono); color: var(--accent); }
+.devnet-preview-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+.devnet-preview-grid .panel { padding: 24px; }
+.devnet-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.devnet-panel-head a { color: var(--accent); font-size: 12px; }
+.devnet-preview-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); min-width: 0; }
+.devnet-preview-row > svg { color: var(--accent); }
+.devnet-preview-row > span:nth-child(2) { display: grid; min-width: 0; }
+.devnet-preview-row small { color: var(--muted); }
+.devnet-preview-row .devnet-proof-badge { margin-left: auto; }
+.devnet-proof-badge { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #79dfb055; color: var(--success); background: #79dfb00b; border-radius: 99px; padding: 4px 8px; font: 9px var(--mono); letter-spacing: .03em; white-space: nowrap; }
+.devnet-proof-badge svg { width: 12px; height: 12px; }
+.devnet-source-legend { margin: 0 0 24px; padding: 16px 20px; border: 1px solid var(--border); border-radius: var(--radius); background: #ffffff04; font-size: 11px; }
+.devnet-source-legend strong { color: var(--text); }
+.devnet-source-legend p { margin: 6px 0 0; }
+.devnet-source-legend b { color: var(--accent); font: 10px var(--mono); }
+.devnet-capabilities { display: flex; flex-wrap: wrap; gap: 6px; }
+.devnet-capability { padding: 4px 8px; border: 1px solid var(--border); border-radius: 99px; font-size: 10px; color: var(--muted); background: #ffffff05; }
+.devnet-address { overflow-wrap: anywhere; color: var(--text); }
+.agent-market-card .devnet-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.agent-market-card h2 { font-size: 22px; }
+.agent-market-card .card-link, .mission-card .card-link { margin-top: auto; }
+.agent-market-card .card-link a, .mission-card .card-link a { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); }
+.devnet-list-grid { display: grid; gap: 12px; margin-bottom: 24px; }
+.devnet-list-grid .agent-market-card, .devnet-list-grid .mission-card { min-height: 0; }
+.devnet-view-switch { display: flex; gap: 4px; }
+.devnet-view-switch button { min-height: 36px; padding: 6px 10px; }
+.devnet-view-switch button[aria-pressed='true'] { background: var(--accent); color: var(--bg); }
+.devnet-results-bar { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin: 14px 0; color: var(--muted); font-size: 12px; }
+.devnet-pagination { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 20px; }
+.devnet-detail-panel { padding: clamp(24px,4vw,44px); }
+.devnet-detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.devnet-detail-panel h2 { font-size: clamp(21px,2.5vw,36px); }
+.devnet-detail-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 22px; margin: 28px 0; }
+.devnet-detail-grid > div { min-width: 0; border-top: 1px solid var(--border); padding-top: 10px; display: grid; gap: 5px; }
+.devnet-detail-grid small { color: var(--muted); text-transform: uppercase; letter-spacing: .1em; font-size: 10px; }
+.devnet-detail-grid code { overflow-wrap: anywhere; }
+.devnet-detail-panel section { border-top: 1px solid var(--border); padding-top: 24px; }
+.devnet-detail-foot { color: var(--muted); margin: 24px 0; max-width: 70ch; }
+.devnet-status-page .devnet-card { margin-top: 20px; }
+.devnet-status-facts { display: grid; grid-template-columns: 180px minmax(0,1fr); gap: 10px; font-size: 12px; border-top: 1px solid var(--border); padding-top: 20px; }
+.devnet-status-facts dt { color: var(--muted); }
+.devnet-status-facts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); }
+@media (max-width: 1050px) {
+  .devnet-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .devnet-preview-grid { grid-template-columns: 1fr; }
+  .agents-toolbar-top, .missions-toolbar { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 720px) {
+  .devnet-premium .c-nav { min-height: 82px; height: auto; flex-wrap: wrap; }
+  .devnet-premium .c-nav nav { order: 3; width: 100%; justify-content: space-between; gap: 10px; }
+  .devnet-premium .c-nav .public-actions .c-button { display: none; }
+  .devnet-landing-links { grid-template-columns: 1fr; }
+  .devnet-overview-orbit { display: none; }
+  .devnet-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .agents-toolbar-top, .missions-toolbar { grid-template-columns: 1fr; }
+  .devnet-detail-grid { grid-template-columns: 1fr; }
+  .devnet-status-facts { grid-template-columns: 1fr; }
+  .devnet-preview-row .devnet-proof-badge { display: none; }
+  .devnet-landing-footer { flex-direction: column; align-items: flex-start; }
+}
+@media (max-width: 420px) {
+  .devnet-metric-grid { grid-template-columns: 1fr; }
+  .devnet-proof-badge { font-size: 8px; }
+  .devnet-app .topbar { gap: 6px; }
+  .devnet-app .topbar .network-status span:last-child { display: none; }
+  .devnet-premium .c-nav nav { font-size: 11px; }
+}

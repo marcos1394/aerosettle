@@ -24,7 +24,9 @@ if (target === 'devnet') {
     'Devnet IDL artifact differs from approved source');
   assert.ok(bundle.includes('devnet-app') && bundle.includes(manifest.token_mint), 'Wrong entry or mint');
   for (const forbidden of ['signTransaction', 'sendTransaction', 'LocalnetDevWalletAdapter',
-    'localnet-idl.json', 'dev-signer', 'funding-api', 'PhantomWalletAdapter'])
+    'localnet-idl.json', 'dev-signer', 'funding-api', 'PhantomWalletAdapter',
+    'WalletProvider', 'ConnectionProvider', '127.0.0.1:8899', 'LOCALNET_FIXTURE',
+    'atlas-courier-12', 'kestrel-7'])
     assert.ok(!bundle.includes(forbidden), `Devnet bundle contains forbidden capability: ${forbidden}`);
 } else {
   assert.ok(bundle.includes('bootstrap') || bundle.includes('wallet-adapter'), 'Localnet entry missing');
