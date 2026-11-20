@@ -48,6 +48,7 @@ The landing and shell remain usable when the index is missing. No stale accounts
 - `evidence/con55/browser-e2e.json` records the live browser observations, `evidence/con55/public-probe.json` records 23 public HTTPS/API/security checks, and `evidence/con55/deployment-evidence.json` records the exact approved release, hashes and Cloudflare deployment ID. The release source commit is `22c1d848262f327837ebb3572876307f23b0e65c`; its artifact digest is `ffbee8031b7850d8de19a5d19ca40b222661a45f1cf802dcebc796185977b206` and snapshot SHA-256 is `1c167101e4e80ab5f64d3f2e36820b67bdb7d60bc981a423c69426cea360edd1`.
 - `evidence/con55/historical-schema-proof.json` validates the previous CON-59 finalized snapshot's **historical schema** (7 AgentAccounts and 7 WorkOrders). This file is test evidence only and must never be presented as current.
 - `.github/workflows/con55-premium-devnet-marketplace.yml` runs web/SDK, Python integration/security, typecheck, Devnet build, security bundle gate and `git diff --check` with read-only permissions and no PR deployment path.
+- CON-46 Gitleaks flagged the approved public SPL test mint address in the new `devnet-manifest.ts` as a generic API key. The address is the same public mint already in the CON-35/58/59 evidence, not a credential. `tools/security/gitleaks-baseline.json` now contains only that exact commit/file/rule/line fingerprint; no detection rule was disabled. The full-history scan and seven security tests pass locally with this narrow correction.
 
 ## Remaining gates
 
