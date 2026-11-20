@@ -48,12 +48,13 @@ function accountOf(value: unknown): Account | null {
   return row;
 }
 
-export async function verifyEnvironment(manifest: EnvironmentManifest, idlText: string,
-  rpc: Rpc, api?: ApiHealth, signal?: AbortSignal): Promise<Verification> {
+export async function verifyEnvironmentCore(manifest: EnvironmentManifest, idlText: string,
+  rpc: Rpc, api: ApiHealth | undefined, signal: AbortSignal | undefined,
+  verify: (value: unknown, idlText: string) => Promise<EnvironmentManifest>): Promise<Verification> {
   const observedAt = new Date().toISOString();
   const unavailable = (reason: string): Verification => ({ status: 'UNAVAILABLE', reason,
     observedAt, provenance: 'UNVERIFIABLE' });
-  try { await verifyManifest(manifest, idlText); }
+  try { await verify(manifest, idlText); }
   catch { return { ...unavailable('MANIFEST_INVALID'), status: 'MANIFEST_INVALID' }; }
   try {
     const genesis = await rpc('getGenesisHash', [], signal);
@@ -118,6 +119,11 @@ export async function verifyEnvironment(manifest: EnvironmentManifest, idlText: 
   } catch (cause) {
     return unavailable(cause instanceof Error ? cause.message : 'RPC_UNAVAILABLE');
   }
+}
+
+export async function verifyEnvironment(manifest: EnvironmentManifest, idlText: string,
+  rpc: Rpc, api?: ApiHealth, signal?: AbortSignal): Promise<Verification> {
+  return verifyEnvironmentCore(manifest, idlText, rpc, api, signal, verifyManifest);
 }
 
 export function createRpc(endpoint: string, fetcher: typeof fetch = fetch): Rpc {

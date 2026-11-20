@@ -1,0 +1,18 @@
+{
+  "status": "PARTIAL_PENDING_AUTHORIZED_RELEASE",
+  "environment": "local Devnet build preview, 127.0.0.1:4173",
+  "browser_observations": [
+    "Premium landing and original Conatus hero art rendered on desktop",
+    "Read-only AppShell, sidebar, dashboard and agent route rendered",
+    "Spanish and English navigation switched successfully",
+    "390 px mobile viewport rendered without horizontal overflow; drawer opened and closed",
+    "Expired-index unavailable state remained readable with navigation intact"
+  ],
+  "public_api_observation": "Current CON-59 public index returned HTTP 503 after snapshot expiration",
+  "positive_current_catalog_e2e": "PENDING_EXACT_RELEASE_AND_DESTINATION_APPROVAL",
+  "agent_and_workorder_detail_e2e": "PENDING_EXACT_RELEASE_AND_DESTINATION_APPROVAL",
+  "responsive_screenshot_artifacts": "PENDING_PUBLIC_RELEASE",
+  "financial_operations_exercised": false,
+  "solana_transactions_sent": 0,
+  "cloudflare_deployment_submitted": false
+}

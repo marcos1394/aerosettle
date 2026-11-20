@@ -1,0 +1,35 @@
+{
+  "status": "HISTORICAL_SCHEMA_VALIDATED",
+  "current_catalog_verified": false,
+  "source": "CON59_FINALIZED_SNAPSHOT_FILE",
+  "snapshot_sha256": "a64e4c157191fb23738c3fcad4602e55700d5f789553bb351b9364fc0ff1082c",
+  "snapshot_expires_at": "2026-11-19T06:45:03.287715Z",
+  "agent_accounts": 7,
+  "workorders": 7,
+  "agent_fields": [
+    "active",
+    "agent_account",
+    "agent_id",
+    "capabilities",
+    "owner",
+    "protocol_config",
+    "provenance",
+    "signing_authority",
+    "status"
+  ],
+  "workorder_fields": [
+    "creator",
+    "execution_deadline",
+    "is_open",
+    "protocol_config",
+    "provenance",
+    "required_capabilities",
+    "status",
+    "token_mint",
+    "token_program",
+    "work_order_account",
+    "work_order_id"
+  ],
+  "no_demo_profile_fields": true,
+  "onchain_transactions_sent": 0
+}
