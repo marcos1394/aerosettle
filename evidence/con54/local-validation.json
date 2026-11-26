@@ -1,0 +1,38 @@
+{
+  "validated_at_utc": "2026-11-26T20:49:01.449875+00:00",
+  "baseline_merge": "58fe919420b6b803c1439c01ecb4bd31068edaa8",
+  "web_tests": {
+    "passed": 81,
+    "failed": 0
+  },
+  "marketplace_sdk_tests": {
+    "passed": 36,
+    "failed": 0
+  },
+  "transaction_sdk_tests": {
+    "passed": 10,
+    "failed": 0
+  },
+  "security_python_tests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "devnet_integration_python_tests": {
+    "passed": 32,
+    "failed": 0
+  },
+  "typecheck": "PASSED",
+  "devnet_build": "PASSED",
+  "localnet_build": "PASSED",
+  "devnet_bundle_gate": "PASSED",
+  "localnet_bundle_gate": "PASSED",
+  "offline_npm_audit_cached_advisories": 0,
+  "devnet_bundle_sha256": "54383e01f654f284b996f75793c819160feae0b63ba5f500255d16124cce7822",
+  "localnet_bundle_sha256": "aa192a54e5b8dcc4d3a91589575fa58ed12af024921e532f8113b7ee930503ed",
+  "wallet_connect_enabled": true,
+  "wallet_active_network_verified": false,
+  "transaction_signing_enabled": false,
+  "mainnet_enabled": false,
+  "solana_transactions_sent": 0,
+  "staging_deployed": false
+}

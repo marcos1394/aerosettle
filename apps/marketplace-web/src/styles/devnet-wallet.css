@@ -1,0 +1,28 @@
+.devnet-wallet-control { display: inline-flex; align-items: center; }
+.devnet-wallet-trigger { border: 1px solid #d8ff6b88; border-radius: 999px; background: #d8ff6b; color: #101510; font-family: inherit; font-size: 12px; font-weight: 700; padding: 11px 16px; cursor: pointer; white-space: nowrap; }
+.devnet-wallet-trigger:focus-visible, .devnet-wallet-dialog button:focus-visible, .devnet-wallet-dialog summary:focus-visible { outline: 3px solid #d8ff6b; outline-offset: 3px; }
+.devnet-wallet-dialog { width: min(92vw, 540px); max-height: min(88dvh, 820px); padding: 0; border: 1px solid #42624e; border-radius: 20px; background: #101713; color: #eef4eb; box-shadow: 0 28px 100px #000c; }
+.devnet-wallet-dialog::backdrop { background: #020503bb; }
+.devnet-wallet-panel { padding: clamp(20px, 4vw, 32px); overflow-y: auto; max-height: min(88dvh, 820px); }
+.devnet-wallet-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.devnet-wallet-heading h2 { margin: 0; font-size: 24px; }
+.devnet-wallet-heading button { font-size: 26px; line-height: 1; }
+.devnet-wallet-panel p, .devnet-wallet-panel small { color: #acb9ad; }
+.devnet-wallet-panel button { border: 1px solid #4a5e4a; border-radius: 10px; background: #1a231c; color: #eef4eb; padding: 10px 12px; cursor: pointer; }
+.devnet-wallet-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.devnet-wallet-state { font: 11px var(--mono); letter-spacing: .05em; color: #d8ff6b !important; }
+.devnet-wallet-address { display: grid; gap: 10px; margin: 18px 0; }
+.devnet-wallet-address code, .devnet-wallet-policy dd { overflow-wrap: anywhere; }
+.devnet-wallet-options { display: grid; gap: 9px; margin: 18px 0; }
+.devnet-wallet-options h3 { margin: 0 0 4px; font-size: 14px; }
+.devnet-wallet-options button { display: flex; align-items: center; justify-content: space-between; gap: 14px; text-align: left; }
+.devnet-wallet-options small { font-size: 11px; }
+.devnet-wallet-policy { border-top: 1px solid #405042; margin-top: 20px; padding-top: 18px; }
+.devnet-wallet-policy strong { font: 12px var(--mono); color: #d8ff6b; }
+.devnet-wallet-policy details { margin: 14px 0; }
+.devnet-wallet-policy summary { cursor: pointer; }
+.devnet-wallet-policy dl { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px; font-size: 12px; }
+.devnet-wallet-policy dt { color: #acb9ad; }
+.devnet-wallet-policy dd { margin: 0; }
+.devnet-wallet-policy ul { padding-left: 20px; font-size: 12px; line-height: 1.5; }
+@media (max-width: 680px) { .devnet-wallet-trigger { padding: 9px 12px; font-size: 11px; } .devnet-wallet-policy dl { grid-template-columns: 1fr; } .devnet-wallet-options button { align-items: flex-start; flex-direction: column; } }

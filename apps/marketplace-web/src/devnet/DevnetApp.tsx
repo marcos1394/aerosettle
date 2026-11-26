@@ -5,6 +5,8 @@ import { useLandingMotion } from '../app/useLandingMotion.ts';
 import { Brand, Icon } from './ui.tsx';
 import { DevnetDataProvider, useDevnetData } from './DevnetDataProvider.tsx';
 import { DevnetReadOnlyApp } from './DevnetReadOnlyApp.tsx';
+import { DevnetWalletIdentityProvider } from './wallet/WalletIdentity.tsx';
+import { WalletConnect } from './wallet/WalletConnect.tsx';
 
 const Overview = lazy(() => import('./pages/Overview.tsx'));
 const Agents = lazy(() => import('./pages/Agents.tsx'));
@@ -84,6 +86,7 @@ function Shell({ children }: { children: React.ReactNode }) {
                 c('Index unavailable', 'Índice no disponible')}</span>
           </Link>
           <LanguageSelect />
+          <WalletConnect />
         </div>
       </header>
       <main id="workspace-main" className="workspace-main" tabIndex={-1}>{children}</main>
@@ -107,7 +110,7 @@ function Landing() {
         <Link to="/app/missions">{c('Missions', 'Misiones')}</Link>
         <Link to="/status">{c('Network status', 'Estado de red')}</Link>
       </nav>
-      <div className="public-actions"><LanguageSelect />
+      <div className="public-actions"><LanguageSelect /><WalletConnect />
         <Link className="c-button c-button-primary c-button-small" to="/app">
           {c('Explore marketplace', 'Explorar mercado')} <Icon name="arrow" />
         </Link>
@@ -143,8 +146,8 @@ function Landing() {
       </section>
       <section className="devnet-landing-note" data-reveal><p className="eyebrow">{c('TRUST BOUNDARY', 'LÍMITE DE CONFIANZA')}</p>
         <h2>{c('Explore with confidence. Act later.', 'Explora con confianza. Actúa después.')}</h2>
-        <p>{c('This preview cannot connect a wallet, sign, fund, claim or settle. Network and snapshot evidence remain available in the status view.',
-          'Esta vista no puede conectar una wallet, firmar, financiar, reclamar ni liquidar. La evidencia de red e instantánea está disponible en la pantalla de estado.')}</p>
+        <p>{c('You may connect a wallet to view its public identity. Signing, funding, claiming and settlement remain disabled. Network and snapshot evidence remain available in the status view.',
+          'Puedes conectar una wallet para ver su identidad pública. Firmar, financiar, reclamar y liquidar siguen deshabilitados. La evidencia de red e instantánea está disponible en la pantalla de estado.')}</p>
         <Link to="/status" className="c-text-link">{c('View verification details', 'Ver detalles de verificación')} <span>↗</span></Link>
       </section>
     </main>
@@ -169,5 +172,5 @@ function RouteTree() {
   </Routes></Suspense>;
 }
 export function DevnetApp() {
-  return <LanguageProvider><DevnetDataProvider><BrowserRouter><RouteTree /></BrowserRouter></DevnetDataProvider></LanguageProvider>;
+  return <LanguageProvider><DevnetWalletIdentityProvider><DevnetDataProvider><BrowserRouter><RouteTree /></BrowserRouter></DevnetDataProvider></DevnetWalletIdentityProvider></LanguageProvider>;
 }

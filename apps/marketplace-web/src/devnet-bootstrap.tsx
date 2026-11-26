@@ -7,6 +7,7 @@ import './styles/agents.css';
 import './styles/missions.css';
 import './styles/devnet.css';
 import './styles/devnet-premium.css';
+import './styles/devnet-wallet.css';
 import { DevnetApp } from './devnet/DevnetApp.tsx';
 
 const root = document.getElementById('root');

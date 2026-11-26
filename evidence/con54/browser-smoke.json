@@ -1,0 +1,35 @@
+{
+  "observed_at_utc": "2026-11-26T20:48:01.090425+00:00",
+  "environment": "LOCAL_PREVIEW_WITH_EXPLICIT_SIMULATED_WALLET",
+  "url": "http://127.0.0.1:4174/app/agents",
+  "browser": "Google Chrome 158.0.8127.88 headless",
+  "wallet": "Phantom (simulated); injected via Wallet Standard app-ready event; not a Phantom extension",
+  "public_address": "11111111111111111111111111111111",
+  "initial_connect_calls": 0,
+  "wallet_option_discovered": true,
+  "modal_opened": true,
+  "connect_calls_after_explicit_click": 1,
+  "connected_status": "CONNECTED",
+  "active_network_status": "NETWORK_UNVERIFIED",
+  "transaction_signing_controls": 0,
+  "disconnect_calls_after_explicit_click": 1,
+  "final_status": "DISCONNECTED",
+  "viewport_width": 390,
+  "document_scroll_width": 390,
+  "real_extension_tested": false,
+  "solana_transactions_sent": 0,
+  "screenshots": [
+    {
+      "path": "evidence/con54/wallet-modal-mobile.png",
+      "sha256": "17b5ebd42743a7bae9ba597a90589ac9fb0e5f9f61db527d707e7c50ff74b8fa",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "path": "evidence/con54/wallet-connected-mobile.png",
+      "sha256": "b12aa6828edb6a32894947f22a150fa6718eb12969d2d720fd69c12ef0594328",
+      "width": 390,
+      "height": 844
+    }
+  ]
+}
