@@ -922,5 +922,26 @@
   "Message": "docs(con59): record approved renewal and rollback proof",
   "Tags": [],
   "Fingerprint": "996e8f5100d89f0abdcda70b3a609fab2017b83c:evidence/con59/operations-renewal-live.json:generic-api-key:104"
+ },
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 10,
+  "EndLine": 10,
+  "StartColumn": 4,
+  "EndColumn": 61,
+  "Match": "token_mint: 'REDACTED'",
+  "Secret": "REDACTED",
+  "File": "apps/marketplace-web/src/config/devnet-manifest.ts",
+  "SymlinkFile": "",
+  "Commit": "22c1d848262f327837ebb3572876307f23b0e65c",
+  "Link": "https://github.com/marcos1394/aerosettle/blob/22c1d848262f327837ebb3572876307f23b0e65c/apps/marketplace-web/src/config/devnet-manifest.ts#L10",
+  "Entropy": 4.879664,
+  "Author": "marcos sandoval",
+  "Email": "ingsandoval1394@gmail.com",
+  "Date": "2026-11-20T01:14:12Z",
+  "Message": "feat(con-55): restore premium read-only Devnet marketplace",
+  "Tags": [],
+  "Fingerprint": "22c1d848262f327837ebb3572876307f23b0e65c:apps/marketplace-web/src/config/devnet-manifest.ts:generic-api-key:10"
  }
 ]
