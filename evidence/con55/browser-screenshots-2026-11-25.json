@@ -1,0 +1,68 @@
+{
+  "captured_at_utc": "2026-11-26T04:41:03.237202+00:00",
+  "base_url": "https://conatus-devnet-staging.pages.dev/",
+  "release_id": "dd3eacff186d64a1f724be6413badb1c7d5009597558ba8524ef7cb82105c425",
+  "deployment_id": "3136ccb9-021b-4e4d-a523-1989b636cf4a",
+  "snapshot_sha256": "fde2c3ce5504c9529015663534bf45c180487b2e05788026af411dc98e155e5d",
+  "browser": "Google Chrome 158.0.8127.88 headless",
+  "method": "Real public HTTPS pages rendered in Chrome; mobile viewport set with Chrome DevTools Protocol Emulation.setDeviceMetricsOverride",
+  "mobile_inner_width": 390,
+  "mobile_document_scroll_width": 390,
+  "solana_transactions_sent": 0,
+  "screenshots": [
+    {
+      "label": "landing",
+      "route": "/",
+      "viewport": "1440x900",
+      "image_width": 1440,
+      "image_height": 900,
+      "sha256": "3d79832365bdf21305dba91bc7bb26884bb725b49d23082d3cee58e538378f86",
+      "path": "evidence/con55/screenshots-2026-11-25/landing.png"
+    },
+    {
+      "label": "overview",
+      "route": "/app",
+      "viewport": "1440x900",
+      "image_width": 1440,
+      "image_height": 900,
+      "sha256": "f4c509ae343516ead23c57c192a100f3a33cdf095cd5d86a98cda6e4c81cef3e",
+      "path": "evidence/con55/screenshots-2026-11-25/overview.png"
+    },
+    {
+      "label": "agents",
+      "route": "/app/agents",
+      "viewport": "1440x900",
+      "image_width": 1440,
+      "image_height": 900,
+      "sha256": "7482de3f5eeedda277621e3c504fb37bfea09b1a6d400cb9bdf781074a337069",
+      "path": "evidence/con55/screenshots-2026-11-25/agents.png"
+    },
+    {
+      "label": "missions",
+      "route": "/app/missions",
+      "viewport": "1440x900",
+      "image_width": 1440,
+      "image_height": 900,
+      "sha256": "3f7a85ac36260a6cb0278f9877c2a7020786f6ba4c8e3385774debab8ebbf64e",
+      "path": "evidence/con55/screenshots-2026-11-25/missions.png"
+    },
+    {
+      "label": "status",
+      "route": "/status",
+      "viewport": "1440x900",
+      "image_width": 1440,
+      "image_height": 900,
+      "sha256": "91951aff5cdf65fe4cc7b67e365a84b1ae7bc06f82031b4a74f20e8e39b5142d",
+      "path": "evidence/con55/screenshots-2026-11-25/status.png"
+    },
+    {
+      "label": "agents-mobile",
+      "route": "/app/agents",
+      "viewport": "390x844",
+      "image_width": 390,
+      "image_height": 844,
+      "sha256": "7f5d917d43900065080b598cbb8f77662a68a7bf6aad6332c97f9e79b37da4f2",
+      "path": "evidence/con55/screenshots-2026-11-25/agents-mobile.png"
+    }
+  ]
+}
