@@ -1,6 +1,6 @@
 {
   "prepared_at_utc": "2026-11-26T20:54:06.902365+00:00",
-  "status": "PENDING_WRANGLER_AUTH_AND_EXACT_HUMAN_APPROVAL",
+  "status": "DEPLOYED_VERIFIED",
   "source_commit": "e9b7fe7cf0b4247e29995d45f593db08ae96379d",
   "release_id": "00ed1e2b9e42184b68057ad19d7fc1875b3d605ea4a43e0b31b2cff33a2f4087",
   "artifact_digest": "8e73b45db188be1532d031f6f6dfd659633d37d83b3d5624d2907b49a89114e8",
@@ -17,11 +17,19 @@
   "snapshot_provider": "official-devnet",
   "snapshot_commitment": "finalized",
   "offline_release_verified": true,
-  "wrangler_version": "4.51.0",
-  "wrangler_whoami": "NOT_AUTHENTICATED",
-  "cloudflare_preflight": "BLOCKED_AUTH_TOKEN",
-  "deployment_submitted": false,
+  "wrangler_version": "4.168.0",
+  "wrangler_whoami": "AUTHENTICATED_APPROVED_ACCOUNT",
+  "cloudflare_preflight": "PREFLIGHT_VERIFIED",
+  "deployment_submitted": true,
   "solana_transactions_sent": 0,
   "local_ignored_artifact_dir": ".aerosettle-local/con54-release-e9b7fe7",
-  "local_ignored_snapshot_file": ".aerosettle-local/con54-snapshot-e9b7fe7.json"
+  "local_ignored_snapshot_file": ".aerosettle-local/con54-snapshot-e9b7fe7.json",
+  "preflight_verified_at_utc": "2026-11-26T21:00:15.162698+00:00",
+  "human_approval": "EXACT_RELEASE_AND_DESTINATION_APPROVED_IN_SESSION",
+  "deployment_id": "1d309d96-5f00-493b-a7a3-56afa5b419cf",
+  "deployment_url": "https://1d309d96.conatus-devnet-staging.pages.dev/",
+  "public_probe_checks": 23,
+  "public_probe_status": "PASSED",
+  "public_browser_smoke": "PASSED_SIMULATED_WALLET",
+  "verified_at_utc": "2026-11-27T04:14:15.712759+00:00"
 }

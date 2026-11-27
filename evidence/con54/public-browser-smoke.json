@@ -1,0 +1,37 @@
+{
+  "observed_at_utc": "2026-11-27T04:14:15.707975+00:00",
+  "environment": "PUBLIC_STAGING_WITH_EXPLICIT_SIMULATED_WALLET",
+  "url": "https://conatus-devnet-staging.pages.dev/app/agents",
+  "release_id": "00ed1e2b9e42184b68057ad19d7fc1875b3d605ea4a43e0b31b2cff33a2f4087",
+  "deployment_id": "1d309d96-5f00-493b-a7a3-56afa5b419cf",
+  "browser": "Google Chrome 158.0.8127.88 headless",
+  "wallet": "Phantom (simulated); injected via Wallet Standard app-ready event; not a Phantom extension",
+  "public_address": "11111111111111111111111111111111",
+  "initial_connect_calls": 0,
+  "wallet_option_discovered": true,
+  "modal_opened": true,
+  "connect_calls_after_explicit_click": 1,
+  "connected_status": "CONNECTED",
+  "active_network_status": "NETWORK_UNVERIFIED",
+  "transaction_signing_controls": 0,
+  "disconnect_calls_after_explicit_click": 1,
+  "final_status": "DISCONNECTED",
+  "viewport_width": 390,
+  "document_scroll_width": 390,
+  "real_extension_tested": false,
+  "solana_transactions_sent": 0,
+  "screenshots": [
+    {
+      "path": "evidence/con54/public-wallet-modal-mobile.png",
+      "sha256": "1f283042fe605b33bcfb37412dd03cff48f02d9ba947437bfbb321168c44165e",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "path": "evidence/con54/public-wallet-connected-mobile.png",
+      "sha256": "689901d43745c596d3705679a4d12741da92bbf8770988c8e9a0143c094da052",
+      "width": 390,
+      "height": 844
+    }
+  ]
+}
