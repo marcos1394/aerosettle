@@ -23,10 +23,13 @@ if (target === 'devnet') {
   assert.equal(readFileSync(new URL('idl/devnet-idl.json', output), 'utf8'), idl,
     'Devnet IDL artifact differs from approved source');
   assert.ok(bundle.includes('devnet-app') && bundle.includes(manifest.token_mint), 'Wrong entry or mint');
+  for (const feature of ['standard:connect', 'standard:disconnect', 'standard:events'])
+    assert.ok(bundle.includes(feature), `Approved Wallet Standard connection feature missing: ${feature}`);
   for (const forbidden of ['signTransaction', 'sendTransaction', 'LocalnetDevWalletAdapter',
     'localnet-idl.json', 'dev-signer', 'funding-api', 'PhantomWalletAdapter',
     'WalletProvider', 'ConnectionProvider', '127.0.0.1:8899', 'LOCALNET_FIXTURE',
-    'atlas-courier-12', 'kestrel-7'])
+    'atlas-courier-12', 'kestrel-7', 'solana:signMessage', 'solana:signIn',
+    'solana:signAndSendTransaction', 'solana:signAllTransactions', 'mainnet-beta'])
     assert.ok(!bundle.includes(forbidden), `Devnet bundle contains forbidden capability: ${forbidden}`);
 } else {
   assert.ok(bundle.includes('bootstrap') || bundle.includes('wallet-adapter'), 'Localnet entry missing');
@@ -37,6 +40,8 @@ const evidence = {
   LOCALNET_COMPATIBILITY_VERIFIED: target === 'localnet',
   DEVNET_MANIFEST_VERIFIED: target === 'devnet',
   DEVNET_READ_ONLY: target === 'devnet',
+  WALLET_CONNECT_ENABLED: target === 'devnet',
+  WALLET_ACTIVE_NETWORK_VERIFIED: false,
   MAINNET_ENABLED: false,
   TRANSACTION_SIGNING_ENABLED: target === 'localnet',
   ONCHAIN_TRANSACTIONS_SENT: 0,

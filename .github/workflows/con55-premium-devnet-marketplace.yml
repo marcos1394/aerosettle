@@ -42,7 +42,7 @@ jobs:
         run: |
           npm test --prefix packages/marketplace-sdk
           npm test --prefix packages/transaction-sdk
-          npm test --prefix apps/marketplace-web
+          npm test --prefix apps/marketplace-web # Includes CON-54 Wallet Standard race tests.
           npm run typecheck --prefix apps/marketplace-web
           npm run build:devnet --prefix apps/marketplace-web
           node --experimental-strip-types apps/marketplace-web/scripts/verify-build.mjs devnet

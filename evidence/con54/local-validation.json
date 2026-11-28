@@ -1,0 +1,43 @@
+{
+  "validated_at_utc": "2026-11-28T00:22:02Z",
+  "validation_scope": "CON-54 corrective working tree; current source has not been redeployed",
+  "baseline_merge": "58fe919420b6b803c1439c01ecb4bd31068edaa8",
+  "web_tests": {
+    "passed": 88,
+    "failed": 0
+  },
+  "marketplace_sdk_tests": {
+    "passed": 36,
+    "failed": 0
+  },
+  "transaction_sdk_tests": {
+    "passed": 10,
+    "failed": 0
+  },
+  "security_python_tests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "devnet_integration_python_tests": {
+    "passed": 32,
+    "failed": 0
+  },
+  "typecheck": "PASSED",
+  "devnet_build": "PASSED",
+  "localnet_build": "PASSED",
+  "devnet_bundle_gate": "PASSED",
+  "localnet_bundle_gate": "PASSED",
+  "offline_npm_audit_cached_advisories": 0,
+  "devnet_bundle_sha256": "f56e088cdc4ffac2ee799198990d7584015018dedc2feebedf5476e9293c23b5",
+  "localnet_bundle_sha256": "aa192a54e5b8dcc4d3a91589575fa58ed12af024921e532f8113b7ee930503ed",
+  "wallet_connect_enabled": true,
+  "wallet_active_network_verified": false,
+  "transaction_signing_enabled": false,
+  "mainnet_enabled": false,
+  "solana_transactions_sent": 0,
+  "staging_deployed": false,
+  "real_wallet_e2e": "PENDING_REAL_WALLET_E2E",
+  "previous_cloudflare_release": "00ed1e2b9e42184b68057ad19d7fc1875b3d605ea4a43e0b31b2cff33a2f4087",
+  "previous_snapshot_expiry_utc": "2026-11-27T20:51:46Z",
+  "economic_ledger_local_run": "BLOCKED_MISSING_LOCAL_DEPENDENCIES; GitHub CI installs requirements.txt"
+}
