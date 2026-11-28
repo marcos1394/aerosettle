@@ -45,6 +45,12 @@ function registry(initial: Wallet[] = []) {
   } };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 test('Phantom and Solflare are discovered without automatic permission prompts', async () => {
   const phantom = setup('Phantom');
   const solflare = setup('Solflare');
@@ -135,6 +141,7 @@ test('late connection response cannot resurrect identity after disconnect or unr
   const session = new WalletIdentitySession(source.value);
   session.start();
   const pending = session.connect(session.snapshot.wallets[0].id);
+  mock.emit({ accounts: [account()] });
   await session.disconnect();
   resolve({ accounts: [account()] });
   await pending;
@@ -142,6 +149,147 @@ test('late connection response cannot resurrect identity after disconnect or unr
   assert.equal(session.snapshot.address, null);
   source.set([]);
   assert.equal(session.snapshot.wallets.length, 0);
+  session.dispose();
+});
+
+test('one account announced before connect resolves remains selectable only after authorization', async () => {
+  const mock = setup();
+  const authorization = deferred<{ accounts: readonly WalletAccount[] }>();
+  mock.setResult(() => authorization.promise);
+  const session = new WalletIdentitySession(registry([mock.wallet]).value);
+  session.start();
+  const pending = session.connect(session.snapshot.wallets[0].id);
+  mock.emit({ accounts: [account(1)] });
+  assert.equal(session.snapshot.status, 'CONNECTING');
+  assert.equal(session.snapshot.address, null);
+  authorization.resolve({ accounts: [account(1)] });
+  await pending;
+  assert.equal(session.snapshot.status, 'CONNECTED');
+  assert.equal(session.snapshot.address, account(1).address);
+  assert.equal(session.snapshot.networkStatus, 'NETWORK_UNVERIFIED');
+  session.dispose();
+});
+
+test('multiple accounts announced before authorization require explicit selection', async () => {
+  const mock = setup();
+  const authorization = deferred<{ accounts: readonly WalletAccount[] }>();
+  mock.setResult(() => authorization.promise);
+  const session = new WalletIdentitySession(registry([mock.wallet]).value);
+  session.start();
+  const pending = session.connect(session.snapshot.wallets[0].id);
+  mock.emit({ accounts: [account(1), account(2)] });
+  mock.emit({ accounts: [account(2), account(1)] }); // Duplicate set in a different order.
+  assert.equal(session.snapshot.status, 'CONNECTING');
+  authorization.resolve({ accounts: [account(1), account(2)] });
+  await pending;
+  assert.equal(session.snapshot.status, 'ACCOUNT_CHANGED');
+  assert.equal(session.snapshot.address, null);
+  session.selectAccount(account(2).address);
+  assert.equal(session.snapshot.status, 'CONNECTED');
+  assert.equal(session.snapshot.address, account(2).address);
+  session.dispose();
+});
+
+test('a pending multi-account announcement can authorize one returned account', async () => {
+  const mock = setup();
+  const authorization = deferred<{ accounts: readonly WalletAccount[] }>();
+  mock.setResult(() => authorization.promise);
+  const session = new WalletIdentitySession(registry([mock.wallet]).value);
+  session.start();
+  const pending = session.connect(session.snapshot.wallets[0].id);
+  mock.emit({ accounts: [account(1), account(2)] });
+  authorization.resolve({ accounts: [account(2)] });
+  await pending;
+  assert.equal(session.snapshot.status, 'CONNECTED');
+  assert.equal(session.snapshot.address, account(2).address);
+  session.dispose();
+});
+
+test('real chain change while connecting invalidates the late response', async () => {
+  const mock = setup();
+  const authorization = deferred<{ accounts: readonly WalletAccount[] }>();
+  mock.setResult(() => authorization.promise);
+  const session = new WalletIdentitySession(registry([mock.wallet]).value);
+  session.start();
+  const pending = session.connect(session.snapshot.wallets[0].id);
+  mock.emit({ accounts: [account(1)] });
+  mock.emit({ chains: ['solana:mainnet'] });
+  authorization.resolve({ accounts: [account(1)] });
+  await pending;
+  assert.equal(session.snapshot.status, 'WRONG_NETWORK');
+  assert.equal(session.snapshot.networkStatus, 'WRONG_NETWORK');
+  assert.equal(session.snapshot.address, null);
+  mock.emit({ chains: ['solana:devnet'] });
+  mock.emit({ accounts: [account(1)] }); // No authorization survived the chain change.
+  assert.equal(session.snapshot.address, null);
+  assert.deepEqual(session.snapshot.accounts, []);
+  session.dispose();
+});
+
+test('unregistration while connecting invalidates the late response', async () => {
+  const mock = setup();
+  const authorization = deferred<{ accounts: readonly WalletAccount[] }>();
+  mock.setResult(() => authorization.promise);
+  const source = registry([mock.wallet]);
+  const session = new WalletIdentitySession(source.value);
+  session.start();
+  const pending = session.connect(session.snapshot.wallets[0].id);
+  mock.emit({ accounts: [account(1)] });
+  source.set([]);
+  authorization.resolve({ accounts: [account(1)] });
+  await pending;
+  assert.equal(session.snapshot.status, 'DISCONNECTED');
+  assert.equal(session.snapshot.address, null);
+  assert.equal(session.snapshot.wallets.length, 0);
+  session.dispose();
+});
+
+test('changed or inconsistent accounts during a pending connection fail closed', async () => {
+  const mock = setup();
+  const source = registry([mock.wallet]);
+  const session = new WalletIdentitySession(source.value);
+  session.start();
+  const first = deferred<{ accounts: readonly WalletAccount[] }>();
+  mock.setResult(() => first.promise);
+  const pending = session.connect(session.snapshot.wallets[0].id);
+  mock.emit({ accounts: [account(1)] });
+  mock.emit({ accounts: [account(2)] });
+  first.resolve({ accounts: [account(2)] });
+  await pending;
+  assert.equal(session.snapshot.status, 'ERROR');
+  assert.equal(session.snapshot.error, 'ACCOUNT_CHANGED');
+  assert.equal(session.snapshot.address, null);
+  const second = deferred<{ accounts: readonly WalletAccount[] }>();
+  mock.setResult(() => second.promise);
+  const retry = session.connect(session.snapshot.wallets[0].id);
+  mock.emit({ accounts: [account(1)] });
+  second.resolve({ accounts: [account(2)] });
+  await retry;
+  assert.equal(session.snapshot.status, 'ERROR');
+  assert.equal(session.snapshot.address, null);
+  session.dispose();
+});
+
+test('duplicate events and out-of-order connection responses cannot restore stale identity', async () => {
+  const mock = setup();
+  const first = deferred<{ accounts: readonly WalletAccount[] }>();
+  const second = deferred<{ accounts: readonly WalletAccount[] }>();
+  let count = 0;
+  mock.setResult(() => ++count === 1 ? first.promise : second.promise);
+  const session = new WalletIdentitySession(registry([mock.wallet]).value);
+  session.start();
+  const id = session.snapshot.wallets[0].id;
+  const oldPending = session.connect(id);
+  const newPending = session.connect(id);
+  mock.emit({ accounts: [account(2)] });
+  mock.emit({ accounts: [account(2)] });
+  second.resolve({ accounts: [account(2)] });
+  await newPending;
+  assert.equal(session.snapshot.address, account(2).address);
+  first.resolve({ accounts: [account(1)] });
+  await oldPending;
+  assert.equal(session.snapshot.address, account(2).address);
+  assert.equal(session.snapshot.status, 'CONNECTED');
   session.dispose();
 });
 

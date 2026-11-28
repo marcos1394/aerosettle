@@ -1,0 +1,21 @@
+{
+  "status": "PENDING_REAL_WALLET_E2E",
+  "inspection_utc": "2026-11-28T00:23:30Z",
+  "environment": "owner Mac, Chrome with Phantom; no wallet connection or account access",
+  "phantom": {
+    "installed_package_version": "26.43.0",
+    "static_solana_bundle_contains_required_feature_names": true,
+    "runtime_wallet_standard_advertisement": "SUPPORTED_IN_LOCAL_APP_WITHOUT_CONNECTING",
+    "runtime_evidence": "Phantom appeared as a supported Connect with consent option on the local Devnet page; the app requires all three lifecycle methods, Wallet Standard 1.0 and solana:devnet before enabling that option",
+    "connect_disconnect_reconnect_reject_account_network_flows": "PENDING_REAL_WALLET_E2E"
+  },
+  "solflare": {
+    "installed_in_inspected_chrome_profile": false,
+    "runtime_wallet_standard_advertisement": "PENDING_REAL_WALLET_E2E",
+    "connect_disconnect_reconnect_reject_account_network_flows": "PENDING_REAL_WALLET_E2E"
+  },
+  "test_wallets_created": false,
+  "wallet_account_data_accessed": false,
+  "transactions_or_signatures_requested": false,
+  "procedure": "apps/marketplace-web/CON-54.md#real-extension-interoperability-gate"
+}

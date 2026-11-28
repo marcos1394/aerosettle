@@ -49,6 +49,10 @@ function featuresOf(wallet: Wallet): ConnectionFeatures | null {
   } catch { return null; }
 }
 
+function sameAccountSet(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((address) => right.includes(address));
+}
+
 export function inspectWallet(wallet: Wallet): Pick<WalletOption, 'name' | 'supported' | 'reason'> {
   try {
     const name = safeName(wallet.name);
@@ -181,21 +185,63 @@ export class WalletIdentitySession {
     this.offWallet = null;
     this.set({ status: 'CONNECTING', networkStatus: 'NETWORK_UNVERIFIED',
       walletId: id, walletName: inspection.name, address: null, accounts: [], error: null });
+    let announcedAddresses: string[] | null = null;
+    let awaitingAuthorization = true;
+    let invalidatedBeforeAuthorization = false;
     try {
       this.offWallet = features.events.on('change', (change) => {
-        try { this.changed(wallet, id, change); }
+        try {
+          if (invalidatedBeforeAuthorization && change.accounts !== undefined) return;
+          if (current === this.generation && this.snapshotValue.status === 'CONNECTING' &&
+            change.accounts !== undefined && change.chains === undefined && change.features === undefined &&
+            Array.isArray(change.accounts) && change.accounts.length) {
+            const accounts = change.accounts.map((account) => validateAccount(account, wallet));
+            if (accounts.every((account) => account !== null)) {
+              const addresses = (accounts as PublicAccount[]).map((account) => account.address);
+              if (new Set(addresses).size === addresses.length &&
+                (!announcedAddresses || sameAccountSet(announcedAddresses, addresses))) {
+                // A wallet may announce accounts before connect() resolves. The response still
+                // authorizes the identity; this event cannot select an account by itself.
+                announcedAddresses = addresses;
+                return;
+              }
+              this.generation++;
+              invalidatedBeforeAuthorization = true;
+              this.offWallet?.();
+              this.offWallet = null;
+              this.set({ status: 'ERROR', walletId: null, walletName: null,
+                address: null, accounts: [], error: 'ACCOUNT_CHANGED' });
+              return;
+            }
+          }
+          const before = this.generation;
+          this.changed(wallet, id, change);
+          if (awaitingAuthorization && this.generation !== before) invalidatedBeforeAuthorization = true;
+        }
         catch {
           this.generation++;
+          invalidatedBeforeAuthorization = true;
           this.set({ status: 'ERROR', address: null, accounts: [], error: 'INVALID_WALLET_EVENT' });
         }
       });
+      if (current !== this.generation) {
+        this.offWallet?.();
+        this.offWallet = null;
+        return;
+      }
       const response = await features.connect.connect(); // Explicit user action; never silent on page load.
       if (current !== this.generation || this.disposed || !this.known.has(id)) return;
+      awaitingAuthorization = false;
       if (!inspectWallet(wallet).supported) throw new Error('WALLET_CHANGED');
       if (!response || !Array.isArray(response.accounts)) throw new Error('INVALID_RESPONSE');
       const accounts = response.accounts.map((account) => validateAccount(account, wallet));
       if (accounts.some((account) => account === null) || !accounts.length) throw new Error('INVALID_ACCOUNT');
       const valid = accounts as PublicAccount[];
+      const addresses = valid.map((account) => account.address);
+      const observed = announcedAddresses as string[] | null;
+      if (new Set(addresses).size !== addresses.length ||
+        (observed !== null && !addresses.every((address) => observed.includes(address))))
+        throw new Error('ACCOUNT_CHANGED');
       this.set({ status: valid.length === 1 ? 'CONNECTED' : 'ACCOUNT_CHANGED',
         networkStatus: 'NETWORK_UNVERIFIED', accounts: valid,
         address: valid.length === 1 ? valid[0].address : null, error: null });

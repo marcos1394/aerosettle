@@ -25,7 +25,8 @@ jobs:
           cp tools/integration/localnet/bootstrap-evidence.json apps/marketplace-web/src/localnet-evidence.json
       - run: npm test --prefix packages/transaction-sdk
       - run: npm test --prefix packages/marketplace-sdk
-      - run: npm test --prefix apps/marketplace-web
+      - name: Web and Wallet Standard connection-race regressions
+        run: npm test --prefix apps/marketplace-web
       - run: npm run typecheck --prefix apps/marketplace-web
       - run: npm run build:localnet --prefix apps/marketplace-web
       - run: npm run build:devnet --prefix apps/marketplace-web
